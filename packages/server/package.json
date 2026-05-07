@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "bun --hot src/index.ts",
     "start": "bun src/index.ts",
+    "test": "bun test",
     "embed": "bun scripts/gen-embed.ts",
     "build:bin": "bun run embed && bun build ./src/index.ts --compile --outfile ../../dist/prixmaviz",
     "build:bin:linux-x64": "bun run embed && bun build ./src/index.ts --compile --target=bun-linux-x64 --outfile ../../dist/prixmaviz-linux-x64",
