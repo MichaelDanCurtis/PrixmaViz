@@ -16,6 +16,7 @@
     "build:bin:windows-x64": "bun run embed && bun build ./src/index.ts --compile --target=bun-windows-x64 --outfile ../../dist/prixmaviz-windows-x64.exe"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
     "@prixmaviz/shared": "workspace:*"
   },
   "devDependencies": {

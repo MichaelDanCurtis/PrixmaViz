@@ -1,0 +1,46 @@
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  CallToolRequestSchema, ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import type { CliArgs } from "../args";
+import { ensureDirs, resolvePaths } from "../bootstrap";
+import { KrokiClient } from "../kroki/client";
+import { DiagramStore } from "../store/diagrams";
+import { WsHub } from "../ws/broadcast";
+import { TOOLS, dispatchTool } from "./tools";
+
+export async function runMcp(args: CliArgs): Promise<void> {
+  const paths = resolvePaths(args.projectRoot);
+  ensureDirs(paths);
+
+  const ctx = {
+    paths,
+    store: new DiagramStore(),
+    kroki: new KrokiClient({ baseUrl: args.krokiUrl }),
+    hub: new WsHub(),
+  };
+
+  const server = new Server(
+    { name: "prixmaviz", version: "0.1.0" },
+    { capabilities: { tools: {} } },
+  );
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: TOOLS.map((t) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema,
+    })),
+  }));
+
+  server.setRequestHandler(CallToolRequestSchema, async (req) => {
+    const result = await dispatchTool(req.params.name, req.params.arguments ?? {}, ctx);
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+    };
+  });
+
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
