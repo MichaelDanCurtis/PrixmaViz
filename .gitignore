@@ -6,3 +6,7 @@ bun.lockb
 .env
 .env.local
 .superpowers/
+
+# Tauri
+src-tauri/target/
+src-tauri/binaries/prixmaviz-server-*
