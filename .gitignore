@@ -10,4 +10,6 @@ bun.lockb
 # Tauri
 src-tauri/target/
 src-tauri/binaries/prixmaviz-server-*
+src-tauri/Cargo.lock
+src-tauri/gen/
 cdt-screenshots/
