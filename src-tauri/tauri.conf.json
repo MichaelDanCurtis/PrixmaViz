@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PrixmaViz",
+  "version": "0.1.0",
+  "identifier": "io.prixmaviz.app",
+  "build": {
+    "beforeBuildCommand": "bun run build:web && bun run build:bin",
+    "beforeDevCommand": "bun run dev:web",
+    "devUrl": "http://localhost:5181",
+    "frontendDist": "../packages/web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "PrixmaViz",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 800,
+        "minHeight": 560
+      }
+    ],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "msi", "deb", "appimage"],
+    "externalBin": ["binaries/prixmaviz-server"],
+    "icon": ["icons/icon.png"]
+  }
+}

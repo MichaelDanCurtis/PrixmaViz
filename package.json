@@ -7,14 +7,19 @@
     "dev": "bun run --filter '*' dev",
     "dev:server": "bun --filter @prixmaviz/server dev",
     "dev:web": "bun --filter @prixmaviz/web dev",
+    "dev:tauri": "tauri dev",
     "build:web": "bun --filter @prixmaviz/web build",
     "build:bin": "bun run build:web && bun --filter @prixmaviz/server build:bin",
     "build:bin:darwin-arm64": "bun run build:web && bun --filter @prixmaviz/server build:bin:darwin-arm64",
     "build:bin:darwin-x64": "bun run build:web && bun --filter @prixmaviz/server build:bin:darwin-x64",
     "build:bin:linux-x64": "bun run build:web && bun --filter @prixmaviz/server build:bin:linux-x64",
-    "build:bin:windows-x64": "bun run build:web && bun --filter @prixmaviz/server build:bin:windows-x64"
+    "build:bin:windows-x64": "bun run build:web && bun --filter @prixmaviz/server build:bin:windows-x64",
+    "tauri": "tauri",
+    "build:tauri": "bun run build:web && bun run build:bin && tauri build",
+    "build:sidecar": "scripts/build-sidecar-for-tauri.sh"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0",
     "typescript": "^5.6.0"
   }
 }
