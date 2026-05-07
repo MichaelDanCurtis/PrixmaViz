@@ -21,7 +21,7 @@ export function irToMermaid(ir: GraphIR): RenderOutput {
   const groupedNodeIds = new Set<string>();
 
   for (const g of Object.values(ir.groups)) {
-    lines.push(`  subgraph ${g.id}[${escapeText(g.label)}]`);
+    lines.push(`  subgraph ${g.id}[${labelText(g.label)}]`);
     for (const nid of g.members) {
       const node = ir.nodes[nid];
       if (node) {
@@ -57,22 +57,22 @@ function emitNode(node: Node, warnings: string[]): string {
 
 function emitEdge(edge: Edge): string {
   const op = edgeOp(edge.kind ?? "solid", edge.arrow ?? "normal");
-  const label = edge.label ? `|${escapeText(edge.label)}|` : "";
+  const label = edge.label ? `|${labelText(edge.label)}|` : "";
   return `${edge.from} ${op}${label} ${edge.to}`;
 }
 
 function edgeOp(kind: string, arrow: string): string {
-  const head = arrow === "none" ? "" : arrow === "open" ? "-" : ">";
+  const head = arrow === "normal" ? ">" : "";
   switch (kind) {
     case "dashed":
-      return `-.-${head}`;
     case "dotted":
-      return `-.-${head}`;
+      // Mermaid has only one dashed-style op; both IR kinds map here.
+      return head ? `-.->` : `-.-`;
     case "thick":
-      return `==${head}`;
+      return head ? `==>` : `===`;
     case "solid":
     default:
-      return `--${head}`;
+      return head ? `-->` : `---`;
   }
 }
 

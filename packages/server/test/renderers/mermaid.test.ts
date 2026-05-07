@@ -52,4 +52,43 @@ describe("irToMermaid", () => {
     expect(out.warnings.some((w) => /shape.*wat/.test(w))).toBe(true);
     expect(out.dsl).toContain("a[A]");
   });
+
+  it("emits no-arrow form for arrow:none across kinds", () => {
+    const ir = emptyGraphIR();
+    ir.nodes.a = { id: "a", label: "A" };
+    ir.nodes.b = { id: "b", label: "B" };
+    ir.edges.solid = { id: "solid", from: "a", to: "b", arrow: "none", kind: "solid" };
+    ir.edges.thick = { id: "thick", from: "a", to: "b", arrow: "none", kind: "thick" };
+    ir.edges.dashed = { id: "dashed", from: "a", to: "b", arrow: "none", kind: "dashed" };
+    const out = irToMermaid(ir);
+    expect(out.dsl).toContain("a --- b");
+    expect(out.dsl).toContain("a === b");
+    expect(out.dsl).toContain("a -.- b");
+  });
+
+  it("treats arrow:open same as no head (valid mermaid)", () => {
+    const ir = emptyGraphIR();
+    ir.nodes.a = { id: "a", label: "A" };
+    ir.nodes.b = { id: "b", label: "B" };
+    ir.edges.e = { id: "e", from: "a", to: "b", arrow: "open", kind: "solid" };
+    const out = irToMermaid(ir);
+    expect(out.dsl).toContain("a --- b");
+  });
+
+  it("quotes edge labels containing pipes", () => {
+    const ir = emptyGraphIR();
+    ir.nodes.a = { id: "a", label: "A" };
+    ir.nodes.b = { id: "b", label: "B" };
+    ir.edges.e = { id: "e", from: "a", to: "b", label: "x|y" };
+    const out = irToMermaid(ir);
+    expect(out.dsl).toContain('|"x|y"|');
+  });
+
+  it("quotes subgraph labels containing brackets", () => {
+    const ir = emptyGraphIR();
+    ir.nodes.a = { id: "a", label: "A", groupId: "g" };
+    ir.groups.g = { id: "g", label: "G[1]", members: ["a"] };
+    const out = irToMermaid(ir);
+    expect(out.dsl).toContain('subgraph g["G[1]"]');
+  });
 });
