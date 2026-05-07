@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "./args";
 import { ensureDirs, resolvePaths } from "./bootstrap";
+import { writeLock, clearLock } from "./mcp/lockfile";
 import { handleApi } from "./http/routes";
 import { KrokiClient } from "./kroki/client";
 import { DiagramStore } from "./store/diagrams";
@@ -72,6 +73,11 @@ async function runServer(): Promise<void> {
       },
     },
   });
+
+  const lockPath = join(paths.stateDir, "instance.json");
+  writeLock(lockPath, server.port);
+  process.on("SIGINT", () => { clearLock(lockPath); process.exit(0); });
+  process.on("SIGTERM", () => { clearLock(lockPath); process.exit(0); });
 
   const bundleStatus = existsSync(webDist) ? "found" : "missing";
   const mode = `port=${server.port} project=${paths.projectRoot}`;

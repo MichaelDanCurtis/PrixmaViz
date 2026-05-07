@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -9,6 +10,8 @@ import { KrokiClient } from "../kroki/client";
 import { DiagramStore } from "../store/diagrams";
 import { WsHub } from "../ws/broadcast";
 import { TOOLS, dispatchTool } from "./tools";
+import { readLock, isLockAlive } from "./lockfile";
+import { forwardCall } from "./forward";
 
 export async function runMcp(args: CliArgs): Promise<void> {
   const paths = resolvePaths(args.projectRoot);
@@ -26,6 +29,8 @@ export async function runMcp(args: CliArgs): Promise<void> {
     { capabilities: { tools: {} } },
   );
 
+  const lockPath = join(paths.stateDir, "instance.json");
+
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOLS.map((t) => ({
       name: t.name,
@@ -35,10 +40,13 @@ export async function runMcp(args: CliArgs): Promise<void> {
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
+    const lock = readLock(lockPath);
+    if (lock && await isLockAlive(lock)) {
+      const result = await forwardCall(lock, req.params.name, req.params.arguments ?? {});
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
     const result = await dispatchTool(req.params.name, req.params.arguments ?? {}, ctx);
-    return {
-      content: [{ type: "text", text: JSON.stringify(result) }],
-    };
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
   });
 
   const transport = new StdioServerTransport();
