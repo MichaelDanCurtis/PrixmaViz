@@ -2,11 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useAppStore } from "../store";
 import { api } from "../lib/api";
 import { basename } from "../lib/path";
+import type { LibraryEntry } from "@prixmaviz/shared";
 
 export function Library() {
   const library = useAppStore((s) => s.library);
   const diagram = useAppStore((s) => s.diagram);
   const setLibrary = useAppStore((s) => s.setLibrary);
+  const setDiagram = useAppStore((s) => s.setDiagram);
+  const setRender = useAppStore((s) => s.setRender);
   const setError = useAppStore((s) => s.setError);
   const [search, setSearch] = useState("");
 
@@ -26,9 +29,25 @@ export function Library() {
     );
   }, [library, search]);
 
-  async function open(slug: string) {
+  async function open(entry: LibraryEntry) {
     try {
-      await api.loadBySlug(slug);
+      const slug = basename(entry.path).replace(/\.pviz$/, "");
+      const result = await api.loadBySlug(slug);
+      setDiagram({
+        id: result.diagramId,
+        name: entry.name,
+        engine: entry.engine,
+        kind: entry.kind,
+        ir: result.ir,
+        dsl: result.dsl,
+        meta: {
+          createdAt: entry.createdAt,
+          updatedAt: entry.updatedAt,
+          tags: entry.tags,
+          sourcePaths: [],
+        },
+      });
+      setRender(result.diagramId, result.render.svg, result.render.dsl, result.ir);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -57,7 +76,7 @@ export function Library() {
             <div
               key={entry.path}
               className={`library-item ${active ? "active" : ""}`}
-              onClick={() => open(slug)}
+              onClick={() => open(entry)}
             >
               <div className="library-thumb">
                 <img src={`/api/library/${encodeURIComponent(slug)}/thumb`} alt="" />
