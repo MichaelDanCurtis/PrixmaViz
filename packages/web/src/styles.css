@@ -132,24 +132,8 @@ select {
 
 .workspace {
   display: grid;
-  grid-template-columns: 360px 1fr;
+  grid-template-columns: 240px 1fr;
   min-height: 0;
-}
-
-.editor {
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  min-height: 0;
-}
-
-.editor-toolbar {
-  display: flex;
-  gap: 8px;
-  padding: 8px;
-  border-bottom: 1px solid var(--border);
-  align-items: center;
 }
 
 .viewport {
@@ -194,3 +178,45 @@ select {
   color: var(--muted);
   font-size: 14px;
 }
+
+.library {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.library-header { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.library-title { font-weight: 600; font-size: 13px; }
+.library-search { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.library-search input {
+  width: 100%; padding: 6px 8px; border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--border); color: var(--fg);
+  font-size: 12px;
+}
+.library-count {
+  padding: 8px 12px; color: var(--muted);
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+}
+.library-list { flex: 1; overflow: auto; }
+.library-item {
+  margin: 4px 8px; padding: 10px;
+  border: 1px solid var(--border); border-radius: 8px;
+  cursor: pointer; transition: border-color 120ms, background 120ms;
+}
+.library-item:hover { background: #1c1f26; }
+.library-item.active { background: #1c1f26; border-color: var(--accent); }
+.library-thumb {
+  height: 60px; background: var(--bg); border-radius: 4px;
+  margin-bottom: 8px; display: grid; place-items: center; overflow: hidden;
+}
+.library-thumb img { max-width: 100%; max-height: 100%; }
+.library-name { font-weight: 600; font-size: 12px; }
+.library-meta { color: var(--muted); font-size: 10px; margin-top: 2px; }
+.library-tags { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+.tag {
+  font-size: 10px; background: var(--bg); color: var(--muted);
+  padding: 1px 6px; border-radius: 3px;
+}
+
+.empty p { color: var(--muted); }
