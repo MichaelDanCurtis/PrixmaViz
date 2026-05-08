@@ -31,6 +31,7 @@ export async function writePviz(
     ir: diagram.ir,
     dsl: diagram.dsl,
     meta: diagram.meta,
+    annotations: diagram.annotations,
   };
   await Bun.write(path, JSON.stringify(file, null, 2));
   await Bun.write(svgPath, svg);

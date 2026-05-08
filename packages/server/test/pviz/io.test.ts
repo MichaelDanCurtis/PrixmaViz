@@ -70,3 +70,18 @@ describe("listPvizEntries", () => {
     expect(list).toEqual([]);
   });
 });
+
+describe("annotations roundtrip", () => {
+  it("preserves annotations across write+read", async () => {
+    const d = makeDiagram("with-annot");
+    d.annotations = [
+      { id: "ann_001", kind: "tag", targetNodes: ["a"], text: "rename", createdAt: "2026-05-07T00:00:00Z" },
+      { id: "ann_002", kind: "pin", point: { x: 10, y: 20 }, text: "weird", createdAt: "2026-05-07T00:01:00Z" },
+    ];
+    const written = await writePviz(dir, d, "<svg/>");
+    const back = await readPviz(written.path);
+    expect(back.annotations?.length).toBe(2);
+    expect(back.annotations?.[0]?.kind).toBe("tag");
+    expect(back.annotations?.[1]?.point).toEqual({ x: 10, y: 20 });
+  });
+});
