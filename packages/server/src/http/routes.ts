@@ -119,18 +119,21 @@ export async function handleApi(
       createdAt: new Date().toISOString(),
     };
 
-    // hit-test enrichment
-    const _tester = getHitTester(d.engine);
-    if (d.kind === "graph" && d.ir) {
-      // need svg — use stored render? simpler: re-render via kroki
-      // for v1: use last broadcast SVG cached on the diagram
-      // we extend Diagram store to keep last svg below; for now do nothing
-    }
-    if (body.kind === "region" && body.bboxPixel) {
-      // hit-test against last svg if available (added in Task 8)
-    }
-    if (body.kind === "pin" && body.point) {
-      // ditto
+    // hit-test enrichment using last cached SVG
+    const svg = deps.store.getSvg(body.diagramId);
+    if (svg) {
+      const tester = getHitTester(d.engine);
+      if (body.kind === "tag" && body.point) {
+        const hit = tester.byPoint(svg, body.point.x, body.point.y);
+        ann.targetNodes = hit.nodes;
+      } else if (body.kind === "region" && body.bboxPixel) {
+        const hit = tester.byRegion(svg, body.bboxPixel);
+        ann.targetNodes = hit.nodes;
+        ann.bboxData = hit.dataRange;
+      } else if (body.kind === "pin" && body.point) {
+        const hit = tester.byPoint(svg, body.point.x, body.point.y);
+        ann.nearestNode = hit.nodes[0];
+      }
     }
 
     deps.annotations.add(body.diagramId, ann);
@@ -189,6 +192,7 @@ async function createDiagram(
   if (!outcome.ok) {
     return Response.json({ ok: false, error: outcome.error }, { status: 502 });
   }
+  deps.store.setSvg(id, outcome.result.svg);
   broadcastRender(deps.hub, diagram, outcome.result.svg, outcome.warnings);
   return Response.json({
     diagramId: id,
@@ -215,6 +219,7 @@ async function patchDiagram(
   const outcome = await renderDiagram(d, { kroki: deps.kroki });
   if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
 
+  deps.store.setSvg(id, outcome.result.svg);
   broadcastRender(deps.hub, d, outcome.result.svg, [...result.warnings, ...outcome.warnings]);
   return Response.json({
     diagramId: id,
@@ -242,6 +247,7 @@ async function loadDiagramBySlug(slug: string, deps: RouteDeps): Promise<Respons
   deps.store.put(diagram);
   const outcome = await renderDiagram(diagram, { kroki: deps.kroki });
   if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
+  deps.store.setSvg(id, outcome.result.svg);
   broadcastRender(deps.hub, diagram, outcome.result.svg, outcome.warnings);
   return Response.json({
     diagramId: id,
@@ -264,6 +270,7 @@ async function saveDiagram(
 
   const outcome = await renderDiagram(d, { kroki: deps.kroki });
   if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
+  deps.store.setSvg(id, outcome.result.svg);
   const written = await writePviz(deps.paths.diagramsDir, d, outcome.result.svg);
   return Response.json({ path: written.path, slug: written.slug, meta: d.meta });
 }
@@ -284,6 +291,7 @@ async function renderDsl(
   deps.store.put(diagram);
   const outcome = await renderDiagram(diagram, { kroki: deps.kroki });
   if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
+  deps.store.setSvg(id, outcome.result.svg);
   if (body.name) {
     await writePviz(deps.paths.diagramsDir, diagram, outcome.result.svg);
   }

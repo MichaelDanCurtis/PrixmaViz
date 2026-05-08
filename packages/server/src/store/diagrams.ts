@@ -2,6 +2,7 @@ import type { Diagram, DiagramId } from "@prixmaviz/shared";
 
 export class DiagramStore {
   private map = new Map<DiagramId, Diagram>();
+  private svgCache = new Map<DiagramId, string>();
 
   put(d: Diagram): void {
     this.map.set(d.id, d);
@@ -13,6 +14,7 @@ export class DiagramStore {
 
   delete(id: DiagramId): void {
     this.map.delete(id);
+    this.svgCache.delete(id);
   }
 
   list(): Diagram[] {
@@ -23,6 +25,14 @@ export class DiagramStore {
     const d = this.map.get(id);
     if (!d) return;
     d.meta.updatedAt = new Date().toISOString();
+  }
+
+  setSvg(id: DiagramId, svg: string): void {
+    this.svgCache.set(id, svg);
+  }
+
+  getSvg(id: DiagramId): string | undefined {
+    return this.svgCache.get(id);
   }
 }
 
