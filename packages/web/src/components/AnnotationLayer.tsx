@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Annotation, DiagramId } from "@prixmaviz/shared";
 import { useAppStore } from "../store";
 import { api } from "../lib/api";
+import { CommentPopup } from "./CommentPopup";
 
 interface Props {
   diagramId: DiagramId;
@@ -17,6 +18,7 @@ export function AnnotationLayer({ diagramId, containerRef }: Props) {
   const svgEl = useRef<SVGSVGElement | null>(null);
   const [drag, setDrag] = useState<DragRect | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
+  const [selected, setSelected] = useState<{ ann: Annotation; anchor: { x: number; y: number } } | null>(null);
 
   useEffect(() => {
     api.listAnnotations(diagramId)
@@ -87,65 +89,77 @@ export function AnnotationLayer({ diagramId, containerRef }: Props) {
   }
 
   return (
-    <svg
-      ref={svgEl}
-      className={`annotation-layer ${mode !== "select" ? "active" : ""}`}
-      style={{
-        pointerEvents:
-          mode === "region" || mode === "pin" || mode === "tag" ? "auto" : "none",
-        cursor:
-          mode === "region" ? "crosshair" :
-          mode === "pin" ? "crosshair" :
-          mode === "tag" ? "pointer" : "default",
-      }}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onClick={onClick}
-      onMouseLeave={() => { setDrag(null); startRef.current = null; }}
-    >
-      {annotations.map((a) => renderAnnotation(a))}
-      {drag && (
-        <rect x={drag.x} y={drag.y} width={drag.w} height={drag.h}
-              fill="rgba(247,118,142,0.10)" stroke="#f7768e" strokeWidth={2} strokeDasharray="4 3" />
-      )}
-    </svg>
-  );
-}
-
-function renderAnnotation(a: Annotation): React.ReactNode {
-  if (a.kind === "region" && a.bboxPixel) {
-    return (
-      <g key={a.id}>
-        <rect
-          x={a.bboxPixel.x}
-          y={a.bboxPixel.y}
-          width={a.bboxPixel.w}
-          height={a.bboxPixel.h}
-          fill="rgba(247,118,142,0.10)"
-          stroke="#f7768e"
-          strokeWidth={2}
-          strokeDasharray="6 4"
-          opacity={a.resolvedAt ? 0.3 : 1}
+    <>
+      <svg
+        ref={svgEl}
+        className={`annotation-layer ${mode !== "select" ? "active" : ""}`}
+        style={{
+          pointerEvents:
+            mode === "region" || mode === "pin" || mode === "tag" || mode === "select" ? "auto" : "none",
+          cursor:
+            mode === "region" ? "crosshair" :
+            mode === "pin" ? "crosshair" :
+            mode === "tag" ? "pointer" : "default",
+        }}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onClick={onClick}
+        onMouseLeave={() => { setDrag(null); startRef.current = null; }}
+      >
+        {annotations.map((a) => {
+          const onSelect = (e: React.MouseEvent) => {
+            if (mode !== "select") return;
+            e.stopPropagation();
+            const p = relativePos(e);
+            setSelected({ ann: a, anchor: p });
+          };
+          if (a.kind === "region" && a.bboxPixel) {
+            return (
+              <rect key={a.id}
+                className="pickable"
+                x={a.bboxPixel.x} y={a.bboxPixel.y}
+                width={a.bboxPixel.w} height={a.bboxPixel.h}
+                fill="rgba(247,118,142,0.10)" stroke="#f7768e"
+                strokeWidth={2} strokeDasharray="6 4"
+                opacity={a.resolvedAt ? 0.3 : 1}
+                onClick={onSelect}
+              />
+            );
+          }
+          if (a.kind === "pin" && a.point) {
+            return (
+              <g key={a.id} transform={`translate(${a.point.x}, ${a.point.y})`}
+                 className="pickable" onClick={onSelect}>
+                <circle r={9} fill="#f7768e" opacity={a.resolvedAt ? 0.3 : 1} />
+              </g>
+            );
+          }
+          if (a.kind === "tag") {
+            const pt = a.point ?? { x: 0, y: 0 };
+            return (
+              <g key={a.id} transform={`translate(${pt.x}, ${pt.y})`}
+                 className="pickable" onClick={onSelect}>
+                <circle r={7} fill="none" stroke="#7aa2f7" strokeWidth={2} strokeDasharray="3 2"
+                        opacity={a.resolvedAt ? 0.3 : 1} />
+              </g>
+            );
+          }
+          return null;
+        })}
+        {drag && (
+          <rect x={drag.x} y={drag.y} width={drag.w} height={drag.h}
+                fill="rgba(247,118,142,0.10)" stroke="#f7768e" strokeWidth={2} strokeDasharray="4 3" />
+        )}
+      </svg>
+      {selected && (
+        <CommentPopup
+          diagramId={diagramId}
+          annotation={selected.ann}
+          anchor={selected.anchor}
+          onClose={() => setSelected(null)}
         />
-      </g>
-    );
-  }
-  if (a.kind === "pin" && a.point) {
-    return (
-      <g key={a.id} transform={`translate(${a.point.x}, ${a.point.y})`}>
-        <circle r={9} fill="#f7768e" opacity={a.resolvedAt ? 0.3 : 1} />
-      </g>
-    );
-  }
-  if (a.kind === "tag") {
-    const pt = a.point ?? { x: 0, y: 0 };
-    return (
-      <g key={a.id} transform={`translate(${pt.x}, ${pt.y})`}>
-        <circle r={7} fill="none" stroke="#7aa2f7" strokeWidth={2} strokeDasharray="3 2"
-                opacity={a.resolvedAt ? 0.3 : 1} />
-      </g>
-    );
-  }
-  return null;
+      )}
+    </>
+  );
 }

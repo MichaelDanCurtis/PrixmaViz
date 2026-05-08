@@ -248,3 +248,20 @@ select {
 
 .diagram-host { position: relative; display: inline-block; }
 .diagram-host .annotation-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+.comment-popup {
+  position: absolute; z-index: 100;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+  width: 240px; box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+}
+.comment-popup textarea {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--fg); border-radius: 4px;
+  padding: 6px; font-size: 12px; font-family: inherit;
+}
+.comment-actions { display: flex; gap: 6px; }
+.comment-actions button {
+  flex: 1; padding: 4px; font-size: 11px; border-radius: 4px;
+}
