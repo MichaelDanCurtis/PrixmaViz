@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200">
+  <g class="actor" transform="translate(80,30)">
+    <rect x="-30" y="-15" width="60" height="20"/>
+    <text x="0" y="0">User</text>
+  </g>
+  <g class="participant" transform="translate(200,30)">
+    <rect x="-30" y="-15" width="60" height="20"/>
+    <text x="0" y="0">Server</text>
+  </g>
+  <g class="participant" transform="translate(320,30)">
+    <rect x="-30" y="-15" width="60" height="20"/>
+    <text x="0" y="0">DB</text>
+  </g>
+</svg>

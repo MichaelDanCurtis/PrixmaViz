@@ -30,3 +30,6 @@ export function getHitTester(engine: DiagramEngine): HitTester {
 
 import { graphHitTester } from "./graph";
 registerHitTester("graph", graphHitTester);
+
+import { sequenceHitTester } from "./sequence";
+registerHitTester("sequence", sequenceHitTester);
