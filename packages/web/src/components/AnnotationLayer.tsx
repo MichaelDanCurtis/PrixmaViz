@@ -70,14 +70,38 @@ export function AnnotationLayer({ diagramId, containerRef }: Props) {
     }
   }
 
+  async function onClick(e: React.MouseEvent) {
+    if (mode !== "pin" && mode !== "tag") return;
+    if (drag) return;  // active drag handles its own commit
+    const p = relativePos(e);
+    try {
+      const created = await api.createAnnotation({
+        diagramId,
+        kind: mode,
+        point: p,
+      });
+      useAppStore.getState().addAnnotation(diagramId, created);
+    } catch (e) {
+      useAppStore.getState().setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   return (
     <svg
       ref={svgEl}
       className={`annotation-layer ${mode !== "select" ? "active" : ""}`}
-      style={{ pointerEvents: mode === "region" ? "auto" : "none" }}
+      style={{
+        pointerEvents:
+          mode === "region" || mode === "pin" || mode === "tag" ? "auto" : "none",
+        cursor:
+          mode === "region" ? "crosshair" :
+          mode === "pin" ? "crosshair" :
+          mode === "tag" ? "pointer" : "default",
+      }}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
+      onClick={onClick}
       onMouseLeave={() => { setDrag(null); startRef.current = null; }}
     >
       {annotations.map((a) => renderAnnotation(a))}
@@ -111,6 +135,15 @@ function renderAnnotation(a: Annotation): React.ReactNode {
     return (
       <g key={a.id} transform={`translate(${a.point.x}, ${a.point.y})`}>
         <circle r={9} fill="#f7768e" opacity={a.resolvedAt ? 0.3 : 1} />
+      </g>
+    );
+  }
+  if (a.kind === "tag") {
+    const pt = a.point ?? { x: 0, y: 0 };
+    return (
+      <g key={a.id} transform={`translate(${pt.x}, ${pt.y})`}>
+        <circle r={7} fill="none" stroke="#7aa2f7" strokeWidth={2} strokeDasharray="3 2"
+                opacity={a.resolvedAt ? 0.3 : 1} />
       </g>
     );
   }
