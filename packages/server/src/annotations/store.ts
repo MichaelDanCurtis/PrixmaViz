@@ -16,7 +16,7 @@ export class AnnotationStore {
     const m = this.byDiagram.get(diagramId);
     const existing = m?.get(annotationId);
     if (!existing) throw new Error(`annotation "${annotationId}" not found in diagram "${diagramId}"`);
-    const next = { ...existing, ...patch, id: annotationId };
+    const next = { ...existing, ...patch, id: annotationId, kind: existing.kind, createdAt: existing.createdAt };
     m!.set(annotationId, next);
     return next;
   }

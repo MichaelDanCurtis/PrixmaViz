@@ -322,8 +322,9 @@ function schedulePersist(deps: RouteDeps, diagramId: DiagramId) {
     try {
       const outcome = await renderDiagram(d, { kroki: deps.kroki });
       if (outcome.ok) await writePviz(deps.paths.diagramsDir, d, outcome.result.svg);
-    } catch {
-      // swallow — annotations remain in memory; will save on next save_diagram MCP call
+    } catch (e) {
+      console.error(`schedulePersist(${diagramId}) failed:`, e);
+      // annotations remain in memory; will save on next save_diagram MCP call
     }
   }, 500);
   persistTimers.set(diagramId, t);
