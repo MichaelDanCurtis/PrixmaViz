@@ -1,6 +1,7 @@
 import { useAppStore } from "../store";
 import { api } from "../lib/api";
 import { ALL_ENGINES } from "@prixmaviz/shared";
+import { ToolPalette } from "./ToolPalette";
 
 export function Topbar() {
   const diagram = useAppStore((s) => s.diagram);
@@ -32,6 +33,7 @@ export function Topbar() {
       <span style={{ color: "var(--muted)", fontSize: 12 }}>
         {diagram ? `${diagram.engine} · ${diagram.kind}` : "no diagram"}
       </span>
+      <ToolPalette />
       <div className="spacer" />
       {diagram && (
         <button className="primary" onClick={onSave} disabled={pending}>

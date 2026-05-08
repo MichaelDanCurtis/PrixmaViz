@@ -220,3 +220,18 @@ select {
 }
 
 .empty p { color: var(--muted); }
+
+.tool-palette { display: flex; gap: 4px; margin-left: 16px; }
+.tool {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--border); color: var(--fg);
+  cursor: pointer; font-size: 12px; transition: background 120ms, border-color 120ms;
+}
+.tool:hover { background: #1c1f26; }
+.tool.active { background: #2a3a5c; border-color: var(--accent); }
+.tool-key {
+  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  background: var(--bg); color: var(--muted);
+}
+.tool.active .tool-key { background: var(--accent); color: #0e0f12; }
