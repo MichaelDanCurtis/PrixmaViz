@@ -50,4 +50,41 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
     }).then((r) => jsonOrThrow<RenderDslResponse>(r)),
+
+  listAnnotations: (diagramId: string) =>
+    fetch(`/api/diagrams/${encodeURIComponent(diagramId)}/annotations`)
+      .then((r) => jsonOrThrow<{ annotations: import("@prixmaviz/shared").Annotation[] }>(r))
+      .then((j) => j.annotations),
+
+  createAnnotation: (body: {
+    diagramId: string;
+    kind: "tag" | "region" | "pin";
+    text?: string;
+    bboxPixel?: { x: number; y: number; w: number; h: number };
+    point?: { x: number; y: number };
+  }) =>
+    fetch("/api/annotations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => jsonOrThrow<{ annotation: import("@prixmaviz/shared").Annotation }>(r))
+      .then((j) => j.annotation),
+
+  updateAnnotationApi: (annotationId: string, body: { diagramId: string; patch: Partial<import("@prixmaviz/shared").Annotation> }) =>
+    fetch(`/api/annotations/${encodeURIComponent(annotationId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => jsonOrThrow<{ annotation: import("@prixmaviz/shared").Annotation }>(r))
+      .then((j) => j.annotation),
+
+  deleteAnnotation: (annotationId: string, diagramId: string) =>
+    fetch(`/api/annotations/${encodeURIComponent(annotationId)}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ diagramId }),
+    }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    }),
 };
