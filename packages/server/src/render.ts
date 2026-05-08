@@ -45,7 +45,12 @@ export async function renderDiagram(
 
   try {
     const svg = await deps.kroki.renderSvg(diagram.engine, dsl);
-    return { ok: true, result: { svg, dsl }, warnings };
+    let svgOut = svg;
+    if (diagram.kind === "passthrough" && (diagram.engine === "vega" || diagram.engine === "vegalite")) {
+      const b64 = Buffer.from(dsl).toString("base64");
+      svgOut = `<!--prixmaviz-spec:${b64}-->\n${svg}`;
+    }
+    return { ok: true, result: { svg: svgOut, dsl }, warnings };
   } catch (e) {
     if (e instanceof KrokiError) return { ok: false, error: e.message };
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

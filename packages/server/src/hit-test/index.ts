@@ -33,3 +33,6 @@ registerHitTester("graph", graphHitTester);
 
 import { sequenceHitTester } from "./sequence";
 registerHitTester("sequence", sequenceHitTester);
+
+import { chartHitTester } from "./chart";
+registerHitTester("chart", chartHitTester);
