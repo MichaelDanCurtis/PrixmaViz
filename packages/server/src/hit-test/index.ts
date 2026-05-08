@@ -27,3 +27,6 @@ export function getHitTester(engine: DiagramEngine): HitTester {
   const fam = ENGINE_FAMILY[engine];
   return TESTERS[fam] ?? nullHitTester;
 }
+
+import { graphHitTester } from "./graph";
+registerHitTester("graph", graphHitTester);
