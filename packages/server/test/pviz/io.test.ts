@@ -46,9 +46,10 @@ describe("writePviz / readPviz", () => {
     expect(svg).toContain("id='x'");
   });
 
-  it("resolves slug conflicts", async () => {
+  it("resolves slug conflicts for diagrams with different ids", async () => {
     const a = makeDiagram("dup");
     const b = makeDiagram("dup");
+    b.id = "d_other"; // different id → genuine new diagram, not an overwrite
     await writePviz(dir, a, "<svg/>");
     const second = await writePviz(dir, b, "<svg/>");
     expect(second.path).toMatch(/dup-2\.pviz$/);
@@ -83,5 +84,38 @@ describe("annotations roundtrip", () => {
     expect(back.annotations?.length).toBe(2);
     expect(back.annotations?.[0]?.kind).toBe("tag");
     expect(back.annotations?.[1]?.point).toEqual({ x: 10, y: 20 });
+  });
+});
+
+describe("writePviz overwrite by id", () => {
+  it("overwrites existing .pviz when diagram id matches (does not create -2 suffix)", async () => {
+    const d = makeDiagram("overwrite-test");
+    const first = await writePviz(dir, d, "<svg/>");
+    expect(first.slug).toBe("overwrite-test");
+
+    // Add an annotation and save again with the SAME diagram id
+    d.annotations = [{ id: "ann_X", kind: "tag", createdAt: "2026-05-08T00:00:00Z" }];
+    const second = await writePviz(dir, d, "<svg/>");
+
+    expect(second.slug).toBe("overwrite-test"); // SAME slug, not overwrite-test-2
+    expect(second.path).toBe(first.path);
+
+    // Re-read and verify the annotation is on disk
+    const back = await readPviz(second.path);
+    expect(back.annotations?.length).toBe(1);
+    expect(back.annotations?.[0]?.id).toBe("ann_X");
+  });
+
+  it("still suffixes when a different diagram has the same name (different id)", async () => {
+    const d1 = makeDiagram("collision-test");
+    const first = await writePviz(dir, d1, "<svg/>");
+    expect(first.slug).toBe("collision-test");
+
+    // Different diagram with same name but explicitly different id
+    const d2 = makeDiagram("collision-test");
+    d2.id = "d_other";
+    expect(d2.id).not.toBe(d1.id);
+    const second = await writePviz(dir, d2, "<svg/>");
+    expect(second.slug).toBe("collision-test-2");
   });
 });
