@@ -69,6 +69,7 @@ export interface Diagram {
   ir?: GraphIR;
   dsl?: string;
   meta: DiagramMeta;
+  annotations?: import("./annotations").Annotation[];   // NEW
 }
 
 export const PVIZ_VERSION = 1;
@@ -82,6 +83,7 @@ export interface PvizFile {
   ir?: GraphIR;
   dsl?: string;
   meta: DiagramMeta;
+  annotations?: import("./annotations").Annotation[];   // NEW
 }
 
 export function emptyGraphIR(direction: LayoutDirection = "LR"): GraphIR {
