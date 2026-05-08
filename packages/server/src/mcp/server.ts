@@ -12,6 +12,7 @@ import { WsHub } from "../ws/broadcast";
 import { TOOLS, dispatchTool } from "./tools";
 import { readLock, isLockAlive } from "./lockfile";
 import { forwardCall } from "./forward";
+import { AnnotationStore } from "../annotations/store";
 
 export async function runMcp(args: CliArgs): Promise<void> {
   const paths = resolvePaths(args.projectRoot);
@@ -20,6 +21,7 @@ export async function runMcp(args: CliArgs): Promise<void> {
   const ctx = {
     paths,
     store: new DiagramStore(),
+    annotations: new AnnotationStore(),
     kroki: new KrokiClient({ baseUrl: args.krokiUrl }),
     hub: new WsHub(),
   };

@@ -10,10 +10,12 @@ import { listPvizEntries, readPviz, writePviz } from "../pviz/io";
 import { renderDiagram } from "../render";
 import { DiagramStore, newDiagramId } from "../store/diagrams";
 import type { WsHub } from "../ws/broadcast";
+import { AnnotationStore } from "../annotations/store";
 
 export interface ToolCtx {
   paths: PrixmaPaths;
   store: DiagramStore;
+  annotations: AnnotationStore;
   kroki: KrokiClient;
   hub: WsHub;
 }
@@ -103,6 +105,19 @@ export const TOOLS: ToolDef[] = [
       required: ["engine", "source"],
     },
     run: renderDsl,
+  },
+  {
+    name: "get_annotations",
+    description: "List annotations on a diagram. Each annotation includes structured target info (e.g., targetNodes for graph engines, bboxData for charts).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+        includeResolved: { type: "boolean" },
+      },
+      required: ["diagramId"],
+    },
+    run: getAnnotations,
   },
 ];
 
@@ -236,4 +251,12 @@ function broadcast(hub: WsHub, d: Diagram, svg: string, warnings: string[]): voi
     warnings: warnings.length ? warnings : undefined,
   };
   hub.broadcast(msg);
+}
+
+async function getAnnotations(args: Record<string, unknown>, ctx: ToolCtx) {
+  const id = args.diagramId as DiagramId;
+  const includeResolved = Boolean(args.includeResolved);
+  const all = ctx.annotations.listByDiagram(id);
+  const filtered = includeResolved ? all : all.filter(a => !a.resolvedAt);
+  return { annotations: filtered };
 }
