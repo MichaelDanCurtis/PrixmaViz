@@ -59,7 +59,11 @@ export const useAppStore = create<AppState>((set) => ({
   setAnnotations: (id, list) =>
     set((s) => ({ annotations: { ...s.annotations, [id]: list } })),
   addAnnotation: (id, a) =>
-    set((s) => ({ annotations: { ...s.annotations, [id]: [...(s.annotations[id] ?? []), a] } })),
+    set((s) => {
+      const existing = s.annotations[id] ?? [];
+      if (existing.some((x) => x.id === a.id)) return s;
+      return { annotations: { ...s.annotations, [id]: [...existing, a] } };
+    }),
   updateAnnotation: (id, a) =>
     set((s) => ({
       annotations: {

@@ -47,4 +47,10 @@ describe("annotation state", () => {
     useAppStore.getState().setMode("region");
     expect(useAppStore.getState().mode).toBe("region");
   });
+
+  it("addAnnotation is idempotent on duplicate id", () => {
+    useAppStore.getState().setAnnotations("d1", [mkAnn("a1")]);
+    useAppStore.getState().addAnnotation("d1", mkAnn("a1"));
+    expect(useAppStore.getState().annotations["d1"]?.length).toBe(1);
+  });
 });
