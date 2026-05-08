@@ -245,3 +245,6 @@ select {
   overflow: visible;
 }
 .annotation-layer .pickable { pointer-events: auto; cursor: pointer; }
+
+.diagram-host { position: relative; display: inline-block; }
+.diagram-host .annotation-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
