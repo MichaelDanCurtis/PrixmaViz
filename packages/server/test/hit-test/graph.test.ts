@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { graphHitTester } from "../../src/hit-test/graph";
 
 const svg = readFileSync(join(import.meta.dir, "../fixtures/mermaid-flow.svg"), "utf8");
+const realSvg = readFileSync(join(import.meta.dir, "../fixtures/mermaid-flow-real.svg"), "utf8");
 
 describe("graphHitTester.byPoint", () => {
   it("hits Auth node center (60,40)", () => {
@@ -36,5 +37,34 @@ describe("graphHitTester.byRegion", () => {
   it("captures all 3 with full-canvas region", () => {
     const r = graphHitTester.byRegion(svg, { x: 0, y: 0, w: 320, h: 80 });
     expect(r.nodes.sort()).toEqual(["Auth", "Cache", "DB"]);
+  });
+});
+
+// Real Kroki-rendered Mermaid SVG — nodes use <path d="M-X -Y ..."> (outer-path style)
+// or <rect class="basic label-container"> instead of the contrived fixture's plain <rect>.
+//
+// Verified coordinates from mermaid-flow-real.svg:
+//   browser: translate(361.828125, 60),     path M -39.3046875 -27   → bbox [322.5, 33.0, 401.1, 87.0]
+//   tauri:   translate(361.828125, 223.117), rect x=-68.3 y=-27 w=136.6 h=54 → bbox [293.5, 196.1, 430.1, 250.1]
+//   webview: translate(361.828125, 404.016), rect x=-89.3 y=-27 w=178.5 h=54 → bbox [272.6, 377.0, 451.1, 431.0]
+describe("graphHitTester (real Kroki Mermaid SVG)", () => {
+  it("byPoint hits the 'browser' node at its center", () => {
+    // Center of browser bbox: [322.5, 33.0, 401.1, 87.0] → ~(362, 60)
+    const r = graphHitTester.byPoint(realSvg, 362, 60);
+    expect(r.nodes).toContain("browser");
+  });
+
+  it("byPoint misses outside any node", () => {
+    const r = graphHitTester.byPoint(realSvg, 10, 10);
+    expect(r.nodes).toEqual([]);
+  });
+
+  it("byRegion captures browser, tauri and webview when region spans them", () => {
+    // Region covering the right column: x=[270,460] y=[0,450]
+    // browser bbox: [322.5, 33, 401.1, 87] — inside
+    // tauri  bbox: [293.5, 196.1, 430.1, 250.1] — inside
+    // webview bbox: [272.6, 377.0, 451.1, 431.0] — inside
+    const r = graphHitTester.byRegion(realSvg, { x: 270, y: 0, w: 200, h: 450 });
+    expect(r.nodes).toEqual(expect.arrayContaining(["browser", "tauri", "webview"]));
   });
 });
