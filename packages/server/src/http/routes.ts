@@ -1,7 +1,8 @@
 import type {
   Diagram, DiagramId, PatchOp, ServerToClient,
 } from "@prixmaviz/shared";
-import { emptyGraphIR, emptyMeta, inferKind } from "@prixmaviz/shared";
+import type { Annotation } from "@prixmaviz/shared";
+import { emptyGraphIR, emptyMeta, inferKind, newAnnotationId } from "@prixmaviz/shared";
 import type { KrokiClient } from "../kroki/client";
 import { applyPatch } from "../ir/engine";
 import { renderDiagram } from "../render";
@@ -9,10 +10,13 @@ import { DiagramStore, newDiagramId } from "../store/diagrams";
 import { listPvizEntries, readPviz, writePviz } from "../pviz/io";
 import type { PrixmaPaths } from "../bootstrap";
 import type { WsHub } from "../ws/broadcast";
+import { AnnotationStore } from "../annotations/store";
+import { getHitTester } from "../hit-test";
 
 export interface RouteDeps {
   paths: PrixmaPaths;
   store: DiagramStore;
+  annotations: AnnotationStore;
   kroki: KrokiClient;
   hub: WsHub;
 }
@@ -86,6 +90,79 @@ export async function handleApi(
         { status: 400 },
       );
     }
+  }
+
+  // ─── Annotations ─────────────────────────────────────────
+  const annListMatch = p.match(/^\/api\/diagrams\/([^/]+)\/annotations$/);
+  if (annListMatch && req.method === "GET") {
+    const id = annListMatch[1] as DiagramId;
+    return Response.json({ annotations: deps.annotations.listByDiagram(id) });
+  }
+
+  if (p === "/api/annotations" && req.method === "POST") {
+    const body = (await req.json()) as {
+      diagramId: DiagramId;
+      kind: Annotation["kind"];
+      text?: string;
+      bboxPixel?: { x: number; y: number; w: number; h: number };
+      point?: { x: number; y: number };
+    };
+    const d = deps.store.get(body.diagramId);
+    if (!d) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+
+    const ann: Annotation = {
+      id: newAnnotationId(),
+      kind: body.kind,
+      text: body.text,
+      bboxPixel: body.bboxPixel,
+      point: body.point,
+      createdAt: new Date().toISOString(),
+    };
+
+    // hit-test enrichment
+    const _tester = getHitTester(d.engine);
+    if (d.kind === "graph" && d.ir) {
+      // need svg — use stored render? simpler: re-render via kroki
+      // for v1: use last broadcast SVG cached on the diagram
+      // we extend Diagram store to keep last svg below; for now do nothing
+    }
+    if (body.kind === "region" && body.bboxPixel) {
+      // hit-test against last svg if available (added in Task 8)
+    }
+    if (body.kind === "pin" && body.point) {
+      // ditto
+    }
+
+    deps.annotations.add(body.diagramId, ann);
+    deps.hub.broadcast({ type: "annotation:created", diagramId: body.diagramId, annotation: ann });
+
+    // Schedule persist (debounced)
+    schedulePersist(deps, body.diagramId);
+    return Response.json({ annotation: ann });
+  }
+
+  const annPutMatch = p.match(/^\/api\/annotations\/([^/]+)$/);
+  if (annPutMatch && req.method === "PUT") {
+    const annId = annPutMatch[1]!;
+    const body = (await req.json()) as { diagramId: DiagramId; patch: Partial<Annotation> };
+    try {
+      const updated = deps.annotations.update(body.diagramId, annId, body.patch);
+      deps.hub.broadcast({ type: "annotation:updated", diagramId: body.diagramId, annotation: updated });
+      schedulePersist(deps, body.diagramId);
+      return Response.json({ annotation: updated });
+    } catch (e) {
+      return Response.json({ ok: false, error: String(e) }, { status: 404 });
+    }
+  }
+
+  if (annPutMatch && req.method === "DELETE") {
+    const annId = annPutMatch[1]!;
+    const body = (await req.json().catch(() => ({}))) as { diagramId?: DiagramId };
+    if (!body.diagramId) return Response.json({ ok: false, error: "diagramId required" }, { status: 400 });
+    deps.annotations.delete(body.diagramId, annId);
+    deps.hub.broadcast({ type: "annotation:deleted", diagramId: body.diagramId, annotationId: annId });
+    schedulePersist(deps, body.diagramId);
+    return Response.json({ ok: true });
   }
 
   return undefined;
@@ -229,4 +306,25 @@ function broadcastRender(
     warnings: warnings.length ? warnings : undefined,
   };
   hub.broadcast(msg);
+}
+
+const persistTimers = new Map<DiagramId, ReturnType<typeof setTimeout>>();
+function schedulePersist(deps: RouteDeps, diagramId: DiagramId) {
+  const existing = persistTimers.get(diagramId);
+  if (existing) clearTimeout(existing);
+  const t = setTimeout(async () => {
+    persistTimers.delete(diagramId);
+    const d = deps.store.get(diagramId);
+    if (!d) return;
+    const annotations = deps.annotations.listByDiagram(diagramId);
+    d.annotations = annotations;
+    // best-effort save (existing render path for SVG)
+    try {
+      const outcome = await renderDiagram(d, { kroki: deps.kroki });
+      if (outcome.ok) await writePviz(deps.paths.diagramsDir, d, outcome.result.svg);
+    } catch {
+      // swallow — annotations remain in memory; will save on next save_diagram MCP call
+    }
+  }, 500);
+  persistTimers.set(diagramId, t);
 }

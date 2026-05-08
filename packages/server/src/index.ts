@@ -6,6 +6,7 @@ import { writeLock, clearLock } from "./mcp/lockfile";
 import { handleApi } from "./http/routes";
 import { KrokiClient } from "./kroki/client";
 import { DiagramStore } from "./store/diagrams";
+import { AnnotationStore } from "./annotations/store";
 import { DiagramsWatcher } from "./pviz/watch";
 import { listPvizEntries } from "./pviz/io";
 import { serveStatic } from "./static";
@@ -26,6 +27,7 @@ async function runServer(): Promise<void> {
 
   const kroki = new KrokiClient({ baseUrl: args.krokiUrl });
   const store = new DiagramStore();
+  const annotations = new AnnotationStore();
   const hub = new WsHub();
 
   const watcher = new DiagramsWatcher(paths.diagramsDir, async () => {
@@ -49,7 +51,7 @@ async function runServer(): Promise<void> {
         return ok ? undefined : new Response("upgrade failed", { status: 400 });
       }
 
-      const apiResp = await handleApi(req, url, { paths, store, kroki, hub });
+      const apiResp = await handleApi(req, url, { paths, store, annotations, kroki, hub });
       if (apiResp) return apiResp;
 
       if (req.method === "GET") {
