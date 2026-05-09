@@ -13,15 +13,27 @@ import { TOOLS, dispatchTool } from "./tools";
 import { readLock, isLockAlive } from "./lockfile";
 import { forwardCall } from "./forward";
 import { AnnotationStore } from "../annotations/store";
+import { WorkspaceStore } from "../canvas/store";
+import { readWorkspace, writeWorkspace } from "../canvas/io";
 
 export async function runMcp(args: CliArgs): Promise<void> {
   const paths = resolvePaths(args.projectRoot);
   ensureDirs(paths);
 
+  const workspace = new WorkspaceStore();
+  workspace.load(await readWorkspace(paths.workspaceFile));
+  let wsTimer: ReturnType<typeof setTimeout> | null = null;
+  const schedulePersistWorkspace = () => {
+    if (wsTimer) clearTimeout(wsTimer);
+    wsTimer = setTimeout(() => writeWorkspace(paths.workspaceFile, workspace.get()), 500);
+  };
+
   const ctx = {
     paths,
     store: new DiagramStore(),
     annotations: new AnnotationStore(),
+    workspace,
+    schedulePersistWorkspace,
     kroki: new KrokiClient({ baseUrl: args.krokiUrl }),
     hub: new WsHub(),
   };
