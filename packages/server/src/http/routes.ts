@@ -140,6 +140,9 @@ export async function handleApi(
     }
 
     deps.annotations.add(body.diagramId, ann);
+    const wAnn = deps.workspace.get();
+    const owningTileAnn = wAnn.tiles.find(t => t.diagramId === body.diagramId);
+    if (owningTileAnn) deps.workspace.focus(owningTileAnn.id);
     deps.hub.broadcast({ type: "annotation:created", diagramId: body.diagramId, annotation: ann });
 
     // Schedule persist (debounced)
@@ -153,6 +156,9 @@ export async function handleApi(
     const body = (await req.json()) as { diagramId: DiagramId; patch: Partial<Annotation> };
     try {
       const updated = deps.annotations.update(body.diagramId, annId, body.patch);
+      const wUpd = deps.workspace.get();
+      const owningTileUpd = wUpd.tiles.find(t => t.diagramId === body.diagramId);
+      if (owningTileUpd) deps.workspace.focus(owningTileUpd.id);
       deps.hub.broadcast({ type: "annotation:updated", diagramId: body.diagramId, annotation: updated });
       schedulePersist(deps, body.diagramId);
       return Response.json({ annotation: updated });
@@ -196,6 +202,7 @@ export async function handleApi(
       w: body.w ?? 600, h: body.h ?? 400,
       z: 0,
     });
+    deps.workspace.focus(tile.id);
     deps.schedulePersistWorkspace();
     const w = deps.workspace.get();
     deps.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
@@ -208,6 +215,7 @@ export async function handleApi(
     const body = await req.json() as Partial<{ x: number; y: number; w: number; h: number; z: number }>;
     const tile = deps.workspace.updateTile(tileId, body);
     if (!tile) return Response.json({ ok: false, error: "tile not found" }, { status: 404 });
+    deps.workspace.focus(tileId);
     deps.schedulePersistWorkspace();
     const w = deps.workspace.get();
     deps.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
