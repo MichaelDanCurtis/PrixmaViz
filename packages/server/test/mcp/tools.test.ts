@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dispatchTool } from "../../src/mcp/tools";
+import { AnnotationStore } from "../../src/annotations/store";
 import { KrokiClient } from "../../src/kroki/client";
 import { DiagramStore } from "../../src/store/diagrams";
 import { WsHub } from "../../src/ws/broadcast";
@@ -23,6 +24,7 @@ function ctx() {
   return {
     paths,
     store: new DiagramStore(),
+    annotations: new AnnotationStore(),
     kroki: new KrokiClient(),
     hub: new WsHub(),
   };
@@ -58,5 +60,27 @@ describe("dispatchTool", () => {
     await expect(
       dispatchTool("apply_patch", { diagramId: "nope", ops: [] }, c),
     ).rejects.toThrow(/not found/);
+  });
+});
+
+describe("get_annotations", () => {
+  it("returns annotations for a diagram", async () => {
+    const c = ctx();
+    c.annotations.add("d_test", {
+      id: "ann_1", kind: "tag", targetNodes: ["a"], text: "hi",
+      createdAt: "2026-05-07T00:00:00Z",
+    });
+    const out = await dispatchTool("get_annotations", { diagramId: "d_test" }, c) as any;
+    expect(out.annotations.length).toBe(1);
+    expect(out.annotations[0].id).toBe("ann_1");
+  });
+
+  it("excludes resolved when includeResolved=false (default)", async () => {
+    const c = ctx();
+    c.annotations.add("d_test", { id: "ann_resolved", kind: "tag", createdAt: "x", resolvedAt: "y" });
+    c.annotations.add("d_test", { id: "ann_open", kind: "tag", createdAt: "x" });
+    const out = await dispatchTool("get_annotations", { diagramId: "d_test" }, c) as any;
+    expect(out.annotations.length).toBe(1);
+    expect(out.annotations[0].id).toBe("ann_open");
   });
 });

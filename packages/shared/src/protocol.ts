@@ -1,3 +1,5 @@
+import type { Annotation } from "./annotations";
+import type { Camera, Tile } from "./canvas";
 import type { DiagramEngine } from "./engines";
 import type { Diagram, DiagramId, GraphIR } from "./ir";
 import type { PatchOp } from "./patches";
@@ -51,7 +53,11 @@ export type ServerToClient =
   | { type: "render"; diagramId: DiagramId; ir?: GraphIR; dsl: string; svg: string; warnings?: string[] }
   | { type: "library"; entries: LibraryEntry[] }
   | { type: "diagram"; diagram: Diagram }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "annotation:created"; diagramId: DiagramId; annotation: Annotation }
+  | { type: "annotation:updated"; diagramId: DiagramId; annotation: Annotation }
+  | { type: "annotation:deleted"; diagramId: DiagramId; annotationId: string }
+  | { type: "workspace"; camera: Camera; tiles: Tile[] };
 
 export type ClientToServer =
   | { type: "open"; diagramId: DiagramId }

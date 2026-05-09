@@ -4,8 +4,6 @@ import type { ServerToClient } from "@prixmaviz/shared";
 
 export function useWebSocket(): void {
   const setWsStatus = useAppStore((s) => s.setWsStatus);
-  const setLibrary = useAppStore((s) => s.setLibrary);
-  const setRender = useAppStore((s) => s.setRender);
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -33,7 +31,7 @@ export function useWebSocket(): void {
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data) as ServerToClient;
-          handleMessage(msg, { setLibrary, setRender });
+          handleMessage(msg, useAppStore.getState());
         } catch {}
       };
     }
@@ -44,24 +42,25 @@ export function useWebSocket(): void {
       if (timer) clearTimeout(timer);
       ws?.close();
     };
-  }, [setWsStatus, setLibrary, setRender]);
+  }, [setWsStatus]);
 }
 
 function handleMessage(
   msg: ServerToClient,
-  deps: {
-    setLibrary: (e: import("@prixmaviz/shared").LibraryEntry[]) => void;
-    setRender: (
-      id: import("@prixmaviz/shared").DiagramId,
-      svg: string,
-      dsl: string,
-      ir?: import("@prixmaviz/shared").GraphIR,
-    ) => void;
-  },
+  store: ReturnType<typeof useAppStore.getState>,
 ): void {
   if (msg.type === "render") {
-    deps.setRender(msg.diagramId, msg.svg, msg.dsl, msg.ir);
+    store.setRender(msg.diagramId, msg.svg, msg.dsl, msg.ir);
   } else if (msg.type === "library") {
-    deps.setLibrary(msg.entries);
+    store.setLibrary(msg.entries);
+  } else if (msg.type === "annotation:created") {
+    store.addAnnotation(msg.diagramId, msg.annotation);
+  } else if (msg.type === "annotation:updated") {
+    store.updateAnnotation(msg.diagramId, msg.annotation);
+  } else if (msg.type === "annotation:deleted") {
+    store.deleteAnnotation(msg.diagramId, msg.annotationId);
+  } else if (msg.type === "workspace") {
+    store.setCamera(msg.camera);
+    store.setTiles(msg.tiles);
   }
 }

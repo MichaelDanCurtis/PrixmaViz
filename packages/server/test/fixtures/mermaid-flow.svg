@@ -1,0 +1,18 @@
+<svg id="container" xmlns="http://www.w3.org/2000/svg" width="320" height="80" viewBox="0 0 320 80">
+  <g class="root">
+    <g class="nodes">
+      <g id="flowchart-Auth-1" transform="translate(60,40)">
+        <rect x="-30" y="-15" width="60" height="30"/>
+        <text>Auth</text>
+      </g>
+      <g id="flowchart-DB-2" transform="translate(180,40)">
+        <rect x="-30" y="-15" width="60" height="30"/>
+        <text>DB</text>
+      </g>
+      <g id="flowchart-Cache-3" transform="translate(280,40)">
+        <rect x="-30" y="-15" width="60" height="30"/>
+        <text>Cache</text>
+      </g>
+    </g>
+  </g>
+</svg>

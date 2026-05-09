@@ -6,6 +6,9 @@ import { writeLock, clearLock } from "./mcp/lockfile";
 import { handleApi } from "./http/routes";
 import { KrokiClient } from "./kroki/client";
 import { DiagramStore } from "./store/diagrams";
+import { AnnotationStore } from "./annotations/store";
+import { WorkspaceStore } from "./canvas/store";
+import { readWorkspace, writeWorkspace } from "./canvas/io";
 import { DiagramsWatcher } from "./pviz/watch";
 import { listPvizEntries } from "./pviz/io";
 import { serveStatic } from "./static";
@@ -26,7 +29,17 @@ async function runServer(): Promise<void> {
 
   const kroki = new KrokiClient({ baseUrl: args.krokiUrl });
   const store = new DiagramStore();
+  const annotations = new AnnotationStore();
   const hub = new WsHub();
+
+  const workspace = new WorkspaceStore();
+  workspace.load(await readWorkspace(paths.workspaceFile));
+
+  let wsPersistTimer: ReturnType<typeof setTimeout> | null = null;
+  const schedulePersistWorkspace = () => {
+    if (wsPersistTimer) clearTimeout(wsPersistTimer);
+    wsPersistTimer = setTimeout(() => writeWorkspace(paths.workspaceFile, workspace.get()), 500);
+  };
 
   const watcher = new DiagramsWatcher(paths.diagramsDir, async () => {
     const entries = await listPvizEntries(paths.diagramsDir);
@@ -49,7 +62,7 @@ async function runServer(): Promise<void> {
         return ok ? undefined : new Response("upgrade failed", { status: 400 });
       }
 
-      const apiResp = await handleApi(req, url, { paths, store, kroki, hub });
+      const apiResp = await handleApi(req, url, { paths, store, annotations, workspace, schedulePersistWorkspace, kroki, hub });
       if (apiResp) return apiResp;
 
       if (req.method === "GET") {

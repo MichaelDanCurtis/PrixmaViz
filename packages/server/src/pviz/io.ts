@@ -10,15 +10,40 @@ export interface WriteResult {
   slug: string;
 }
 
+async function findExistingSlugByDiagramId(
+  dir: string,
+  diagramId: string,
+): Promise<string | null> {
+  if (!existsSync(dir)) return null;
+  const names = await readdir(dir);
+  for (const n of names) {
+    if (extname(n) !== ".pviz") continue;
+    const path = join(dir, n);
+    try {
+      const file = await readPviz(path);
+      if (file.id === diagramId) return basename(n, ".pviz");
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 export async function writePviz(
   dir: string,
   diagram: Diagram,
   svg: string,
 ): Promise<WriteResult> {
   await mkdir(dir, { recursive: true });
-  const taken = await collectSlugs(dir);
-  const baseSlug = slugify(diagram.name);
-  const slug = resolveSlug(baseSlug, taken);
+  const existing = await findExistingSlugByDiagramId(dir, diagram.id);
+  let slug: string;
+  if (existing) {
+    slug = existing;
+  } else {
+    const taken = await collectSlugs(dir);
+    const baseSlug = slugify(diagram.name);
+    slug = resolveSlug(baseSlug, taken);
+  }
   const path = join(dir, `${slug}.pviz`);
   const svgPath = join(dir, `${slug}.svg`);
 
@@ -31,6 +56,7 @@ export async function writePviz(
     ir: diagram.ir,
     dsl: diagram.dsl,
     meta: diagram.meta,
+    annotations: diagram.annotations,
   };
   await Bun.write(path, JSON.stringify(file, null, 2));
   await Bun.write(svgPath, svg);

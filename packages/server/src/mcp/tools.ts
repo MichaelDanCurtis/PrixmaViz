@@ -10,10 +10,16 @@ import { listPvizEntries, readPviz, writePviz } from "../pviz/io";
 import { renderDiagram } from "../render";
 import { DiagramStore, newDiagramId } from "../store/diagrams";
 import type { WsHub } from "../ws/broadcast";
+import { AnnotationStore } from "../annotations/store";
+import { WorkspaceStore } from "../canvas/store";
+import { arrange } from "../canvas/arrange";
 
 export interface ToolCtx {
   paths: PrixmaPaths;
   store: DiagramStore;
+  annotations: AnnotationStore;
+  workspace: WorkspaceStore;
+  schedulePersistWorkspace: () => void;
   kroki: KrokiClient;
   hub: WsHub;
 }
@@ -103,6 +109,74 @@ export const TOOLS: ToolDef[] = [
       required: ["engine", "source"],
     },
     run: renderDsl,
+  },
+  {
+    name: "get_annotations",
+    description: "List annotations on a diagram. Each annotation includes structured target info (e.g., targetNodes for graph engines, bboxData for charts).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+        includeResolved: { type: "boolean" },
+      },
+      required: ["diagramId"],
+    },
+    run: getAnnotations,
+  },
+  {
+    name: "update_tile",
+    description: "Move, resize, or focus a tile on the canvas. patch fields override current tile state.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tileId: { type: "string" },
+        patch: {
+          type: "object",
+          properties: {
+            x: { type: "number" }, y: { type: "number" },
+            w: { type: "number" }, h: { type: "number" },
+            focused: { type: "boolean" },
+          },
+        },
+      },
+      required: ["tileId", "patch"],
+    },
+    run: updateTile,
+  },
+  {
+    name: "set_view",
+    description: "Control the canvas viewport. Either set the camera directly, or auto-arrange tiles by style.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        camera: {
+          type: "object",
+          properties: { x: { type: "number" }, y: { type: "number" }, zoom: { type: "number" } },
+        },
+        arrange: {
+          type: "object",
+          properties: {
+            style: { type: "string", enum: ["grid", "horizontal", "vertical"] },
+            diagrams: { type: "array", items: { type: "string" } },
+            padding: { type: "number" },
+          },
+        },
+      },
+    },
+    run: setView,
+  },
+  {
+    name: "install_mcp_plugin",
+    description: "Write the PrixmaViz MCP entry into the host's config file. Idempotent. confirm=false returns the snippet without writing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        host: { type: "string", enum: ["claude-code", "codex", "vscode"] },
+        confirm: { type: "boolean" },
+      },
+      required: ["host", "confirm"],
+    },
+    run: installMcpPlugin,
   },
 ];
 
@@ -236,4 +310,63 @@ function broadcast(hub: WsHub, d: Diagram, svg: string, warnings: string[]): voi
     warnings: warnings.length ? warnings : undefined,
   };
   hub.broadcast(msg);
+}
+
+async function getAnnotations(args: Record<string, unknown>, ctx: ToolCtx) {
+  const id = args.diagramId as DiagramId;
+  const includeResolved = Boolean(args.includeResolved);
+  const all = ctx.annotations.listByDiagram(id);
+  const filtered = includeResolved ? all : all.filter(a => !a.resolvedAt);
+  return { annotations: filtered };
+}
+
+async function updateTile(args: Record<string, unknown>, ctx: ToolCtx) {
+  const tileId = args.tileId as string;
+  const patch = args.patch as { x?: number; y?: number; w?: number; h?: number; focused?: boolean };
+  const tile = ctx.workspace.updateTile(tileId, {
+    ...(patch.x !== undefined ? { x: patch.x } : {}),
+    ...(patch.y !== undefined ? { y: patch.y } : {}),
+    ...(patch.w !== undefined ? { w: patch.w } : {}),
+    ...(patch.h !== undefined ? { h: patch.h } : {}),
+  });
+  if (!tile) throw new Error("tile not found");
+  if (patch.focused) {
+    ctx.workspace.setCamera({
+      x: tile.x + tile.w / 2 - 400,
+      y: tile.y + tile.h / 2 - 300,
+      zoom: 1,
+    });
+  }
+  ctx.schedulePersistWorkspace();
+  const w = ctx.workspace.get();
+  ctx.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
+  return { tile };
+}
+
+async function setView(args: Record<string, unknown>, ctx: ToolCtx) {
+  const camera = args.camera as { x: number; y: number; zoom: number } | undefined;
+  const arr = args.arrange as { style: "grid" | "horizontal" | "vertical"; diagrams: string[]; padding?: number } | undefined;
+  if (camera) ctx.workspace.setCamera(camera);
+  if (arr) {
+    const w = ctx.workspace.get();
+    const subset = w.tiles.filter(t => arr.diagrams.includes(t.diagramId));
+    const arranged = arrange(subset, arr.style, arr.padding ?? 20);
+    for (const t of arranged) ctx.workspace.updateTile(t.id, { x: t.x, y: t.y });
+  }
+  ctx.schedulePersistWorkspace();
+  const w = ctx.workspace.get();
+  ctx.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
+  return { camera: w.camera, tiles: w.tiles };
+}
+
+async function installMcpPlugin(args: Record<string, unknown>, ctx: ToolCtx) {
+  const host = args.host as "claude-code";
+  const confirm = Boolean(args.confirm);
+  const { defaultConfigPath, mergeMcpConfig } = await import("./install");
+  const configPath = defaultConfigPath(host);
+  const binaryPath = process.execPath;
+  const snippet = JSON.stringify({ mcpServers: { prixmaviz: { command: binaryPath, args: ["--mcp"] } } }, null, 2);
+  if (!confirm) return { configPath, entryAdded: false, snippet, dryRun: true };
+  const result = mergeMcpConfig(configPath, binaryPath);
+  return { configPath: result.path, entryAdded: result.added, snippet: result.snippet };
 }

@@ -33,6 +33,16 @@ export function Library() {
     try {
       const slug = basename(entry.path).replace(/\.pviz$/, "");
       const result = await api.loadBySlug(slug);
+      // create a tile at viewport center
+      const camera = useAppStore.getState().camera;
+      await api.createTile({
+        diagramId: result.diagramId,
+        diagramSlug: slug,
+        x: camera.x + 60,
+        y: camera.y + 60,
+        w: 600, h: 400,
+      });
+      // also keep current diagram = first opened (for legacy single-canvas paths)
       setDiagram({
         id: result.diagramId,
         name: entry.name,
@@ -40,12 +50,7 @@ export function Library() {
         kind: entry.kind,
         ir: result.ir,
         dsl: result.dsl,
-        meta: {
-          createdAt: entry.createdAt,
-          updatedAt: entry.updatedAt,
-          tags: entry.tags,
-          sourcePaths: [],
-        },
+        meta: { createdAt: entry.createdAt, updatedAt: entry.updatedAt, tags: entry.tags, sourcePaths: [] },
       });
       setRender(result.diagramId, result.render.svg, result.render.dsl, result.ir);
     } catch (e) {
