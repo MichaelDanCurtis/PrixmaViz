@@ -242,6 +242,33 @@ export async function handleApi(
     }
   }
 
+  // ─── Settings ────────────────────────────────────────────
+  if (p === "/api/settings" && req.method === "GET") {
+    const { readSettings } = await import("../settings/io");
+    const settings = await readSettings(deps.paths.settingsFile);
+    return Response.json(settings);
+  }
+
+  if (p === "/api/settings" && req.method === "PUT") {
+    const { writeSettings, defaultSettings } = await import("../settings/io");
+    const body = await req.json() as Partial<{ krokiUrl: string }>;
+    const merged = { ...defaultSettings(), ...body };
+    await writeSettings(deps.paths.settingsFile, merged);
+    return Response.json(merged);
+  }
+
+  if (p === "/api/settings/test-kroki" && req.method === "POST") {
+    const body = await req.json() as { url: string };
+    try {
+      const resp = await fetch(`${body.url}/health`, { signal: AbortSignal.timeout(3000) });
+      const ok = resp.ok;
+      const status = await resp.json().catch(() => null);
+      return Response.json({ ok, status });
+    } catch (e) {
+      return Response.json({ ok: false, error: String(e) }, { status: 502 });
+    }
+  }
+
   return undefined;
 }
 
