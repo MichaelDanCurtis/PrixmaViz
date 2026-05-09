@@ -2,6 +2,8 @@ import { clampCamera, defaultWorkspace, type Camera, type Tile, type WorkspaceSt
 
 export class WorkspaceStore {
   private state: WorkspaceState = defaultWorkspace();
+  private lastFocusedId: string | undefined = undefined;
+  private lastFocusedAt: string | undefined = undefined;
 
   get(): WorkspaceState {
     return structuredClone(this.state);
@@ -25,9 +27,26 @@ export class WorkspaceStore {
 
   removeTile(id: string): void {
     this.state.tiles = this.state.tiles.filter(t => t.id !== id);
+    if (this.lastFocusedId === id) {
+      this.lastFocusedId = undefined;
+      this.lastFocusedAt = undefined;
+    }
   }
 
   setCamera(c: Camera): void {
     this.state.camera = clampCamera(c);
+  }
+
+  focus(id: string): void {
+    if (!this.state.tiles.find(t => t.id === id)) return;
+    this.lastFocusedId = id;
+    this.lastFocusedAt = new Date().toISOString();
+  }
+
+  getFocused(): (Tile & { lastFocusedAt: string }) | undefined {
+    if (!this.lastFocusedId) return undefined;
+    const tile = this.state.tiles.find(t => t.id === this.lastFocusedId);
+    if (!tile) return undefined;
+    return { ...tile, lastFocusedAt: this.lastFocusedAt! };
   }
 }
