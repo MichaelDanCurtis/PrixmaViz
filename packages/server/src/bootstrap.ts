@@ -8,6 +8,7 @@ export interface PrixmaPaths {
   cacheDir: string;
   stateDir: string;
   configFile: string;
+  workspaceFile: string;
 }
 
 export function resolvePaths(projectRoot: string): PrixmaPaths {
@@ -20,6 +21,7 @@ export function resolvePaths(projectRoot: string): PrixmaPaths {
     cacheDir: join(prixmaDir, "cache"),
     stateDir: join(prixmaDir, "state"),
     configFile: join(prixmaDir, "config.json"),
+    workspaceFile: join(prixmaDir, "workspace.json"),
   };
 }
 

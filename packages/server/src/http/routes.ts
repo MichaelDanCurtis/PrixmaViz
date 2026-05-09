@@ -12,11 +12,14 @@ import type { PrixmaPaths } from "../bootstrap";
 import type { WsHub } from "../ws/broadcast";
 import { AnnotationStore } from "../annotations/store";
 import { getHitTester } from "../hit-test";
+import { WorkspaceStore } from "../canvas/store";
 
 export interface RouteDeps {
   paths: PrixmaPaths;
   store: DiagramStore;
   annotations: AnnotationStore;
+  workspace: WorkspaceStore;
+  schedulePersistWorkspace: () => void;
   kroki: KrokiClient;
   hub: WsHub;
 }
@@ -165,6 +168,58 @@ export async function handleApi(
     deps.annotations.delete(body.diagramId, annId);
     deps.hub.broadcast({ type: "annotation:deleted", diagramId: body.diagramId, annotationId: annId });
     schedulePersist(deps, body.diagramId);
+    return Response.json({ ok: true });
+  }
+
+  // ─── Workspace ───────────────────────────────────────────
+  if (p === "/api/workspace" && req.method === "GET") {
+    return Response.json(deps.workspace.get());
+  }
+
+  if (p === "/api/workspace/camera" && req.method === "PUT") {
+    const body = await req.json() as { x: number; y: number; zoom: number };
+    deps.workspace.setCamera(body);
+    deps.schedulePersistWorkspace();
+    const w = deps.workspace.get();
+    deps.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
+    return Response.json(w);
+  }
+
+  if (p === "/api/tiles" && req.method === "POST") {
+    const body = await req.json() as { diagramId: string; diagramSlug: string; x?: number; y?: number; w?: number; h?: number };
+    const { newTileId } = await import("@prixmaviz/shared");
+    const tile = deps.workspace.addTile({
+      id: newTileId(),
+      diagramId: body.diagramId,
+      diagramSlug: body.diagramSlug,
+      x: body.x ?? 0, y: body.y ?? 0,
+      w: body.w ?? 600, h: body.h ?? 400,
+      z: 0,
+    });
+    deps.schedulePersistWorkspace();
+    const w = deps.workspace.get();
+    deps.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
+    return Response.json({ tile });
+  }
+
+  const tilePatchMatch = p.match(/^\/api\/tiles\/([^/]+)$/);
+  if (tilePatchMatch && req.method === "PATCH") {
+    const tileId = tilePatchMatch[1]!;
+    const body = await req.json() as Partial<{ x: number; y: number; w: number; h: number; z: number }>;
+    const tile = deps.workspace.updateTile(tileId, body);
+    if (!tile) return Response.json({ ok: false, error: "tile not found" }, { status: 404 });
+    deps.schedulePersistWorkspace();
+    const w = deps.workspace.get();
+    deps.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
+    return Response.json({ tile });
+  }
+
+  if (tilePatchMatch && req.method === "DELETE") {
+    const tileId = tilePatchMatch[1]!;
+    deps.workspace.removeTile(tileId);
+    deps.schedulePersistWorkspace();
+    const w = deps.workspace.get();
+    deps.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
     return Response.json({ ok: true });
   }
 
