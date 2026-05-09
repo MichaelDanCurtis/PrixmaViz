@@ -2,7 +2,8 @@ mod install;
 mod cli_check;
 
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
@@ -30,6 +31,29 @@ async fn main() {
         }))
         .invoke_handler(tauri::generate_handler![install_mcp_plugin])
         .setup(|app| {
+            // Native menu: PrixmaViz > Settings… / Uninstall plugin
+            let settings_item = MenuItemBuilder::new("Settings…").id("settings").build(app)?;
+            let uninstall_item = MenuItemBuilder::new("Uninstall plugin").id("uninstall").build(app)?;
+            let prixmaviz_menu = SubmenuBuilder::new(app, "PrixmaViz")
+                .item(&settings_item)
+                .separator()
+                .item(&uninstall_item)
+                .build()?;
+            let menu = MenuBuilder::new(app).item(&prixmaviz_menu).build()?;
+            app.set_menu(menu)?;
+
+            app.on_menu_event(|app_handle, event| {
+                match event.id().as_ref() {
+                    "settings" => {
+                        let _ = app_handle.emit("open-settings", ());
+                    }
+                    "uninstall" => {
+                        let _ = app_handle.emit("open-uninstall", ());
+                    }
+                    _ => {}
+                }
+            });
+
             // First-launch install dialog
             let app_handle = app.handle().clone();
             let first_run_flag = dirs::config_dir()
