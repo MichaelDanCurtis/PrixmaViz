@@ -4,9 +4,11 @@ import { Library } from "./components/Library";
 import { InfiniteCanvas } from "./components/InfiniteCanvas";
 import { useWebSocket } from "./lib/ws";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { UninstallDialog } from "./components/UninstallDialog";
 
 export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [uninstallOpen, setUninstallOpen] = useState(false);
   useWebSocket();
 
   useEffect(() => {
@@ -17,6 +19,11 @@ export function App() {
       const cleanups: (() => void)[] = [];
       tauri.event
         .listen("open-settings", () => setSettingsOpen(true))
+        .then((unlisten: () => void) => {
+          cleanups.push(unlisten);
+        });
+      tauri.event
+        .listen("open-uninstall", () => setUninstallOpen(true))
         .then((unlisten: () => void) => {
           cleanups.push(unlisten);
         });
@@ -34,6 +41,7 @@ export function App() {
         <InfiniteCanvas />
       </div>
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
+      {uninstallOpen && <UninstallDialog onClose={() => setUninstallOpen(false)} />}
     </div>
   );
 }

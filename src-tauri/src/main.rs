@@ -1,5 +1,6 @@
 mod install;
 mod cli_check;
+mod uninstall;
 
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -17,6 +18,12 @@ fn install_mcp_plugin(binary_path: String) -> Result<bool, String> {
     install::install_entry(&binary_path)
 }
 
+#[tauri::command]
+fn uninstall_plugin_cmd() -> Result<(bool, String), String> {
+    let r = uninstall::uninstall_plugin()?;
+    Ok((r.uninstalled, r.message))
+}
+
 #[tokio::main]
 async fn main() {
     tauri::Builder::default()
@@ -29,7 +36,7 @@ async fn main() {
                 let _ = w.set_focus();
             }
         }))
-        .invoke_handler(tauri::generate_handler![install_mcp_plugin])
+        .invoke_handler(tauri::generate_handler![install_mcp_plugin, uninstall_plugin_cmd])
         .setup(|app| {
             // Native menu: PrixmaViz > Settings… / Uninstall plugin
             let settings_item = MenuItemBuilder::new("Settings…").id("settings").build(app)?;
