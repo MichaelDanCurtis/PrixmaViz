@@ -7,6 +7,7 @@ import { AnnotationStore } from "../../src/annotations/store";
 import { KrokiClient } from "../../src/kroki/client";
 import { DiagramStore } from "../../src/store/diagrams";
 import { WsHub } from "../../src/ws/broadcast";
+import { WorkspaceStore } from "../../src/canvas/store";
 import { resolvePaths, ensureDirs } from "../../src/bootstrap";
 
 let dir: string;
@@ -25,6 +26,8 @@ function ctx() {
     paths,
     store: new DiagramStore(),
     annotations: new AnnotationStore(),
+    workspace: new WorkspaceStore(),
+    schedulePersistWorkspace: () => {},
     kroki: new KrokiClient(),
     hub: new WsHub(),
   };
@@ -82,5 +85,25 @@ describe("get_annotations", () => {
     const out = await dispatchTool("get_annotations", { diagramId: "d_test" }, c) as any;
     expect(out.annotations.length).toBe(1);
     expect(out.annotations[0].id).toBe("ann_open");
+  });
+});
+
+describe("get_focused_tile", () => {
+  it("returns null when no tile focused", async () => {
+    const c = ctx();
+    const out = await dispatchTool("get_focused_tile", {}, c) as any;
+    expect(out.tile).toBeNull();
+  });
+
+  it("returns the focused tile after focus()", async () => {
+    const c = ctx();
+    c.workspace.addTile({ id: "t1", diagramId: "d1", diagramSlug: "abc", x: 0, y: 0, w: 200, h: 100, z: 0 });
+    c.workspace.focus("t1");
+    const out = await dispatchTool("get_focused_tile", {}, c) as any;
+    expect(out.tile).not.toBeNull();
+    expect(out.tile.id).toBe("t1");
+    expect(out.tile.diagramId).toBe("d1");
+    expect(out.tile.diagramSlug).toBe("abc");
+    expect(typeof out.tile.lastFocusedAt).toBe("string");
   });
 });

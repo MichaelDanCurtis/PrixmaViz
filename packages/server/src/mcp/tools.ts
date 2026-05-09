@@ -178,6 +178,12 @@ export const TOOLS: ToolDef[] = [
     },
     run: installMcpPlugin,
   },
+  {
+    name: "get_focused_tile",
+    description: "Return the tile most recently interacted with (clicked, dragged, annotated, or AI-patched). Use this to resolve deictic references like 'this', 'that', 'the highlighted area' — the focused tile is what the user is talking about.",
+    inputSchema: { type: "object", properties: {} },
+    run: getFocusedTile,
+  },
 ];
 
 export async function dispatchTool(
@@ -369,4 +375,9 @@ async function installMcpPlugin(args: Record<string, unknown>, ctx: ToolCtx) {
   if (!confirm) return { configPath, entryAdded: false, snippet, dryRun: true };
   const result = mergeMcpConfig(configPath, binaryPath);
   return { configPath: result.path, entryAdded: result.added, snippet: result.snippet };
+}
+
+async function getFocusedTile(_args: Record<string, unknown>, ctx: ToolCtx) {
+  const focused = ctx.workspace.getFocused();
+  return { tile: focused ?? null };
 }
