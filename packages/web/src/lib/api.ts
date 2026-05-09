@@ -87,4 +87,33 @@ export const api = {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     }),
+
+  getWorkspace: () =>
+    fetch("/api/workspace")
+      .then((r) => jsonOrThrow<import("@prixmaviz/shared").WorkspaceState>(r)),
+
+  setCamera: (camera: import("@prixmaviz/shared").Camera) =>
+    fetch("/api/workspace/camera", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(camera),
+    }).then((r) => jsonOrThrow<import("@prixmaviz/shared").WorkspaceState>(r)),
+
+  createTile: (body: { diagramId: string; diagramSlug: string; x?: number; y?: number; w?: number; h?: number }) =>
+    fetch("/api/tiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => jsonOrThrow<{ tile: import("@prixmaviz/shared").Tile }>(r)),
+
+  patchTile: (tileId: string, body: Partial<{ x: number; y: number; w: number; h: number; z: number }>) =>
+    fetch(`/api/tiles/${encodeURIComponent(tileId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => jsonOrThrow<{ tile: import("@prixmaviz/shared").Tile }>(r)),
+
+  deleteTile: (tileId: string) =>
+    fetch(`/api/tiles/${encodeURIComponent(tileId)}`, { method: "DELETE" })
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
 };
