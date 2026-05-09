@@ -40,18 +40,35 @@ async fn main() {
                 let flag_path = first_run_flag.clone();
                 app_handle
                     .dialog()
-                    .message("Add PrixmaViz to Claude Code? You can change this later via the menu.")
-                    .title("Install MCP plugin")
+                    .message("Install PrixmaViz for Claude Code?\n\nThis registers PrixmaViz as a Claude Code plugin so the AI can render diagrams directly into your PrixmaViz window during conversations.\n\nRequires Claude Code CLI to be installed. You can change this later via the PrixmaViz menu.")
+                    .title("Install Claude Code integration")
                     .buttons(MessageDialogButtons::OkCancelCustom("Install".into(), "Skip".into()))
                     .show(move |yes| {
                         if yes {
                             if let Ok(resource_path) = app_handle.path().resource_dir() {
                                 let bin = resource_path.join("binaries").join(if cfg!(target_os = "macos") {
                                     "prixmaviz-server-aarch64-apple-darwin"
+                                } else if cfg!(target_os = "windows") {
+                                    "prixmaviz-server-x86_64-pc-windows-msvc.exe"
                                 } else {
                                     "prixmaviz-server-x86_64-unknown-linux-gnu"
                                 });
-                                let _ = install::install_entry(&bin.to_string_lossy());
+                                let app_handle_inner = app_handle.clone();
+                                match install::install_plugin_via_cli(&resource_path, &bin) {
+                                    Ok(result) => {
+                                        let title = if result.installed { "Installed" } else { "Could not install" };
+                                        let _ = app_handle_inner.dialog()
+                                            .message(&result.message)
+                                            .title(title)
+                                            .show(|_| {});
+                                    }
+                                    Err(e) => {
+                                        let _ = app_handle_inner.dialog()
+                                            .message(&format!("Install failed: {}", e))
+                                            .title("Install error")
+                                            .show(|_| {});
+                                    }
+                                }
                             }
                             let _ = std::fs::write(&flag_path, "1");
                         } else {
