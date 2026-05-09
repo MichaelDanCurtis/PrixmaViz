@@ -319,6 +319,7 @@ async function loadDiagramBySlug(slug: string, deps: RouteDeps): Promise<Respons
     meta: file.meta,
   };
   deps.store.put(diagram);
+  deps.annotations.loadFromDiagram(id, file.annotations ?? []);
   const outcome = await renderDiagram(diagram, { kroki: deps.kroki });
   if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
   deps.store.setSvg(id, outcome.result.svg);
