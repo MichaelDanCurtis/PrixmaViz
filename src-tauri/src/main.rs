@@ -1,4 +1,5 @@
 mod install;
+mod cli_check;
 
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
