@@ -329,3 +329,9 @@ select {
 .settings-status.fail { color: #ef4444; }
 .settings-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .settings-save { background: #7aa2f7; color: #0e0f12; border: 0; padding: 8px 14px; border-radius: 6px; }
+
+.topbar-button {
+  background: transparent; border: 1px solid #2c2f3a; color: #e6e7eb;
+  padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px;
+}
+.topbar-button:hover { background: #1a1d24; }

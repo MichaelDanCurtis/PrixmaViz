@@ -3,7 +3,9 @@ import { api } from "../lib/api";
 import { ALL_ENGINES } from "@prixmaviz/shared";
 import { ToolPalette } from "./ToolPalette";
 
-export function Topbar() {
+interface TopbarProps { onOpenSettings?: () => void; }
+
+export function Topbar({ onOpenSettings }: TopbarProps = {}) {
   const diagram = useAppStore((s) => s.diagram);
   const wsStatus = useAppStore((s) => s.wsStatus);
   const pending = useAppStore((s) => s.pending);
@@ -40,6 +42,7 @@ export function Topbar() {
           {pending ? "Saving…" : "Save"}
         </button>
       )}
+      <button className="topbar-button" onClick={onOpenSettings} title="Settings">⚙ Settings</button>
       <div className="status">
         <span className={`dot ${dot}`} />
         <span>ws · {wsStatus}</span>
