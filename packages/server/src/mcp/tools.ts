@@ -13,6 +13,7 @@ import type { WsHub } from "../ws/broadcast";
 import { AnnotationStore } from "../annotations/store";
 import { WorkspaceStore } from "../canvas/store";
 import { arrange } from "../canvas/arrange";
+import { isAppRunning, launchApp, lockfilePath } from "./lifecycle";
 
 export interface ToolCtx {
   paths: PrixmaPaths;
@@ -183,6 +184,18 @@ export const TOOLS: ToolDef[] = [
     description: "Return the tile most recently interacted with (clicked, dragged, annotated, or AI-patched). Use this to resolve deictic references like 'this', 'that', 'the highlighted area' — the focused tile is what the user is talking about.",
     inputSchema: { type: "object", properties: {} },
     run: getFocusedTile,
+  },
+  {
+    name: "check_app_running",
+    description: "Check whether the PrixmaViz Tauri app is currently running. Use BEFORE rendering a diagram so you know whether the user can see your output. If running=false, ASK the user before launching the app.",
+    inputSchema: { type: "object", properties: {} },
+    run: checkAppRunning,
+  },
+  {
+    name: "launch_app",
+    description: "Launch the PrixmaViz Tauri app if it is not already running. Only call this AFTER the user has explicitly confirmed they want the app launched (do not surprise users by spawning windows).",
+    inputSchema: { type: "object", properties: {} },
+    run: launchAppTool,
   },
 ];
 
@@ -380,4 +393,18 @@ async function installMcpPlugin(args: Record<string, unknown>, ctx: ToolCtx) {
 async function getFocusedTile(_args: Record<string, unknown>, ctx: ToolCtx) {
   const focused = ctx.workspace.getFocused();
   return { tile: focused ?? null };
+}
+
+async function checkAppRunning(_args: Record<string, unknown>, ctx: ToolCtx) {
+  return await isAppRunning(lockfilePath(ctx.paths.stateDir));
+}
+
+async function launchAppTool(_args: Record<string, unknown>, _ctx: ToolCtx) {
+  const appPath = process.platform === "darwin"
+    ? "/Applications/PrixmaViz.app"
+    : process.platform === "linux"
+    ? "/usr/local/bin/prixmaviz"
+    : "C:\\Program Files\\PrixmaViz\\PrixmaViz.exe";
+  const launched = await launchApp(appPath);
+  return { launched };
 }
