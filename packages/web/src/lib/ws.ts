@@ -59,5 +59,8 @@ function handleMessage(
     store.updateAnnotation(msg.diagramId, msg.annotation);
   } else if (msg.type === "annotation:deleted") {
     store.deleteAnnotation(msg.diagramId, msg.annotationId);
+  } else if (msg.type === "workspace") {
+    store.setCamera(msg.camera);
+    store.setTiles(msg.tiles);
   }
 }
