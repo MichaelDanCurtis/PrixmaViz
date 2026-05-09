@@ -1,6 +1,6 @@
 import { Topbar } from "./components/Topbar";
 import { Library } from "./components/Library";
-import { Canvas } from "./components/Canvas";
+import { InfiniteCanvas } from "./components/InfiniteCanvas";
 import { useWebSocket } from "./lib/ws";
 
 export function App() {
@@ -10,7 +10,7 @@ export function App() {
       <Topbar />
       <div className="workspace">
         <Library />
-        <Canvas />
+        <InfiniteCanvas />
       </div>
     </div>
   );
