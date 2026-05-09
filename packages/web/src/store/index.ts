@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type {
-  Annotation, Diagram, DiagramId, GraphIR, LibraryEntry,
+  Annotation, Camera, Diagram, DiagramId, GraphIR, LibraryEntry, Tile,
 } from "@prixmaviz/shared";
 
 export type WsStatus = "idle" | "connecting" | "open" | "closed";
@@ -18,6 +18,14 @@ export interface AppState {
   // Cycle 2: annotations + mode
   annotations: Record<DiagramId, Annotation[]>;
   mode: CanvasMode;
+
+  // Cycle 2.plus: camera + tiles
+  camera: Camera;
+  tiles: Tile[];
+  setCamera: (c: Camera) => void;
+  setTiles: (t: Tile[]) => void;
+  upsertTile: (t: Tile) => void;
+  removeTile: (id: string) => void;
 
   setDiagram: (d: Diagram | null) => void;
   setRender: (diagramId: DiagramId, svg: string, dsl: string, ir?: GraphIR) => void;
@@ -79,4 +87,15 @@ export const useAppStore = create<AppState>((set) => ({
       },
     })),
   setMode: (m) => set({ mode: m }),
+
+  camera: { x: 0, y: 0, zoom: 1 },
+  tiles: [],
+  setCamera: (c) => set({ camera: c }),
+  setTiles: (t) => set({ tiles: t }),
+  upsertTile: (t) => set((s) => ({
+    tiles: s.tiles.some(x => x.id === t.id)
+      ? s.tiles.map(x => x.id === t.id ? t : x)
+      : [...s.tiles, t],
+  })),
+  removeTile: (id) => set((s) => ({ tiles: s.tiles.filter(x => x.id !== id) })),
 }));
