@@ -223,6 +223,17 @@ export async function handleApi(
     return Response.json({ ok: true });
   }
 
+  if (p === "/api/install" && req.method === "POST") {
+    const body = await req.json() as { host: "claude-code"; confirm: boolean };
+    const { dispatchTool } = await import("../mcp/tools");
+    try {
+      const result = await dispatchTool("install_mcp_plugin", body, deps as unknown as import("../mcp/tools").ToolCtx);
+      return Response.json(result);
+    } catch (e) {
+      return Response.json({ ok: false, error: String(e) }, { status: 500 });
+    }
+  }
+
   return undefined;
 }
 

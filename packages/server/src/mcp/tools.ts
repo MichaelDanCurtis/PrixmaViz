@@ -165,6 +165,19 @@ export const TOOLS: ToolDef[] = [
     },
     run: setView,
   },
+  {
+    name: "install_mcp_plugin",
+    description: "Write the PrixmaViz MCP entry into the host's config file. Idempotent. confirm=false returns the snippet without writing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        host: { type: "string", enum: ["claude-code", "codex", "vscode"] },
+        confirm: { type: "boolean" },
+      },
+      required: ["host", "confirm"],
+    },
+    run: installMcpPlugin,
+  },
 ];
 
 export async function dispatchTool(
@@ -344,4 +357,16 @@ async function setView(args: Record<string, unknown>, ctx: ToolCtx) {
   const w = ctx.workspace.get();
   ctx.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
   return { camera: w.camera, tiles: w.tiles };
+}
+
+async function installMcpPlugin(args: Record<string, unknown>, ctx: ToolCtx) {
+  const host = args.host as "claude-code";
+  const confirm = Boolean(args.confirm);
+  const { defaultConfigPath, mergeMcpConfig } = await import("./install");
+  const configPath = defaultConfigPath(host);
+  const binaryPath = process.execPath;
+  const snippet = JSON.stringify({ mcpServers: { prixmaviz: { command: binaryPath, args: ["--mcp"] } } }, null, 2);
+  if (!confirm) return { configPath, entryAdded: false, snippet, dryRun: true };
+  const result = mergeMcpConfig(configPath, binaryPath);
+  return { configPath: result.path, entryAdded: result.added, snippet: result.snippet };
 }
