@@ -116,4 +116,21 @@ export const api = {
   deleteTile: (tileId: string) =>
     fetch(`/api/tiles/${encodeURIComponent(tileId)}`, { method: "DELETE" })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
+
+  getSettings: () =>
+    fetch("/api/settings").then((r) => jsonOrThrow<{ krokiUrl: string }>(r)),
+
+  setSettings: (settings: { krokiUrl: string }) =>
+    fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(settings),
+    }).then((r) => jsonOrThrow<{ krokiUrl: string }>(r)),
+
+  testKrokiConnection: (url: string) =>
+    fetch("/api/settings/test-kroki", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    }).then((r) => r.json() as Promise<{ ok: boolean; status?: unknown; error?: string }>),
 };
