@@ -60,7 +60,7 @@ Example flow:
 User:  "Show me the TCP handshake."
 You:   [call create_diagram engine=plantuml kind=passthrough name="tcp-handshake",
         then apply_patch (or render_dsl) with the PlantUML source. Note the diagramId.]
-       "The handshake is in your PrixmaViz window — three exchanges
+       "The handshake is in your PrixmaViz tab — three exchanges
         between client and server."
 
 User:  "Show me TCP+TLS."
@@ -100,26 +100,25 @@ You called the render. You generated the IR/DSL. But you don't see the SVG the u
 
 If the user says "this looks wrong" and you can't determine why from those structured signals, ASK them to elaborate or annotate the problem area. Never hallucinate visual properties you can't verify.
 
-## Where the user views the diagram (REQUIRED in every render response)
+## After every render: tell the user where to look
 
-**After rendering, always call `get_view_url()` and include the URL in your response.** This URL works whether or not the user has the Tauri .app installed — the MCP server itself runs an embedded webview server.
+Call `get_view_url()` after you call `create_diagram`, `apply_patch`, or `render_dsl`. Include the URL in your response:
+
+> "Rendered your sequence diagram — view at http://127.0.0.1:<port>/.
+>  The browser tab should have opened automatically; if not, open the URL above."
+
+The MCP server auto-opens a browser tab on first startup. Subsequent renders update the same tab via WebSocket — no new tabs.
 
 Example:
 
 ```
 You:   [render the diagram]
-       [call get_view_url() → returns { url: "http://localhost:53412/" }]
-       "TCP handshake rendered. View it at http://localhost:53412/ — or open
-        your PrixmaViz desktop window if you have it installed."
+       [call get_view_url() → returns { url: "http://127.0.0.1:53412/" }]
+       "TCP handshake rendered — view at http://127.0.0.1:53412/.
+        The browser tab should have auto-opened; if not, open the URL above."
 ```
 
-**Don't gate rendering on the .app being installed.** The .app is optional polish. The URL is the source of truth. `check_app_running()` and `launch_app()` are still useful for users who do have the .app, but they're secondary — the browser URL works for everyone.
-
-If the user prefers the desktop app:
-1. Call `check_app_running()` — if `running: false`, ask: "Want me to launch your PrixmaViz desktop app? (it's optional — you can also click the URL above)"
-2. On yes, call `launch_app()`. If `launched: false` (no .app installed), tell the user honestly and point them at the URL.
-
-Never auto-launch the .app without user consent. The browser URL is always the safe fallback.
+If the user has the optional PrixmaViz desktop app (Tauri) installed and running, the AI's renders go there instead of the browser. You can detect this by calling `check_app_running` — but it's not necessary by default. Only check when the user explicitly asks about the desktop app.
 
 ## Tool surface available
 
