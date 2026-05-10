@@ -26,6 +26,9 @@
     "active": true,
     "targets": ["app", "dmg", "msi", "deb", "appimage"],
     "externalBin": ["binaries/prixmaviz-server"],
+    "resources": [
+      "resources/plugin/**/*"
+    ],
     "icon": ["icons/icon.png"]
   }
 }

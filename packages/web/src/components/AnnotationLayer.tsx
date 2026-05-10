@@ -4,6 +4,32 @@ import { useAppStore } from "../store";
 import { api } from "../lib/api";
 import { CommentPopup } from "./CommentPopup";
 
+function relativeSvgPos(
+  clientX: number,
+  clientY: number,
+  container: HTMLElement | null
+): { x: number; y: number } {
+  if (!container) return { x: 0, y: 0 };
+  // Find the rendered Mermaid/PlantUML/etc. SVG inside the container
+  const renderedSvg = container.querySelector("svg") as SVGSVGElement | null;
+  if (!renderedSvg) {
+    // Fallback to container-relative if no SVG (annotation overlay still works visually)
+    const rect = container.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+  // Convert viewport coords to SVG viewBox coords via the inverse screen CTM
+  const pt = renderedSvg.createSVGPoint();
+  pt.x = clientX;
+  pt.y = clientY;
+  const ctm = renderedSvg.getScreenCTM();
+  if (!ctm) {
+    const rect = container.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+  const svgPt = pt.matrixTransform(ctm.inverse());
+  return { x: svgPt.x, y: svgPt.y };
+}
+
 interface Props {
   diagramId: DiagramId;
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -26,24 +52,17 @@ export function AnnotationLayer({ diagramId, containerRef }: Props) {
       .catch(() => {});
   }, [diagramId, setAnnotations]);
 
-  function relativePos(e: React.MouseEvent): { x: number; y: number } {
-    const c = containerRef.current;
-    if (!c) return { x: 0, y: 0 };
-    const r = c.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
-  }
-
   function onMouseDown(e: React.MouseEvent) {
     if (mode !== "region") return;
     e.preventDefault();
-    const p = relativePos(e);
+    const p = relativeSvgPos(e.clientX, e.clientY, containerRef.current);
     startRef.current = p;
     setDrag({ x: p.x, y: p.y, w: 0, h: 0 });
   }
 
   function onMouseMove(e: React.MouseEvent) {
     if (mode !== "region" || !startRef.current) return;
-    const p = relativePos(e);
+    const p = relativeSvgPos(e.clientX, e.clientY, containerRef.current);
     const s = startRef.current;
     setDrag({
       x: Math.min(s.x, p.x),
@@ -75,7 +94,7 @@ export function AnnotationLayer({ diagramId, containerRef }: Props) {
   async function onClick(e: React.MouseEvent) {
     if (mode !== "pin" && mode !== "tag") return;
     if (drag) return;  // active drag handles its own commit
-    const p = relativePos(e);
+    const p = relativeSvgPos(e.clientX, e.clientY, containerRef.current);
     try {
       const created = await api.createAnnotation({
         diagramId,
@@ -111,7 +130,7 @@ export function AnnotationLayer({ diagramId, containerRef }: Props) {
           const onSelect = (e: React.MouseEvent) => {
             if (mode !== "select") return;
             e.stopPropagation();
-            const p = relativePos(e);
+            const p = relativeSvgPos(e.clientX, e.clientY, containerRef.current);
             setSelected({ ann: a, anchor: p });
           };
           if (a.kind === "region" && a.bboxPixel) {

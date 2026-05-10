@@ -40,3 +40,43 @@ describe("WorkspaceStore", () => {
     expect(c.zoom).toBe(4);
   });
 });
+
+describe("WorkspaceStore.focused", () => {
+  it("focus() sets lastFocused; getFocused() returns it", () => {
+    const s = new WorkspaceStore();
+    s.addTile({ id: "t1", diagramId: "d1", diagramSlug: "a", x: 0, y: 0, w: 200, h: 100, z: 0 });
+    s.focus("t1");
+    const f = s.getFocused();
+    expect(f?.id).toBe("t1");
+    expect(f?.diagramId).toBe("d1");
+  });
+
+  it("getFocused returns undefined when nothing focused", () => {
+    const s = new WorkspaceStore();
+    expect(s.getFocused()).toBeUndefined();
+  });
+
+  it("focus() updates lastFocused timestamp", async () => {
+    const s = new WorkspaceStore();
+    s.addTile({ id: "t1", diagramId: "d1", diagramSlug: "a", x: 0, y: 0, w: 200, h: 100, z: 0 });
+    s.addTile({ id: "t2", diagramId: "d2", diagramSlug: "b", x: 0, y: 0, w: 200, h: 100, z: 0 });
+    s.focus("t1");
+    await new Promise(r => setTimeout(r, 10));
+    s.focus("t2");
+    expect(s.getFocused()?.id).toBe("t2");
+  });
+
+  it("removeTile clears focus if removed tile was focused", () => {
+    const s = new WorkspaceStore();
+    s.addTile({ id: "t1", diagramId: "d1", diagramSlug: "a", x: 0, y: 0, w: 200, h: 100, z: 0 });
+    s.focus("t1");
+    s.removeTile("t1");
+    expect(s.getFocused()).toBeUndefined();
+  });
+
+  it("focus(id) on missing tile is a no-op", () => {
+    const s = new WorkspaceStore();
+    s.focus("nonexistent");
+    expect(s.getFocused()).toBeUndefined();
+  });
+});

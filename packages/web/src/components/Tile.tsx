@@ -14,6 +14,22 @@ export function Tile({ tile }: Props) {
   const camera = useAppStore((s) => s.camera);
   const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string>("");
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+
+  async function onExport(format: "svg" | "png" | "jpeg") {
+    setExportMenuOpen(false);
+    if (!svg) return;
+    const { svgToBlob, getExportFilename } = await import("../lib/export");
+    const blob = await svgToBlob(svg, format);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = getExportFilename(tile.diagramSlug, format);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 
   // Fetch the tile's SVG (load by slug). v1: use library/thumb endpoint
   useEffect(() => {
@@ -85,6 +101,23 @@ export function Tile({ tile }: Props) {
     >
       <div className="tile-header" onMouseDown={onHeaderDown}>
         <span className="tile-name">{tile.diagramSlug}</span>
+        <div className="tile-export-wrapper">
+          <button
+            className="tile-export"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); setExportMenuOpen((v) => !v); }}
+            title="Export"
+          >
+            ⬇ ▾
+          </button>
+          {exportMenuOpen && (
+            <div className="tile-export-menu" onMouseDown={(e) => e.stopPropagation()}>
+              <button onClick={() => onExport("svg")}>Save as SVG</button>
+              <button onClick={() => onExport("png")}>Save as PNG</button>
+              <button onClick={() => onExport("jpeg")}>Save as JPEG</button>
+            </div>
+          )}
+        </div>
         <button className="tile-close" onClick={onClose}>×</button>
       </div>
       <div className="tile-body">

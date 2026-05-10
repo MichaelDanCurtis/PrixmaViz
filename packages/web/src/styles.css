@@ -305,3 +305,51 @@ select {
   cursor: nwse-resize;
   background: linear-gradient(135deg, transparent 50%, #aaa 50%);
 }
+
+.settings-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.settings-panel {
+  background: #1a1d24; color: #e6e7eb; padding: 24px; border-radius: 12px;
+  min-width: 400px; max-width: 600px; box-shadow: 0 12px 48px rgba(0,0,0,0.6);
+}
+.settings-panel h2 { margin: 0 0 16px; font-size: 18px; }
+.settings-panel label { display: block; margin-bottom: 12px; }
+.settings-panel label span { display: block; font-size: 12px; color: #a0a3ad; margin-bottom: 4px; }
+.settings-panel input {
+  width: 100%; padding: 8px 10px; border-radius: 6px;
+  background: #0e0f12; color: #e6e7eb; border: 1px solid #2c2f3a;
+  font-family: ui-monospace, Menlo, monospace;
+}
+.settings-hint { font-size: 12px; color: #a0a3ad; line-height: 1.5; margin: 0 0 12px; }
+.settings-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.settings-status.ok { color: #22c55e; }
+.settings-status.fail { color: #ef4444; }
+.settings-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.settings-save { background: #7aa2f7; color: #0e0f12; border: 0; padding: 8px 14px; border-radius: 6px; }
+
+.topbar-button {
+  background: transparent; border: 1px solid #2c2f3a; color: #e6e7eb;
+  padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px;
+}
+.topbar-button:hover { background: #1a1d24; }
+
+.tile-export-wrapper { position: relative; }
+.tile-export {
+  background: transparent; border: 0; color: #888; cursor: pointer;
+  padding: 0 6px; font-size: 11px;
+}
+.tile-export:hover { color: #222; }
+.tile-export-menu {
+  position: absolute; top: 24px; right: 0; z-index: 50;
+  background: white; color: #222; border: 1px solid #ccc; border-radius: 6px;
+  display: flex; flex-direction: column; min-width: 140px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.tile-export-menu button {
+  background: transparent; border: 0; padding: 6px 12px; text-align: left;
+  cursor: pointer; font-size: 12px; color: #222;
+}
+.tile-export-menu button:hover { background: #f5f5f7; color: #222; }

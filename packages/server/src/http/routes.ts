@@ -140,6 +140,9 @@ export async function handleApi(
     }
 
     deps.annotations.add(body.diagramId, ann);
+    const wAnn = deps.workspace.get();
+    const owningTileAnn = wAnn.tiles.find(t => t.diagramId === body.diagramId);
+    if (owningTileAnn) deps.workspace.focus(owningTileAnn.id);
     deps.hub.broadcast({ type: "annotation:created", diagramId: body.diagramId, annotation: ann });
 
     // Schedule persist (debounced)
@@ -153,6 +156,9 @@ export async function handleApi(
     const body = (await req.json()) as { diagramId: DiagramId; patch: Partial<Annotation> };
     try {
       const updated = deps.annotations.update(body.diagramId, annId, body.patch);
+      const wUpd = deps.workspace.get();
+      const owningTileUpd = wUpd.tiles.find(t => t.diagramId === body.diagramId);
+      if (owningTileUpd) deps.workspace.focus(owningTileUpd.id);
       deps.hub.broadcast({ type: "annotation:updated", diagramId: body.diagramId, annotation: updated });
       schedulePersist(deps, body.diagramId);
       return Response.json({ annotation: updated });
@@ -196,6 +202,7 @@ export async function handleApi(
       w: body.w ?? 600, h: body.h ?? 400,
       z: 0,
     });
+    deps.workspace.focus(tile.id);
     deps.schedulePersistWorkspace();
     const w = deps.workspace.get();
     deps.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
@@ -208,6 +215,7 @@ export async function handleApi(
     const body = await req.json() as Partial<{ x: number; y: number; w: number; h: number; z: number }>;
     const tile = deps.workspace.updateTile(tileId, body);
     if (!tile) return Response.json({ ok: false, error: "tile not found" }, { status: 404 });
+    deps.workspace.focus(tileId);
     deps.schedulePersistWorkspace();
     const w = deps.workspace.get();
     deps.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
@@ -231,6 +239,33 @@ export async function handleApi(
       return Response.json(result);
     } catch (e) {
       return Response.json({ ok: false, error: String(e) }, { status: 500 });
+    }
+  }
+
+  // ─── Settings ────────────────────────────────────────────
+  if (p === "/api/settings" && req.method === "GET") {
+    const { readSettings } = await import("../settings/io");
+    const settings = await readSettings(deps.paths.settingsFile);
+    return Response.json(settings);
+  }
+
+  if (p === "/api/settings" && req.method === "PUT") {
+    const { writeSettings, defaultSettings } = await import("../settings/io");
+    const body = await req.json() as Partial<{ krokiUrl: string }>;
+    const merged = { ...defaultSettings(), ...body };
+    await writeSettings(deps.paths.settingsFile, merged);
+    return Response.json(merged);
+  }
+
+  if (p === "/api/settings/test-kroki" && req.method === "POST") {
+    const body = await req.json() as { url: string };
+    try {
+      const resp = await fetch(`${body.url}/health`, { signal: AbortSignal.timeout(3000) });
+      const ok = resp.ok;
+      const status = await resp.json().catch(() => null);
+      return Response.json({ ok, status });
+    } catch (e) {
+      return Response.json({ ok: false, error: String(e) }, { status: 502 });
     }
   }
 
@@ -311,6 +346,7 @@ async function loadDiagramBySlug(slug: string, deps: RouteDeps): Promise<Respons
     meta: file.meta,
   };
   deps.store.put(diagram);
+  deps.annotations.loadFromDiagram(id, file.annotations ?? []);
   const outcome = await renderDiagram(diagram, { kroki: deps.kroki });
   if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
   deps.store.setSvg(id, outcome.result.svg);

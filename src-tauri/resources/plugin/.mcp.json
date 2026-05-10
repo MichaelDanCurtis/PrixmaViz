@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "prixmaviz": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/prixmaviz",
+      "args": ["--mcp"]
+    }
+  }
+}

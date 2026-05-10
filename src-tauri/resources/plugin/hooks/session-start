@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# PrixmaViz CC plugin SessionStart hook
+# Prints a JSON SessionStart hookSpecificOutput payload that primes the AI to use PrixmaViz for visual content.
+
+cat <<'EOF'
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "PrixmaViz is installed as your visual collaborator. When the user wants any kind of diagram (flowchart, sequence, ER, architecture, packet layout, timing, chart, etc.), use the PrixmaViz MCP tools. After rendering, call get_view_url() and mention the URL — the user will see their diagram in a browser tab that auto-opens. Use apply_patch for in-place follow-ups (same conversation = same tile). See the diagram-rendering skill for engine selection."
+  }
+}
+EOF

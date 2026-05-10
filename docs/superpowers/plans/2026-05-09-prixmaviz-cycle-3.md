@@ -20,6 +20,131 @@
 
 ---
 
+## REVISION NOTE — applies to all tasks below (Wave 1 Task 1 findings)
+
+Wave 1 Task 1 research (committed at `53bc50f`, see `docs/cycle-3-research.md`) discovered that several plan assumptions were wrong. **Subagents implementing tasks 2-6 and 12-17 MUST follow these overrides instead of the original plan body.** The remaining tasks are unaffected.
+
+### Override 1 — Plugin payload structure (affects T3, T12-T17)
+
+| Original plan path | Real CC path |
+|---|---|
+| `src-tauri/resources/plugin/plugin.json` | `src-tauri/resources/plugin/.claude-plugin/plugin.json` |
+| (mcp servers in plugin.json) | `src-tauri/resources/plugin/.mcp.json` (separate file at plugin root) |
+| `skills/diagram-rendering.md` | `skills/diagram-rendering/SKILL.md` (each skill in its own subdir) |
+| `skills/annotation-followup.md` | `skills/annotation-followup/SKILL.md` |
+| `skills/diagram-review.md` | `skills/diagram-review/SKILL.md` |
+| `skills/diagram-evolve.md` | `skills/diagram-evolve/SKILL.md` |
+| `hooks/SessionStart.sh` | `hooks/hooks.json` + `hooks/session-start` (extensionless) |
+| `commands/prixmaviz.md` | `commands/prixmaviz.md` (unchanged path; verify frontmatter `description` field) |
+
+### Override 2 — `plugin.json` schema (affects T3)
+
+`plugin.json` does NOT include `mcpServers`, `skills`, `hooks`, or `commands` keys. It is metadata only:
+```json
+{
+  "name": "prixmaviz",
+  "description": "...",
+  "version": "0.3.0",
+  "author": { "name": "...", "email": "..." },
+  "homepage": "https://github.com/MichaelDanCurtis/PrixmaViz",
+  "repository": "https://github.com/MichaelDanCurtis/PrixmaViz",
+  "license": "MIT",
+  "keywords": ["diagram", "ai", "mcp", "kroki"]
+}
+```
+
+### Override 3 — `.mcp.json` schema (affects T3)
+
+The MCP server is declared at `<plugin-root>/.mcp.json` (root, not `.claude-plugin/`). Use `${CLAUDE_PLUGIN_ROOT}` for the binary path:
+```json
+{
+  "mcpServers": {
+    "prixmaviz": {
+      "type": "stdio",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/prixmaviz",
+      "args": ["--mcp", "--project-root", "${cwd}"]
+    }
+  }
+}
+```
+
+The bundled `prixmaviz` binary should be copied alongside the plugin into the plugin's `bin/` subdirectory at install time.
+
+### Override 4 — `hooks/hooks.json` schema (affects T16)
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/session-start\"",
+            "async": false
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The `hooks/session-start` script is extensionless bash. Must print JSON to stdout in the form:
+```json
+{ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": "<priming text>" } }
+```
+
+### Override 5 — Install strategy (affects T2, T4, T5)
+
+The plan originally had T2 fixing `defaultConfigPath` and T4-T5 manually copying the plugin directory. **Drop all manual `~/.claude.json` patching.** Use CC's plugin install flow instead:
+
+1. The `.app` bundles the plugin payload (T3 — unchanged in this regard, just the layout differs).
+2. The .app ALSO bundles a `marketplace.json` describing PrixmaViz as a single-plugin local marketplace.
+3. The first-launch dialog (T5) shells out to `claude plugins marketplace add <path>` then `claude plugins install prixmaviz`.
+4. CC reads the plugin's `.mcp.json` and registers the MCP server automatically. No manual JSON patching anywhere.
+5. Cycle 2.plus Wave 5's `mergeMcpConfig` becomes legacy / unused on the CC path. Leave the function in place for now (Cycle 6 Claude Desktop work may still need it); just don't call it from the Tauri install flow.
+
+If `claude` binary is not on PATH at install time, the dialog should detect this and tell the user "Install Claude Code first, then re-launch PrixmaViz."
+
+**Revised T2:** instead of fixing `defaultConfigPath`, T2 becomes "verify `claude` CLI is reachable from Tauri (via `which claude` or equivalent) and document the install flow's hard dependency on it."
+
+**Revised T4-T5:** instead of copying files via Rust, they shell out to `claude plugins marketplace add` and `claude plugins install`.
+
+### Override 6 — Skill subdirectories (affects T12-T15, T18)
+
+Each skill lives in its own subdirectory with `SKILL.md`. So a skill named `diagram-rendering` lives at:
+```
+src-tauri/resources/plugin/skills/diagram-rendering/
+  SKILL.md
+```
+
+The body content of the skill files (the prose Claude reads) is unchanged — only the file path/name changes from `<name>.md` to `<name>/SKILL.md`. Frontmatter stays the same (`name`, `description`).
+
+### Override 7 — Marketplace.json (NEW, affects T3)
+
+T3 must ALSO create `src-tauri/resources/plugin/.claude-plugin/marketplace.json`:
+```json
+{
+  "name": "prixmaviz-local",
+  "description": "Local marketplace for the PrixmaViz Claude Code plugin (bundled in the .app).",
+  "owner": { "name": "Michael Curtis" },
+  "plugins": [
+    {
+      "name": "prixmaviz",
+      "description": "AI-native diagram tool — 28+ engines, annotations, infinite canvas.",
+      "version": "0.3.0",
+      "source": "./"
+    }
+  ]
+}
+```
+
+This is what `claude plugins marketplace add` reads.
+
+---
+
 ## File Structure
 
 ### `~/.claude/plugins/prixmaviz/` (new — the plugin payload bundled in .app resources, copied at install)

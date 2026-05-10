@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "./args";
 import { ensureDirs, resolvePaths } from "./bootstrap";
+import { readSettings } from "./settings/io";
 import { writeLock, clearLock } from "./mcp/lockfile";
 import { handleApi } from "./http/routes";
 import { KrokiClient } from "./kroki/client";
@@ -27,7 +28,9 @@ async function runServer(): Promise<void> {
   const paths = resolvePaths(args.projectRoot);
   ensureDirs(paths);
 
-  const kroki = new KrokiClient({ baseUrl: args.krokiUrl });
+  const settings = await readSettings(paths.settingsFile);
+  const krokiBaseUrl = args.krokiUrl ?? settings.krokiUrl;
+  const kroki = new KrokiClient({ baseUrl: krokiBaseUrl });
   const store = new DiagramStore();
   const annotations = new AnnotationStore();
   const hub = new WsHub();

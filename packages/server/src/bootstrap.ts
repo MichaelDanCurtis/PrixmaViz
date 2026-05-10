@@ -9,6 +9,7 @@ export interface PrixmaPaths {
   stateDir: string;
   configFile: string;
   workspaceFile: string;
+  settingsFile: string;
 }
 
 export function resolvePaths(projectRoot: string): PrixmaPaths {
@@ -22,6 +23,11 @@ export function resolvePaths(projectRoot: string): PrixmaPaths {
     stateDir: join(prixmaDir, "state"),
     configFile: join(prixmaDir, "config.json"),
     workspaceFile: join(prixmaDir, "workspace.json"),
+    settingsFile: process.platform === "darwin"
+      ? `${process.env.HOME}/Library/Application Support/PrixmaViz/settings.json`
+      : process.platform === "linux"
+      ? `${process.env.HOME}/.config/prixmaviz/settings.json`
+      : `${process.env.APPDATA}/PrixmaViz/settings.json`,
   };
 }
 

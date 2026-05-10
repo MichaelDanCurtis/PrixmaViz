@@ -1,0 +1,16 @@
+{
+  "name": "prixmaviz-local",
+  "description": "Local marketplace for the PrixmaViz Claude Code plugin (bundled in the .app).",
+  "owner": {
+    "name": "Michael Curtis",
+    "email": "michaeldancurtis@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "prixmaviz",
+      "description": "AI-native diagram tool — 28+ engines, annotations, infinite canvas.",
+      "version": "0.3.0",
+      "source": "./"
+    }
+  ]
+}
