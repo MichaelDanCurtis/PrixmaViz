@@ -193,9 +193,15 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "launch_app",
-    description: "Launch the PrixmaViz Tauri app if it is not already running. Only call this AFTER the user has explicitly confirmed they want the app launched (do not surprise users by spawning windows).",
+    description: "Launch the PrixmaViz Tauri app if it is not already running. Only call this AFTER the user has explicitly confirmed they want the app launched (do not surprise users by spawning windows). NOTE: the .app is OPTIONAL — diagrams render with or without it. Prefer telling the user the URL from get_view_url instead of always pushing them to install the app.",
     inputSchema: { type: "object", properties: {} },
     run: launchAppTool,
+  },
+  {
+    name: "get_view_url",
+    description: "Return the URL where the user can view rendered diagrams in their browser. The MCP server itself runs an embedded HTTP+webview server, so this URL works whether or not the Tauri .app is installed. ALWAYS call this after rendering and include the URL in your response so the user can click through to see the diagram.",
+    inputSchema: { type: "object", properties: {} },
+    run: getViewUrl,
   },
 ];
 
@@ -407,4 +413,19 @@ async function launchAppTool(_args: Record<string, unknown>, _ctx: ToolCtx) {
     : "C:\\Program Files\\PrixmaViz\\PrixmaViz.exe";
   const launched = await launchApp(appPath);
   return { launched };
+}
+
+async function getViewUrl(_args: Record<string, unknown>, ctx: ToolCtx) {
+  const r = await isAppRunning(lockfilePath(ctx.paths.stateDir));
+  if (!r.running || !r.port) {
+    return {
+      url: null,
+      message: "No UI server reachable. The MCP-mode binary normally spawns one automatically; if you see this, the lockfile is missing.",
+    };
+  }
+  return {
+    url: `http://localhost:${r.port}/`,
+    port: r.port,
+    note: "This URL serves the same UI as the Tauri .app. The user can open it in any browser; no .app required.",
+  };
 }

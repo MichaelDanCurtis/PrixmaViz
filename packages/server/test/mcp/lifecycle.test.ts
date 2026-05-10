@@ -9,8 +9,8 @@ beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "lifecycle-")); });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
 describe("lockfilePath", () => {
-  it("appends instance.lock to stateDir", () => {
-    expect(lockfilePath("/tmp/state")).toBe("/tmp/state/instance.lock");
+  it("appends instance.json to stateDir", () => {
+    expect(lockfilePath("/tmp/state")).toBe("/tmp/state/instance.json");
   });
 });
 

@@ -6,7 +6,8 @@ export interface AppRunningResult {
 }
 
 export function lockfilePath(stateDir: string): string {
-  return `${stateDir}/instance.lock`;
+  // Note: must match the path used by writeLock callers in index.ts and mcp/server.ts.
+  return `${stateDir}/instance.json`;
 }
 
 export async function isAppRunning(path: string): Promise<AppRunningResult> {

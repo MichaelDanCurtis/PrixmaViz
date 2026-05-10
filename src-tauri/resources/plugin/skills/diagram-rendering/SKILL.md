@@ -5,7 +5,11 @@ description: Use whenever the user wants any kind of diagram, chart, flowchart, 
 
 # Diagram Rendering with PrixmaViz
 
-PrixmaViz is the user's visual partner. When the user asks for a diagram or describes content that visualizes well, render it via the PrixmaViz MCP tools instead of inline ASCII art. The user sees the diagram in their PrixmaViz window; you participate in a continuous back-and-forth conversation about it.
+PrixmaViz is the user's visual partner. When the user asks for a diagram or describes content that visualizes well, render it via the PrixmaViz MCP tools instead of inline ASCII art. The diagram appears in either:
+- The user's **browser** (the MCP server provides its own URL — works always, no installation required), or
+- The user's **PrixmaViz desktop window** if the .app is installed (richer experience, optional).
+
+Either way, you participate in a continuous back-and-forth conversation about the diagram. **Always tell the user where to view what you rendered** — the URL from `get_view_url()` is the reliable answer.
 
 ## When to render
 
@@ -96,15 +100,26 @@ You called the render. You generated the IR/DSL. But you don't see the SVG the u
 
 If the user says "this looks wrong" and you can't determine why from those structured signals, ASK them to elaborate or annotate the problem area. Never hallucinate visual properties you can't verify.
 
-## Server lifecycle
+## Where the user views the diagram (REQUIRED in every render response)
 
-At session start (or on first diagram intent), call `check_app_running()`. If `running: false`:
+**After rendering, always call `get_view_url()` and include the URL in your response.** This URL works whether or not the user has the Tauri .app installed — the MCP server itself runs an embedded webview server.
 
-1. Tell the user: "PrixmaViz isn't running — want me to launch it? (Y/n)"
-2. On yes, call `launch_app()`, wait briefly, proceed.
-3. On no, render anyway (state still persists) and say "Open PrixmaViz when you want to view it."
+Example:
 
-Never call `launch_app()` without explicit user confirmation. No surprise window-jumps.
+```
+You:   [render the diagram]
+       [call get_view_url() → returns { url: "http://localhost:53412/" }]
+       "TCP handshake rendered. View it at http://localhost:53412/ — or open
+        your PrixmaViz desktop window if you have it installed."
+```
+
+**Don't gate rendering on the .app being installed.** The .app is optional polish. The URL is the source of truth. `check_app_running()` and `launch_app()` are still useful for users who do have the .app, but they're secondary — the browser URL works for everyone.
+
+If the user prefers the desktop app:
+1. Call `check_app_running()` — if `running: false`, ask: "Want me to launch your PrixmaViz desktop app? (it's optional — you can also click the URL above)"
+2. On yes, call `launch_app()`. If `launched: false` (no .app installed), tell the user honestly and point them at the URL.
+
+Never auto-launch the .app without user consent. The browser URL is always the safe fallback.
 
 ## Tool surface available
 
@@ -116,8 +131,9 @@ Never call `launch_app()` without explicit user confirmation. No surprise window
 - `list_diagrams()` — library listing
 - `get_annotations(diagramId, includeResolved?)` — read user's marks
 - `get_focused_tile()` — which tile is "the current one"
-- `check_app_running()` — is the Tauri window up
-- `launch_app()` — launch it (only after user consent)
+- `get_view_url()` — **call after every render**; returns the browser URL where the diagram is viewable
+- `check_app_running()` — optional; is the Tauri desktop app running (browser URL works regardless)
+- `launch_app()` — optional; launch the Tauri desktop app (only after user consent; gracefully degrades if .app not installed)
 - `update_tile(tileId, patch)` — move/resize/focus
 - `set_view({camera?, arrange?})` — viewport + auto-arrange
 - `install_mcp_plugin(host, confirm)` — for advanced reinstall flows; users normally don't need this

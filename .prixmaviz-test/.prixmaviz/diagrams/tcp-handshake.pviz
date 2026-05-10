@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "d_ae51b8abaf9249b1",
+  "name": "tcp-handshake",
+  "engine": "plantuml",
+  "kind": "passthrough",
+  "dsl": "@startuml\ntitle TCP 3-Way Handshake\nparticipant Client\nparticipant Server\nClient -> Server: SYN (seq=x)\nServer -> Client: SYN-ACK (seq=y, ack=x+1)\nClient -> Server: ACK (ack=y+1)\n== Connection Established ==\nClient -> Server: Data\nServer -> Client: ACK\n@enduml\n",
+  "meta": {
+    "createdAt": "2026-05-10T03:59:30.835Z",
+    "updatedAt": "2026-05-10T03:59:30.835Z",
+    "tags": [],
+    "sourcePaths": []
+  }
+}

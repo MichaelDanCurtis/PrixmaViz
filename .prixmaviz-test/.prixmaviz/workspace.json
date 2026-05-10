@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "camera": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "tiles": [
+    {
+      "id": "t_b2a75f3a8eb3",
+      "diagramId": "d_ae51b8abaf9249b1",
+      "diagramSlug": "tcp-handshake",
+      "x": 60,
+      "y": 60,
+      "w": 600,
+      "h": 400,
+      "z": 0
+    }
+  ]
+}
