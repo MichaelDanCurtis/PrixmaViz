@@ -98,6 +98,23 @@ export async function runMcp(args: CliArgs): Promise<void> {
 
     const bundleStatus = existsSync(webDist) ? "found" : "missing";
     console.error(`prixmaviz mcp+ui port=${httpServer.port} project=${paths.projectRoot} web=${webDist} (${bundleStatus})`);
+
+    // Auto-launch browser to the embedded UI so the user can SEE diagrams the AI renders.
+    // Suppress with PRIXMAVIZ_NO_BROWSER=1 (e.g., headless test environments, CI, container hosts).
+    if (!process.env.PRIXMAVIZ_NO_BROWSER) {
+      const url = `http://127.0.0.1:${httpServer.port}/`;
+      try {
+        if (process.platform === "darwin") {
+          Bun.spawn(["open", url], { stdout: "ignore", stderr: "ignore" });
+        } else if (process.platform === "linux") {
+          Bun.spawn(["xdg-open", url], { stdout: "ignore", stderr: "ignore" });
+        } else if (process.platform === "win32") {
+          Bun.spawn(["cmd", "/c", "start", "", url], { stdout: "ignore", stderr: "ignore" });
+        }
+      } catch {
+        // best-effort; if the open command fails, the user can still navigate manually
+      }
+    }
   }
 
   const server = new Server(
