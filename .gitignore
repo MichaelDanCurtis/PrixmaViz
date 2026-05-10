@@ -13,3 +13,6 @@ src-tauri/binaries/prixmaviz-server-*
 src-tauri/Cargo.lock
 src-tauri/gen/
 cdt-screenshots/
+
+# Plugin sidecar binary (built by build:bin, not tracked in git)
+src-tauri/resources/plugin/bin/
