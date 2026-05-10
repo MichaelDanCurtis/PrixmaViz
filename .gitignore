@@ -16,3 +16,6 @@ cdt-screenshots/
 
 # Plugin sidecar binary (built by build:bin, not tracked in git)
 src-tauri/resources/plugin/bin/
+
+# Runtime test project roots
+.prixmaviz-test/
