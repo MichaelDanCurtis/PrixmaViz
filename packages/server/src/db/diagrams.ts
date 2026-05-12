@@ -80,6 +80,13 @@ export async function getDiagram(sql: Sql, workspaceId: string, id: string): Pro
   return rows.length > 0 ? rowToDiagram(rows[0]!) : null;
 }
 
+export async function getDiagramBySlug(sql: Sql, workspaceId: string, slug: string): Promise<DbDiagram | null> {
+  const rows = await sql`
+    SELECT * FROM diagrams WHERE slug = ${slug} AND workspace_id = ${workspaceId}
+  `;
+  return rows.length > 0 ? rowToDiagram(rows[0]!) : null;
+}
+
 export async function listDiagrams(sql: Sql, workspaceId: string): Promise<DbDiagram[]> {
   const rows = await sql`
     SELECT * FROM diagrams WHERE workspace_id = ${workspaceId}

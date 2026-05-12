@@ -52,6 +52,14 @@ export async function updateWorkspaceName(sql: Sql, id: string, name: string | n
   await sql`UPDATE workspaces SET name = ${name}, updated_at = now() WHERE id = ${id}`;
 }
 
+export async function updateWorkspaceSettings(sql: Sql, id: string, settings: Record<string, unknown>): Promise<void> {
+  await sql`
+    UPDATE workspaces
+    SET settings = ${sql.json(settings as Parameters<Sql["json"]>[0])}, updated_at = now()
+    WHERE id = ${id}
+  `;
+}
+
 export async function deleteWorkspace(sql: Sql, id: string): Promise<void> {
   await sql`DELETE FROM workspaces WHERE id = ${id}`;
 }

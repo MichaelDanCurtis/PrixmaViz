@@ -1,26 +1,34 @@
 import {
   ALL_ENGINES, emptyGraphIR, emptyMeta, inferKind,
-  type Diagram, type DiagramEngine, type DiagramId, type GraphIR,
-  type LibraryEntry, type PatchOp, type ServerToClient,
+  type Camera, type Diagram, type DiagramEngine, type GraphIR,
+  type PatchOp, type ServerToClient, type Tile,
 } from "@prixmaviz/shared";
+import type postgres from "postgres";
 import { applyPatch } from "../ir/engine";
-import type { KrokiClient } from "../kroki/client";
-import type { PrixmaPaths } from "../bootstrap";
-import { listPvizEntries, readPviz, writePviz } from "../pviz/io";
-import { renderDiagram } from "../render";
-import { DiagramStore, newDiagramId } from "../store/diagrams";
-import type { WsHub } from "../ws/broadcast";
-import { AnnotationStore } from "../annotations/store";
-import { WorkspaceStore } from "../canvas/store";
 import { arrange } from "../canvas/arrange";
-import { isAppRunning, launchApp, lockfilePath } from "./lifecycle";
+import type { KrokiClient } from "../kroki/client";
+import { renderDiagram } from "../render";
+import type { WsHub } from "../ws/broadcast";
+import {
+  createDiagram as dbCreateDiagram,
+  getDiagram as dbGetDiagram,
+  getDiagramBySlug as dbGetDiagramBySlug,
+  listDiagrams as dbListDiagrams,
+  updateDiagram as dbUpdateDiagram,
+  type DbDiagram,
+} from "../db/diagrams";
+import { listAnnotations as dbListAnnotations } from "../db/annotations";
+import {
+  getWorkspace as dbGetWorkspace,
+  updateWorkspaceCamera as dbUpdateWorkspaceCamera,
+  updateWorkspaceTiles as dbUpdateWorkspaceTiles,
+} from "../db/workspaces";
+
+type Sql = ReturnType<typeof postgres>;
 
 export interface ToolCtx {
-  paths: PrixmaPaths;
-  store: DiagramStore;
-  annotations: AnnotationStore;
-  workspace: WorkspaceStore;
-  schedulePersistWorkspace: () => void;
+  sql: Sql;
+  workspaceId: string;
   kroki: KrokiClient;
   hub: WsHub;
 }
@@ -35,7 +43,7 @@ export interface ToolDef {
 export const TOOLS: ToolDef[] = [
   {
     name: "create_diagram",
-    description: "Create a new diagram in memory. Not saved to disk until save_diagram.",
+    description: "Create a new diagram in the workspace. Persisted immediately.",
     inputSchema: {
       type: "object",
       properties: {
@@ -46,7 +54,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ["name", "engine"],
     },
-    run: createDiagram,
+    run: createDiagramImpl,
   },
   {
     name: "apply_patch",
@@ -59,11 +67,11 @@ export const TOOLS: ToolDef[] = [
       },
       required: ["diagramId", "ops"],
     },
-    run: applyPatchTool,
+    run: applyPatchImpl,
   },
   {
     name: "save_diagram",
-    description: "Persist diagram to <project>/.prixmaviz/diagrams/<slug>.pviz with sibling SVG.",
+    description: "Update diagram metadata (name, tags). Diagrams are auto-persisted on every change in the new model; this is a metadata-only update.",
     inputSchema: {
       type: "object",
       properties: {
@@ -73,21 +81,21 @@ export const TOOLS: ToolDef[] = [
       },
       required: ["diagramId"],
     },
-    run: saveDiagram,
+    run: saveDiagramImpl,
   },
   {
     name: "load_diagram",
-    description: "Load a saved .pviz diagram back into memory by name (slug).",
+    description: "Load a saved diagram by slug within the workspace.",
     inputSchema: {
       type: "object",
       properties: { name: { type: "string" } },
       required: ["name"],
     },
-    run: loadDiagram,
+    run: loadDiagramImpl,
   },
   {
     name: "list_diagrams",
-    description: "List saved diagrams in the project library.",
+    description: "List diagrams in the current workspace.",
     inputSchema: {
       type: "object",
       properties: {
@@ -95,7 +103,7 @@ export const TOOLS: ToolDef[] = [
         search: { type: "string" },
       },
     },
-    run: listDiagrams,
+    run: listDiagramsImpl,
   },
   {
     name: "render_dsl",
@@ -109,7 +117,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ["engine", "source"],
     },
-    run: renderDsl,
+    run: renderDslImpl,
   },
   {
     name: "get_annotations",
@@ -122,7 +130,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ["diagramId"],
     },
-    run: getAnnotations,
+    run: getAnnotationsImpl,
   },
   {
     name: "update_tile",
@@ -142,7 +150,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ["tileId", "patch"],
     },
-    run: updateTile,
+    run: updateTileImpl,
   },
   {
     name: "set_view",
@@ -164,44 +172,19 @@ export const TOOLS: ToolDef[] = [
         },
       },
     },
-    run: setView,
-  },
-  {
-    name: "install_mcp_plugin",
-    description: "Write the PrixmaViz MCP entry into the host's config file. Idempotent. confirm=false returns the snippet without writing.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        host: { type: "string", enum: ["claude-code", "codex", "vscode"] },
-        confirm: { type: "boolean" },
-      },
-      required: ["host", "confirm"],
-    },
-    run: installMcpPlugin,
+    run: setViewImpl,
   },
   {
     name: "get_focused_tile",
-    description: "Return the tile most recently interacted with (clicked, dragged, annotated, or AI-patched). Use this to resolve deictic references like 'this', 'that', 'the highlighted area' — the focused tile is what the user is talking about.",
+    description: "Return the tile most recently interacted with (clicked, dragged, annotated, or AI-patched). Use this to resolve deictic references like 'this', 'that', 'the highlighted area'.",
     inputSchema: { type: "object", properties: {} },
-    run: getFocusedTile,
-  },
-  {
-    name: "check_app_running",
-    description: "Check whether the PrixmaViz Tauri app is currently running. Use BEFORE rendering a diagram so you know whether the user can see your output. If running=false, ASK the user before launching the app.",
-    inputSchema: { type: "object", properties: {} },
-    run: checkAppRunning,
-  },
-  {
-    name: "launch_app",
-    description: "Launch the PrixmaViz Tauri app if it is not already running. Only call this AFTER the user has explicitly confirmed they want the app launched (do not surprise users by spawning windows). NOTE: the .app is OPTIONAL — diagrams render with or without it. Prefer telling the user the URL from get_view_url instead of always pushing them to install the app.",
-    inputSchema: { type: "object", properties: {} },
-    run: launchAppTool,
+    run: getFocusedTileImpl,
   },
   {
     name: "get_view_url",
-    description: "Return the URL where the user can view rendered diagrams in their browser. The MCP server itself runs an embedded HTTP+webview server, so this URL works whether or not the Tauri .app is installed. ALWAYS call this after rendering and include the URL in your response so the user can click through to see the diagram.",
+    description: "Return the URL where the user can view rendered diagrams in their browser. The server hosts the UI; this URL works whether or not the Tauri .app is installed. ALWAYS call this after rendering and include the URL in your response.",
     inputSchema: { type: "object", properties: {} },
-    run: getViewUrl,
+    run: getViewUrlImpl,
   },
 ];
 
@@ -215,114 +198,28 @@ export async function dispatchTool(
   return await tool.run(args, ctx);
 }
 
-async function createDiagram(args: Record<string, unknown>, ctx: ToolCtx) {
-  const name = args.name as string;
-  const engine = args.engine as DiagramEngine;
-  const kind = (args.kind as Diagram["kind"]) ?? inferKind(engine);
-  const id: DiagramId = newDiagramId();
-  const diagram: Diagram = {
-    id,
-    name,
-    engine,
-    kind,
-    ir: kind === "graph" ? emptyGraphIR() : undefined,
-    dsl: kind === "passthrough" ? (args.initialDsl as string) ?? "" : undefined,
-    meta: emptyMeta(),
+// ───────────────────────────────────────────────────────────────────────────
+// Helpers
+// ───────────────────────────────────────────────────────────────────────────
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "diagram";
+}
+
+function dbDiagramToDomain(d: DbDiagram): Diagram {
+  return {
+    id: d.id,
+    name: d.name,
+    engine: d.engine,
+    kind: d.kind,
+    ir: d.ir ?? undefined,
+    dsl: d.dsl ?? undefined,
+    meta: (d.meta as unknown as Diagram["meta"]) ?? emptyMeta(),
   };
-  ctx.store.put(diagram);
-  const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
-  if (!outcome.ok) throw new Error(outcome.error);
-  broadcast(ctx.hub, diagram, outcome.result.svg, outcome.warnings);
-  return { diagramId: id, render: outcome.result };
-}
-
-async function applyPatchTool(args: Record<string, unknown>, ctx: ToolCtx) {
-  const id = args.diagramId as DiagramId;
-  const ops = args.ops as PatchOp[];
-  const d = ctx.store.get(id);
-  if (!d) throw new Error("diagram not found");
-  if (d.kind !== "graph" || !d.ir) throw new Error("patches only valid on graph diagrams");
-  const result = applyPatch(d.ir, ops);
-  if (!result.ok) {
-    throw new Error(`patch failed at op ${result.opIndex}: ${result.error}`);
-  }
-  d.ir = result.ir;
-  d.meta.updatedAt = new Date().toISOString();
-  const outcome = await renderDiagram(d, { kroki: ctx.kroki });
-  if (!outcome.ok) throw new Error(outcome.error);
-  const warnings = [...result.warnings, ...outcome.warnings];
-  broadcast(ctx.hub, d, outcome.result.svg, warnings);
-  return { diagramId: id, ir: d.ir, render: outcome.result, warnings };
-}
-
-async function saveDiagram(args: Record<string, unknown>, ctx: ToolCtx) {
-  const id = args.diagramId as DiagramId;
-  const d = ctx.store.get(id);
-  if (!d) throw new Error("diagram not found");
-  if (args.name) d.name = args.name as string;
-  if (args.tags) d.meta.tags = args.tags as string[];
-  d.meta.updatedAt = new Date().toISOString();
-  const outcome = await renderDiagram(d, { kroki: ctx.kroki });
-  if (!outcome.ok) throw new Error(outcome.error);
-  const written = await writePviz(ctx.paths.diagramsDir, d, outcome.result.svg);
-  return { path: written.path, meta: d.meta };
-}
-
-async function loadDiagram(args: Record<string, unknown>, ctx: ToolCtx) {
-  const name = args.name as string;
-  const slug = name.endsWith(".pviz") ? name.replace(/\.pviz$/, "") : name;
-  const path = `${ctx.paths.diagramsDir}/${slug}.pviz`;
-  const file = await readPviz(path);
-  const id: DiagramId = file.id;
-  const diagram: Diagram = {
-    id,
-    name: file.name,
-    engine: file.engine,
-    kind: file.kind,
-    ir: file.ir,
-    dsl: file.dsl,
-    meta: file.meta,
-  };
-  ctx.store.put(diagram);
-  const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
-  if (!outcome.ok) throw new Error(outcome.error);
-  broadcast(ctx.hub, diagram, outcome.result.svg, outcome.warnings);
-  return { diagramId: id, ir: diagram.ir, dsl: diagram.dsl, render: outcome.result };
-}
-
-async function listDiagrams(args: Record<string, unknown>, ctx: ToolCtx) {
-  const tag = args.tag as string | undefined;
-  const search = args.search as string | undefined;
-  let entries: LibraryEntry[] = await listPvizEntries(ctx.paths.diagramsDir);
-  if (tag) entries = entries.filter((e) => e.tags.includes(tag));
-  if (search) {
-    const q = search.toLowerCase();
-    entries = entries.filter(
-      (e) => e.name.toLowerCase().includes(q) || e.tags.some((t) => t.toLowerCase().includes(q)),
-    );
-  }
-  return { diagrams: entries };
-}
-
-async function renderDsl(args: Record<string, unknown>, ctx: ToolCtx) {
-  const engine = args.engine as DiagramEngine;
-  const source = args.source as string;
-  const name = args.name as string | undefined;
-  const id: DiagramId = newDiagramId();
-  const diagram: Diagram = {
-    id,
-    name: name ?? "untitled",
-    engine,
-    kind: "passthrough",
-    dsl: source,
-    meta: emptyMeta(),
-  };
-  ctx.store.put(diagram);
-  const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
-  if (!outcome.ok) throw new Error(outcome.error);
-  if (name) await writePviz(ctx.paths.diagramsDir, diagram, outcome.result.svg);
-  broadcast(ctx.hub, diagram, outcome.result.svg, outcome.warnings);
-  return { diagramId: id, render: outcome.result };
 }
 
 function broadcast(hub: WsHub, d: Diagram, svg: string, warnings: string[]): void {
@@ -337,95 +234,245 @@ function broadcast(hub: WsHub, d: Diagram, svg: string, warnings: string[]): voi
   hub.broadcast(msg);
 }
 
-async function getAnnotations(args: Record<string, unknown>, ctx: ToolCtx) {
-  const id = args.diagramId as DiagramId;
-  const includeResolved = Boolean(args.includeResolved);
-  const all = ctx.annotations.listByDiagram(id);
-  const filtered = includeResolved ? all : all.filter(a => !a.resolvedAt);
-  return { annotations: filtered };
+async function broadcastWorkspace(ctx: ToolCtx): Promise<void> {
+  const ws = await dbGetWorkspace(ctx.sql, ctx.workspaceId);
+  if (!ws) return;
+  ctx.hub.broadcast({ type: "workspace", camera: ws.camera, tiles: ws.tiles });
 }
 
-async function updateTile(args: Record<string, unknown>, ctx: ToolCtx) {
+// ───────────────────────────────────────────────────────────────────────────
+// Tool implementations
+// ───────────────────────────────────────────────────────────────────────────
+
+async function createDiagramImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const name = args.name as string;
+  const engine = args.engine as DiagramEngine;
+  const kind = (args.kind as Diagram["kind"]) ?? inferKind(engine);
+  const slug = slugify(name);
+  const initialDsl = (args.initialDsl as string | undefined) ?? "";
+  const ir: GraphIR | undefined = kind === "graph" ? emptyGraphIR() : undefined;
+  const dsl: string | undefined = kind === "passthrough" ? initialDsl : undefined;
+
+  const row = await dbCreateDiagram(ctx.sql, {
+    workspaceId: ctx.workspaceId,
+    slug,
+    name,
+    engine,
+    kind,
+    ir,
+    dsl,
+  });
+  const diagram = dbDiagramToDomain(row);
+  const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
+  if (!outcome.ok) throw new Error(outcome.error);
+  await dbUpdateDiagram(ctx.sql, ctx.workspaceId, row.id, { svg: outcome.result.svg });
+  broadcast(ctx.hub, diagram, outcome.result.svg, outcome.warnings);
+  return { diagramId: row.id, slug: row.slug, render: outcome.result };
+}
+
+async function applyPatchImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const id = args.diagramId as string;
+  const ops = args.ops as PatchOp[];
+  const row = await dbGetDiagram(ctx.sql, ctx.workspaceId, id);
+  if (!row) throw new Error("diagram not found");
+  if (row.kind !== "graph" || !row.ir) throw new Error("patches only valid on graph diagrams");
+  const result = applyPatch(row.ir, ops);
+  if (!result.ok) {
+    throw new Error(`patch failed at op ${result.opIndex}: ${result.error}`);
+  }
+  await dbUpdateDiagram(ctx.sql, ctx.workspaceId, id, { ir: result.ir });
+  const diagram = dbDiagramToDomain({ ...row, ir: result.ir });
+  const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
+  if (!outcome.ok) throw new Error(outcome.error);
+  await dbUpdateDiagram(ctx.sql, ctx.workspaceId, id, { svg: outcome.result.svg });
+  const warnings = [...result.warnings, ...outcome.warnings];
+  broadcast(ctx.hub, diagram, outcome.result.svg, warnings);
+  return { diagramId: id, ir: result.ir, render: outcome.result, warnings };
+}
+
+async function saveDiagramImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const id = args.diagramId as string;
+  const row = await dbGetDiagram(ctx.sql, ctx.workspaceId, id);
+  if (!row) throw new Error("diagram not found");
+  const patch: Parameters<typeof dbUpdateDiagram>[3] = {};
+  if (args.name !== undefined) patch.name = args.name as string;
+  if (args.tags !== undefined) {
+    const meta = { ...(row.meta as Record<string, unknown>), tags: args.tags };
+    patch.meta = meta;
+  }
+  const updated = await dbUpdateDiagram(ctx.sql, ctx.workspaceId, id, patch);
+  return { diagram: updated };
+}
+
+async function loadDiagramImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const name = args.name as string;
+  const slug = name.endsWith(".pviz") ? name.replace(/\.pviz$/, "") : name;
+  const row = await dbGetDiagramBySlug(ctx.sql, ctx.workspaceId, slug);
+  if (!row) throw new Error("diagram not found");
+  const diagram = dbDiagramToDomain(row);
+  const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
+  if (!outcome.ok) throw new Error(outcome.error);
+  await dbUpdateDiagram(ctx.sql, ctx.workspaceId, row.id, { svg: outcome.result.svg });
+  broadcast(ctx.hub, diagram, outcome.result.svg, outcome.warnings);
+  return { diagramId: row.id, ir: diagram.ir, dsl: diagram.dsl, render: outcome.result };
+}
+
+async function listDiagramsImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const tag = args.tag as string | undefined;
+  const search = args.search as string | undefined;
+  const rows = await dbListDiagrams(ctx.sql, ctx.workspaceId);
+  let filtered = rows;
+  if (tag) {
+    filtered = filtered.filter((d) => {
+      const tags = (d.meta as { tags?: string[] }).tags;
+      return Array.isArray(tags) && tags.includes(tag);
+    });
+  }
+  if (search) {
+    const q = search.toLowerCase();
+    filtered = filtered.filter((d) => {
+      if (d.name.toLowerCase().includes(q)) return true;
+      const tags = (d.meta as { tags?: string[] }).tags;
+      if (Array.isArray(tags) && tags.some((t) => t.toLowerCase().includes(q))) return true;
+      return false;
+    });
+  }
+  return {
+    diagrams: filtered.map((d) => ({
+      id: d.id,
+      slug: d.slug,
+      name: d.name,
+      engine: d.engine,
+      kind: d.kind,
+      updatedAt: d.updatedAt,
+    })),
+  };
+}
+
+async function renderDslImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const engine = args.engine as DiagramEngine;
+  const source = args.source as string;
+  const name = (args.name as string | undefined) ?? "untitled";
+  const slug = slugify(name);
+  const row = await dbCreateDiagram(ctx.sql, {
+    workspaceId: ctx.workspaceId,
+    slug,
+    name,
+    engine,
+    kind: "passthrough",
+    dsl: source,
+  });
+  const diagram = dbDiagramToDomain(row);
+  const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
+  if (!outcome.ok) throw new Error(outcome.error);
+  await dbUpdateDiagram(ctx.sql, ctx.workspaceId, row.id, { svg: outcome.result.svg });
+  broadcast(ctx.hub, diagram, outcome.result.svg, outcome.warnings);
+  return { diagramId: row.id, slug: row.slug, render: outcome.result };
+}
+
+async function getAnnotationsImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const diagramId = args.diagramId as string;
+  const includeResolved = Boolean(args.includeResolved);
+  // Authorization: verify diagram belongs to this workspace before reading annotations.
+  const d = await dbGetDiagram(ctx.sql, ctx.workspaceId, diagramId);
+  if (!d) throw new Error("diagram not found");
+  const annotations = await dbListAnnotations(ctx.sql, diagramId, { includeResolved });
+  return { annotations };
+}
+
+interface FocusableTile extends Tile {
+  focused?: boolean;
+  lastFocusedAt?: string;
+}
+
+async function updateTileImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   const tileId = args.tileId as string;
   const patch = args.patch as { x?: number; y?: number; w?: number; h?: number; focused?: boolean };
-  const tile = ctx.workspace.updateTile(tileId, {
+  const ws = await dbGetWorkspace(ctx.sql, ctx.workspaceId);
+  if (!ws) throw new Error("workspace not found");
+  const tiles = ws.tiles as FocusableTile[];
+  const idx = tiles.findIndex((t) => t.id === tileId);
+  if (idx < 0) throw new Error("tile not found");
+  const current = tiles[idx]!;
+  const next: FocusableTile = {
+    ...current,
     ...(patch.x !== undefined ? { x: patch.x } : {}),
     ...(patch.y !== undefined ? { y: patch.y } : {}),
     ...(patch.w !== undefined ? { w: patch.w } : {}),
     ...(patch.h !== undefined ? { h: patch.h } : {}),
-  });
-  if (!tile) throw new Error("tile not found");
+  };
+  const nextTiles = [...tiles];
+  nextTiles[idx] = next;
+
   if (patch.focused) {
-    ctx.workspace.setCamera({
-      x: tile.x + tile.w / 2 - 400,
-      y: tile.y + tile.h / 2 - 300,
+    // Clear focused from all others, set on this one
+    for (let i = 0; i < nextTiles.length; i++) {
+      const t = nextTiles[i]!;
+      if (i === idx) {
+        nextTiles[i] = { ...t, focused: true, lastFocusedAt: new Date().toISOString() };
+      } else if (t.focused) {
+        nextTiles[i] = { ...t, focused: false };
+      }
+    }
+    const camera: Camera = {
+      x: next.x + next.w / 2 - 400,
+      y: next.y + next.h / 2 - 300,
       zoom: 1,
-    });
+    };
+    await dbUpdateWorkspaceCamera(ctx.sql, ctx.workspaceId, camera);
   }
-  ctx.schedulePersistWorkspace();
-  const w = ctx.workspace.get();
-  ctx.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
-  return { tile };
+  await dbUpdateWorkspaceTiles(ctx.sql, ctx.workspaceId, nextTiles);
+  await broadcastWorkspace(ctx);
+  return { tile: nextTiles[idx] };
 }
 
-async function setView(args: Record<string, unknown>, ctx: ToolCtx) {
-  const camera = args.camera as { x: number; y: number; zoom: number } | undefined;
-  const arr = args.arrange as { style: "grid" | "horizontal" | "vertical"; diagrams: string[]; padding?: number } | undefined;
-  if (camera) ctx.workspace.setCamera(camera);
+async function setViewImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const camera = args.camera as Camera | undefined;
+  const arr = args.arrange as
+    | { style: "grid" | "horizontal" | "vertical"; diagrams: string[]; padding?: number }
+    | undefined;
+
+  if (camera) {
+    await dbUpdateWorkspaceCamera(ctx.sql, ctx.workspaceId, camera);
+  }
   if (arr) {
-    const w = ctx.workspace.get();
-    const subset = w.tiles.filter(t => arr.diagrams.includes(t.diagramId));
+    const ws = await dbGetWorkspace(ctx.sql, ctx.workspaceId);
+    if (!ws) throw new Error("workspace not found");
+    const tiles = ws.tiles as Tile[];
+    const subset = tiles.filter((t) => arr.diagrams.includes(t.diagramId));
     const arranged = arrange(subset, arr.style, arr.padding ?? 20);
-    for (const t of arranged) ctx.workspace.updateTile(t.id, { x: t.x, y: t.y });
+    const byId = new Map(arranged.map((t) => [t.id, t]));
+    const nextTiles = tiles.map((t) => {
+      const a = byId.get(t.id);
+      return a ? { ...t, x: a.x, y: a.y } : t;
+    });
+    await dbUpdateWorkspaceTiles(ctx.sql, ctx.workspaceId, nextTiles);
   }
-  ctx.schedulePersistWorkspace();
-  const w = ctx.workspace.get();
-  ctx.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
-  return { camera: w.camera, tiles: w.tiles };
+  const ws = await dbGetWorkspace(ctx.sql, ctx.workspaceId);
+  if (!ws) throw new Error("workspace not found");
+  ctx.hub.broadcast({ type: "workspace", camera: ws.camera, tiles: ws.tiles });
+  return { camera: ws.camera, tiles: ws.tiles };
 }
 
-async function installMcpPlugin(args: Record<string, unknown>, ctx: ToolCtx) {
-  const host = args.host as "claude-code";
-  const confirm = Boolean(args.confirm);
-  const { defaultConfigPath, mergeMcpConfig } = await import("./install");
-  const configPath = defaultConfigPath(host);
-  const binaryPath = process.execPath;
-  const snippet = JSON.stringify({ mcpServers: { prixmaviz: { command: binaryPath, args: ["--mcp"] } } }, null, 2);
-  if (!confirm) return { configPath, entryAdded: false, snippet, dryRun: true };
-  const result = mergeMcpConfig(configPath, binaryPath);
-  return { configPath: result.path, entryAdded: result.added, snippet: result.snippet };
-}
-
-async function getFocusedTile(_args: Record<string, unknown>, ctx: ToolCtx) {
-  const focused = ctx.workspace.getFocused();
+async function getFocusedTileImpl(_args: Record<string, unknown>, ctx: ToolCtx) {
+  const ws = await dbGetWorkspace(ctx.sql, ctx.workspaceId);
+  if (!ws) return { tile: null };
+  const tiles = ws.tiles as FocusableTile[];
+  const focused = tiles.find((t) => t.focused);
   return { tile: focused ?? null };
 }
 
-async function checkAppRunning(_args: Record<string, unknown>, ctx: ToolCtx) {
-  return await isAppRunning(lockfilePath(ctx.paths.stateDir));
-}
-
-async function launchAppTool(_args: Record<string, unknown>, _ctx: ToolCtx) {
-  const appPath = process.platform === "darwin"
-    ? "/Applications/PrixmaViz.app"
-    : process.platform === "linux"
-    ? "/usr/local/bin/prixmaviz"
-    : "C:\\Program Files\\PrixmaViz\\PrixmaViz.exe";
-  const launched = await launchApp(appPath);
-  return { launched };
-}
-
-async function getViewUrl(_args: Record<string, unknown>, ctx: ToolCtx) {
-  const r = await isAppRunning(lockfilePath(ctx.paths.stateDir));
-  if (!r.running || !r.port) {
+async function getViewUrlImpl(_args: Record<string, unknown>, _ctx: ToolCtx) {
+  const url = process.env.PRIXMAVIZ_PUBLIC_URL;
+  if (!url) {
     return {
       url: null,
-      message: "No UI server reachable. The MCP-mode binary normally spawns one automatically; if you see this, the lockfile is missing.",
+      message: "PRIXMAVIZ_PUBLIC_URL not set",
     };
   }
   return {
-    url: `http://localhost:${r.port}/`,
-    port: r.port,
+    url,
     note: "This URL serves the same UI as the Tauri .app. The user can open it in any browser; no .app required.",
   };
 }
+
