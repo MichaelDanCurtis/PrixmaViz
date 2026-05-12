@@ -307,6 +307,19 @@ export async function handleApi(
     return Response.json(ws);
   }
 
+  if (p === "/api/workspace" && req.method === "DELETE") {
+    const { deleteWorkspace } = await import("../db/workspaces");
+    await deleteWorkspace(deps.sql, workspaceId);
+    return Response.json({ ok: true });
+  }
+
+  if (p === "/api/workspace/name" && req.method === "PUT") {
+    const body = await req.json() as { name: string | null };
+    const { updateWorkspaceName } = await import("../db/workspaces");
+    await updateWorkspaceName(deps.sql, workspaceId, body.name);
+    return Response.json({ name: body.name });
+  }
+
   if (p === "/api/workspace/camera" && req.method === "PUT") {
     const body = await req.json() as Camera;
     await dbUpdateWorkspaceCamera(deps.sql, workspaceId, body);

@@ -329,6 +329,22 @@ select {
 .settings-status.fail { color: #ef4444; }
 .settings-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .settings-save { background: #7aa2f7; color: #0e0f12; border: 0; padding: 8px 14px; border-radius: 6px; }
+.settings-save:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.settings-danger {
+  margin-top: 20px; padding: 14px;
+  border: 1px solid rgba(247, 118, 142, 0.4); border-radius: 8px;
+  background: rgba(247, 118, 142, 0.06);
+}
+.settings-danger h3 {
+  margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--err);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.settings-danger-button {
+  background: transparent; color: var(--err); border: 1px solid var(--err);
+  padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;
+}
+.settings-danger-button:hover { background: var(--err); color: #0e0f12; }
 
 .topbar-button {
   background: transparent; border: 1px solid #2c2f3a; color: #e6e7eb;
