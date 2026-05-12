@@ -3,7 +3,8 @@
   "version": "0.4.0",
   "type": "module",
   "scripts": {
-    "build:bin": "bun build src/index.ts --compile --outfile ../../dist/prixmaviz-mcp"
+    "build:bin": "bun build src/index.ts --compile --outfile ../../dist/prixmaviz-mcp",
+    "build:all": "bun run build.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
