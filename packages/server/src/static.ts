@@ -1,5 +1,4 @@
 import { join, normalize, resolve } from "node:path";
-import { EMBEDDED } from "./embedded";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -27,18 +26,6 @@ export interface StaticDeps {
 
 export async function serveStatic(pathname: string, deps: StaticDeps): Promise<Response> {
   const safe = "/" + normalize(pathname).replace(/^\/+/, "");
-
-  const embeddedPath = EMBEDDED[safe];
-  if (embeddedPath) {
-    return new Response(Bun.file(embeddedPath), { headers: { "Content-Type": mimeFor(safe) } });
-  }
-  const embeddedIndex = EMBEDDED["/index.html"];
-  if (embeddedIndex && safe !== "/index.html") {
-    return new Response(Bun.file(embeddedIndex), {
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-    });
-  }
-
   const rel = safe.replace(/^\/+/, "");
   const full = resolve(deps.webDist, rel);
   if (!full.startsWith(deps.webDist)) return new Response("forbidden", { status: 403 });
