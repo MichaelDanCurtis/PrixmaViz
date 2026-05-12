@@ -7,6 +7,7 @@ COPY package.json bun.lock tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/web/package.json packages/web/
 COPY packages/server/package.json packages/server/
+COPY packages/shim/package.json packages/shim/
 RUN bun install --frozen-lockfile
 COPY packages/shared packages/shared
 COPY packages/web packages/web
@@ -20,6 +21,7 @@ COPY package.json bun.lock tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/server/package.json packages/server/
 COPY packages/web/package.json packages/web/
+COPY packages/shim/package.json packages/shim/
 RUN bun install --frozen-lockfile
 COPY packages/shared packages/shared
 COPY packages/server packages/server
