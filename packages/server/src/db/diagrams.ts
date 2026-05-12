@@ -43,7 +43,7 @@ function rowToDiagram(row: Record<string, unknown>): DbDiagram {
 }
 
 function newDiagramId(): string {
-  return `d_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  return `d_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 }
 
 export async function createDiagram(sql: Sql, input: {
@@ -104,6 +104,7 @@ export async function updateDiagram(sql: Sql, workspaceId: string, id: string, p
   if (patch.meta !== undefined) updates.meta = sql.json(patch.meta as unknown as JSONLike);
 
   if (Object.keys(updates).length === 0) {
+    // no-op: empty patch returns current row without touching updated_at
     return await getDiagram(sql, workspaceId, id);
   }
 

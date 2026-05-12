@@ -78,6 +78,18 @@ describe("diagrams repo", () => {
     expect(fetched?.svg).toBe("<svg/>");
   });
 
+  it("updateDiagram returns null for diagrams in other workspaces (no leak)", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const a = await createWorkspace(sql);
+    const b = await createWorkspace(sql);
+    const d = await createDiagram(sql, { workspaceId: a.id, slug: "x", name: "X", engine: "mermaid", kind: "graph" });
+    const result = await updateDiagram(sql, b.id, d.id, { name: "renamed" });
+    expect(result).toBeNull();
+    // verify original row untouched
+    const original = await getDiagram(sql, a.id, d.id);
+    expect(original?.name).toBe("X");
+  });
+
   it("setDiagramPublic toggles public_view", async () => {
     const sql = getDb(TEST_DB_URL);
     const ws = await createWorkspace(sql);
