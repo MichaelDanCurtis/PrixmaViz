@@ -211,4 +211,11 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url }),
     }).then((r) => r.json() as Promise<{ ok: boolean; status?: unknown; error?: string }>),
+
+  setDiagramVisibility: (id: string, isPublic: boolean) =>
+    authFetch(`/api/diagrams/${encodeURIComponent(id)}/visibility`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ public: isPublic }),
+    }).then((r) => jsonOrThrow<{ public: boolean; publicUrl?: string }>(r)),
 };

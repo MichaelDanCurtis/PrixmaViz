@@ -131,6 +131,20 @@ export async function handleApi(
     return await saveDiagramRoute(id, body, workspaceId, deps);
   }
 
+  const visMatch = p.match(/^\/api\/diagrams\/([^/]+)\/visibility$/);
+  if (visMatch && req.method === "POST") {
+    const diagramId = visMatch[1]!;
+    const body = await req.json() as { public: boolean };
+    const { setDiagramPublic } = await import("../db/diagrams");
+    const existing = await dbGetDiagram(deps.sql, workspaceId, diagramId);
+    if (!existing) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+    await setDiagramPublic(deps.sql, workspaceId, diagramId, body.public);
+    const publicUrl = body.public
+      ? `${process.env.PRIXMAVIZ_PUBLIC_URL ?? ""}/p/${diagramId}`
+      : undefined;
+    return Response.json({ public: body.public, publicUrl });
+  }
+
   if (p === "/api/render-dsl" && req.method === "POST") {
     const body = await req.json() as { engine: DiagramEngine; source: string; name?: string };
     return await renderDslRoute(body, workspaceId, deps);

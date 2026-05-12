@@ -424,3 +424,24 @@ select {
 }
 .empty-state-promo-card:hover { border-color: #7aa2f7; }
 .empty-state-promo-card span { color: #a0a3ad; font-size: 12px; }
+
+.public-toggle-wrapper { position: relative; display: inline-flex; align-items: center; }
+.public-toggle {
+  background: transparent; border: 0; color: #888; cursor: pointer;
+  padding: 0 6px; font-size: 12px; line-height: 1;
+}
+.public-toggle:hover { color: #222; }
+.public-toggle-popover {
+  position: absolute; top: 24px; right: 0; z-index: 50;
+  background: white; color: #222; border: 1px solid #ccc; border-radius: 6px;
+  display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
+  min-width: 240px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-size: 12px;
+}
+.public-toggle-popover label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.public-toggle-hint { margin: 6px 0 4px; color: #555; font-size: 11px; }
+.public-toggle-url {
+  width: 100%; padding: 4px 6px; border: 1px solid #d0d0d4; border-radius: 4px;
+  font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #222;
+  background: #f7f7f9;
+}
+.public-toggle-error { color: #c0392b; font-size: 11px; margin: 4px 0 0; }
