@@ -3,7 +3,7 @@
 # ── Stage 1: build web bundle ──────────────────────────────────────
 FROM oven/bun:1.3-alpine AS web-build
 WORKDIR /app
-COPY package.json bun.lock ./
+COPY package.json bun.lock tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/web/package.json packages/web/
 COPY packages/server/package.json packages/server/
@@ -16,7 +16,7 @@ RUN cd packages/web && bun run build
 # ── Stage 2: build server ──────────────────────────────────────────
 FROM oven/bun:1.3-alpine AS server-build
 WORKDIR /app
-COPY package.json bun.lock ./
+COPY package.json bun.lock tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/server/package.json packages/server/
 COPY packages/web/package.json packages/web/
