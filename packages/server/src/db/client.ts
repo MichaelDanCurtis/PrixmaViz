@@ -8,7 +8,8 @@ let configuredUrl: string | null = null;
 export function getDb(databaseUrl: string): Sql {
   if (instance && configuredUrl === databaseUrl) return instance;
   if (instance) {
-    instance.end({ timeout: 5 });
+    // fire-and-forget; keep getDb sync. drain in background.
+    instance.end({ timeout: 5 }).catch(() => {});
     instance = null;
   }
   instance = postgres(databaseUrl, {

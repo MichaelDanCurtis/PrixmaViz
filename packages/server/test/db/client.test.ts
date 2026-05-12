@@ -17,4 +17,11 @@ describe("db client", () => {
     expect(a).toBe(b);
     closeDb();
   });
+
+  it("getDb returns a different instance when URL changes", () => {
+    const a = getDb(TEST_DB_URL);
+    const b = getDb(TEST_DB_URL.replace("/prixmaviz_test", "/prixmaviz_other"));
+    expect(a).not.toBe(b);
+    closeDb();
+  });
 });
