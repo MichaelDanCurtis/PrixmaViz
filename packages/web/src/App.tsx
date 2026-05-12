@@ -5,6 +5,7 @@ import { InfiniteCanvas } from "./components/InfiniteCanvas";
 import { useWebSocket } from "./lib/ws";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { UninstallDialog } from "./components/UninstallDialog";
+import { Footer } from "./components/Footer";
 import { ensureWorkspaceId } from "./lib/api";
 import { useAppStore } from "./store";
 
@@ -76,6 +77,7 @@ export function App() {
         <Library />
         <InfiniteCanvas />
       </div>
+      <Footer workspaceUrl={window.location.href} />
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
       {uninstallOpen && <UninstallDialog onClose={() => setUninstallOpen(false)} />}
     </div>

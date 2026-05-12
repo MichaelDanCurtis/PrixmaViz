@@ -82,7 +82,7 @@ select {
 .app {
   height: 100%;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto 1fr auto;
 }
 
 .topbar {
@@ -359,3 +359,18 @@ select {
   height: 100%; color: var(--muted); font-size: 14px;
 }
 .app-bootstrapping-error { color: var(--err); }
+
+.prixma-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 16px; height: 32px;
+  background: #0e0f12; border-top: 1px solid #2c2f3a;
+  color: #a0a3ad; font-size: 11px;
+}
+.prixma-footer a { color: #a0a3ad; text-decoration: none; }
+.prixma-footer a:hover { color: #e6e7eb; }
+.prixma-footer-chip {
+  padding: 2px 8px; border: 1px solid #2c2f3a; border-radius: 4px; margin-right: 6px;
+}
+.prixma-footer-chip:hover { border-color: #7aa2f7; }
+.prixma-footer-promo-label { margin-right: 6px; }
+.prixma-footer-url { font-family: ui-monospace, Menlo, monospace; font-size: 10px; }
