@@ -353,3 +353,9 @@ select {
   cursor: pointer; font-size: 12px; color: #222;
 }
 .tile-export-menu button:hover { background: #f5f5f7; color: #222; }
+
+.app-bootstrapping {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; color: var(--muted); font-size: 14px;
+}
+.app-bootstrapping-error { color: var(--err); }

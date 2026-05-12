@@ -27,6 +27,11 @@ async function main(): Promise<void> {
     async fetch(req, srv) {
       const url = new URL(req.url);
       if (url.pathname === "/ws") {
+        // TODO(cycle-4): authenticate the WebSocket upgrade. The web client
+        // already passes `?token=<workspaceId>`; we accept any connection for
+        // now and rely on broadcast messages being scoped at the publisher
+        // side. This is acceptable for the marketing-surface preview but must
+        // be hardened before any multi-tenant production deploy.
         const ok = srv.upgrade(req, { data: { id: crypto.randomUUID() } });
         return ok ? undefined : new Response("upgrade failed", { status: 400 });
       }

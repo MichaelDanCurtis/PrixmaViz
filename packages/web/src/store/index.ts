@@ -7,6 +7,12 @@ export type WsStatus = "idle" | "connecting" | "open" | "closed";
 export type CanvasMode = "select" | "region" | "pin" | "tag";
 
 export interface AppState {
+  // Cycle 4: workspace identity
+  workspaceId: string | null;
+  workspaceName: string | null;
+  setWorkspaceId: (id: string | null) => void;
+  setWorkspaceName: (n: string | null) => void;
+
   diagram: Diagram | null;
   svg: string;
   dsl: string;
@@ -42,6 +48,11 @@ export interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
+  workspaceId: null,
+  workspaceName: null,
+  setWorkspaceId: (workspaceId) => set({ workspaceId }),
+  setWorkspaceName: (workspaceName) => set({ workspaceName }),
+
   diagram: null,
   svg: "",
   dsl: "",
