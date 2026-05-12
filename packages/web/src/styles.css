@@ -374,3 +374,28 @@ select {
 .prixma-footer-chip:hover { border-color: #7aa2f7; }
 .prixma-footer-promo-label { margin-right: 6px; }
 .prixma-footer-url { font-family: ui-monospace, Menlo, monospace; font-size: 10px; }
+
+.welcome-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  display: flex; align-items: center; justify-content: center; z-index: 200;
+}
+.welcome-panel {
+  background: #1a1d24; color: #e6e7eb; padding: 32px; border-radius: 12px;
+  max-width: 480px; box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+}
+.welcome-panel h2 { margin: 0 0 16px; font-size: 22px; }
+.welcome-panel p { margin: 0 0 12px; line-height: 1.5; }
+.welcome-url {
+  background: #0e0f12; padding: 10px 14px; border-radius: 6px;
+  font-family: ui-monospace, Menlo, monospace; font-size: 13px;
+  word-break: break-all;
+}
+.welcome-warning { color: #f7768e; }
+.welcome-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.welcome-actions button {
+  background: #7aa2f7; color: #0e0f12; border: 0;
+  padding: 8px 16px; border-radius: 6px; cursor: pointer;
+}
+.welcome-actions button:last-child {
+  background: transparent; color: #a0a3ad; border: 1px solid #2c2f3a;
+}

@@ -6,6 +6,7 @@ import { useWebSocket } from "./lib/ws";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { UninstallDialog } from "./components/UninstallDialog";
 import { Footer } from "./components/Footer";
+import { WelcomePanel } from "./components/WelcomePanel";
 import { ensureWorkspaceId } from "./lib/api";
 import { useAppStore } from "./store";
 
@@ -14,8 +15,11 @@ export function App() {
   const [uninstallOpen, setUninstallOpen] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const workspaceId = useAppStore((s) => s.workspaceId);
   const setWorkspaceId = useAppStore((s) => s.setWorkspaceId);
+  const welcomeSeen = useAppStore((s) => s.welcomeSeen);
+  const setWelcomeSeen = useAppStore((s) => s.setWelcomeSeen);
 
   // Bootstrap the workspace UUID before mounting anything that hits /api/*.
   useEffect(() => {
@@ -78,6 +82,13 @@ export function App() {
         <InfiniteCanvas />
       </div>
       <Footer workspaceUrl={window.location.href} />
+      {!welcomeSeen && !welcomeDismissed && (
+        <WelcomePanel
+          workspaceUrl={window.location.href}
+          onDismiss={() => setWelcomeDismissed(true)}
+          onNeverShowAgain={() => setWelcomeSeen(true)}
+        />
+      )}
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
       {uninstallOpen && <UninstallDialog onClose={() => setUninstallOpen(false)} />}
     </div>

@@ -13,6 +13,10 @@ export interface AppState {
   setWorkspaceId: (id: string | null) => void;
   setWorkspaceName: (n: string | null) => void;
 
+  // Cycle 4: first-session welcome panel
+  welcomeSeen: boolean;
+  setWelcomeSeen: (v: boolean) => void;
+
   diagram: Diagram | null;
   svg: string;
   dsl: string;
@@ -52,6 +56,14 @@ export const useAppStore = create<AppState>((set) => ({
   workspaceName: null,
   setWorkspaceId: (workspaceId) => set({ workspaceId }),
   setWorkspaceName: (workspaceName) => set({ workspaceName }),
+
+  welcomeSeen:
+    typeof localStorage !== "undefined" &&
+    localStorage.getItem("prixmaviz_welcome_seen") === "1",
+  setWelcomeSeen: (v) => {
+    try { localStorage.setItem("prixmaviz_welcome_seen", v ? "1" : "0"); } catch {}
+    set({ welcomeSeen: v });
+  },
 
   diagram: null,
   svg: "",
