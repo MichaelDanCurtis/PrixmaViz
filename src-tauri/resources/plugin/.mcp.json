@@ -1,8 +1,12 @@
 {
   "mcpServers": {
     "prixmaviz": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/bin/prixmaviz",
-      "args": ["--mcp"]
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/prixmaviz-mcp",
+      "args": [],
+      "env": {
+        "PRIXMAVIZ_REMOTE_URL": "https://prixmaviz.alexis.com",
+        "PRIXMAVIZ_WORKSPACE": "${PRIXMAVIZ_WORKSPACE:-}"
+      }
     }
   }
 }
