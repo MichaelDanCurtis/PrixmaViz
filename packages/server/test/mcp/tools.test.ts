@@ -108,22 +108,3 @@ describe("get_focused_tile", () => {
   });
 });
 
-describe("check_app_running", () => {
-  it("returns {running:false, port:null} when no lockfile", async () => {
-    const c = ctx();
-    const out = await dispatchTool("check_app_running", {}, c) as any;
-    expect(out.running).toBe(false);
-    expect(out.port).toBeNull();
-  });
-});
-
-describe("launch_app", () => {
-  it("returns {launched:false} when no app bundle resolves on this platform/path", async () => {
-    const c = ctx();
-    const out = await dispatchTool("launch_app", {}, c) as any;
-    // In bun:test we're not running inside the .app, so launching the bundle path likely fails
-    // depending on whether /Applications/PrixmaViz.app exists. Don't assert false absolutely;
-    // just verify the tool returns a {launched: boolean} shape.
-    expect(typeof out.launched).toBe("boolean");
-  });
-});

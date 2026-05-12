@@ -110,4 +110,20 @@ describe("HTTP workspace routes (auth + isolation)", () => {
     // 401 is also acceptable.
     expect(resp?.status === 404 || resp?.status === 401).toBe(true);
   });
+
+  it("rejects /api/annotations POST with foreign workspace's diagramId (annotation isolation)", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const a = await createWorkspace(sql);
+    const b = await createWorkspace(sql);
+    const da = await createDiagram(sql, { workspaceId: a.id, slug: "secret", name: "S", engine: "mermaid", kind: "graph" });
+    const deps = { sql, kroki: new KrokiClient(), hub: new WsHub() };
+    // Workspace B tries to add an annotation to workspace A's diagram
+    const req = new Request("http://x/api/annotations", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${b.id}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ diagramId: da.id, kind: "tag", text: "hijack" }),
+    });
+    const resp = await handleApi(req, new URL(req.url), deps);
+    expect(resp?.status).toBe(404); // diagram not found in workspace B's scope
+  });
 });
