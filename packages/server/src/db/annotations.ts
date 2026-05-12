@@ -2,6 +2,12 @@ import type postgres from "postgres";
 import type { Annotation } from "@prixmaviz/shared";
 
 type Sql = ReturnType<typeof postgres>;
+
+// SECURITY: this repo is scoped by diagramId only. Callers MUST verify
+// that the diagramId belongs to the authenticated workspace before invoking
+// any of these functions — see auth/bearer.ts + http/routes.ts for the
+// enforcement layer.
+
 type JSONLike = Parameters<Sql["json"]>[0];
 
 function rowToAnnotation(row: Record<string, unknown>): Annotation {
@@ -20,8 +26,8 @@ function rowToAnnotation(row: Record<string, unknown>): Annotation {
   };
 }
 
-export async function addAnnotation(sql: Sql, diagramId: string, a: Annotation): Promise<void> {
-  await sql`
+export async function addAnnotation(sql: Sql, diagramId: string, a: Annotation): Promise<Annotation> {
+  const rows = await sql`
     INSERT INTO annotations (id, diagram_id, kind, text, color, resolved_at, target_nodes, bbox_pixel, bbox_data, point, nearest_node, created_at)
     VALUES (
       ${a.id},
@@ -37,7 +43,9 @@ export async function addAnnotation(sql: Sql, diagramId: string, a: Annotation):
       ${a.nearestNode ?? null},
       ${a.createdAt}
     )
+    RETURNING *
   `;
+  return rowToAnnotation(rows[0]!);
 }
 
 export async function listAnnotations(sql: Sql, diagramId: string, opts: { includeResolved: boolean }): Promise<Annotation[]> {
