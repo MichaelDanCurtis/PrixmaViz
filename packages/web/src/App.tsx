@@ -7,10 +7,25 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { UninstallDialog } from "./components/UninstallDialog";
 import { Footer } from "./components/Footer";
 import { WelcomePanel } from "./components/WelcomePanel";
+import { PublicDiagram } from "./pages/PublicDiagram";
 import { ensureWorkspaceId } from "./lib/api";
 import { useAppStore } from "./store";
 
+function getPublicDiagramId(): string | null {
+  const m = /^\/p\/([a-z0-9_-]+)\/?$/i.exec(window.location.pathname);
+  return m ? m[1]! : null;
+}
+
 export function App() {
+  // Public read-only view — completely bypasses workspace bootstrap and auth.
+  const publicDiagramId = getPublicDiagramId();
+  if (publicDiagramId) {
+    return <PublicDiagram diagramId={publicDiagramId} />;
+  }
+  return <WorkspaceApp />;
+}
+
+function WorkspaceApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uninstallOpen, setUninstallOpen] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);

@@ -75,9 +75,46 @@ export async function handleApi(
     return Response.json({ id: ws.id });
   }
 
-  if (p.startsWith("/p/")) {
-    // Task 22 will implement public diagram views.
+  // ─── Public diagram views (no auth) ───────────────────────
+  // /p/:id.svg — raw SVG, iframe-friendly
+  const pubSvgMatch = p.match(/^\/p\/([a-z0-9_-]+)\.svg$/i);
+  if (pubSvgMatch && req.method === "GET") {
+    const diagramId = pubSvgMatch[1]!;
+    const { getPublicDiagram } = await import("../db/diagrams");
+    const d = await getPublicDiagram(deps.sql, diagramId);
+    if (!d || !d.svg) return new Response("Not Found", { status: 404 });
+    return new Response(d.svg, {
+      status: 200,
+      headers: {
+        "Content-Type": "image/svg+xml; charset=utf-8",
+        "X-Frame-Options": "ALLOWALL",
+        "Content-Security-Policy": "frame-ancestors *",
+      },
+    });
+  }
+
+  // /p/:id — confirm existence, then fall through to the SPA index.html
+  const pubViewMatch = p.match(/^\/p\/([a-z0-9_-]+)$/i);
+  if (pubViewMatch && req.method === "GET") {
+    const diagramId = pubViewMatch[1]!;
+    const { getPublicDiagram } = await import("../db/diagrams");
+    const d = await getPublicDiagram(deps.sql, diagramId);
+    if (!d) return new Response("Not Found", { status: 404 });
+    // Fall through — let the static handler serve index.html and the SPA
+    // renders /p/<id> client-side via PublicDiagram.
     return undefined;
+  }
+
+  // JSON API for the SPA — also no auth
+  const pubApiMatch = p.match(/^\/api\/public\/diagrams\/([a-z0-9_-]+)$/i);
+  if (pubApiMatch && req.method === "GET") {
+    const diagramId = pubApiMatch[1]!;
+    const { getPublicDiagram } = await import("../db/diagrams");
+    const d = await getPublicDiagram(deps.sql, diagramId);
+    if (!d) return Response.json({ ok: false, error: "not found" }, { status: 404 });
+    return Response.json({
+      id: d.id, name: d.name, engine: d.engine, kind: d.kind, svg: d.svg, dsl: d.dsl,
+    });
   }
 
   if (!p.startsWith("/api/")) return undefined;

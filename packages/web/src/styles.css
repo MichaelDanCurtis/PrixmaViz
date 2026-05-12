@@ -445,3 +445,34 @@ select {
   background: #f7f7f9;
 }
 .public-toggle-error { color: #c0392b; font-size: 11px; margin: 4px 0 0; }
+
+.public-diagram {
+  min-height: 100vh; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--fg);
+}
+.public-header {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.public-header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.public-engine {
+  font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.public-svg {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 32px; background:
+    radial-gradient(circle at 1px 1px, #1a1d24 1px, transparent 0) 0 0 / 24px 24px,
+    var(--bg);
+}
+.public-svg svg { max-width: 100%; max-height: 100%; background: white; padding: 24px; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+.public-footer {
+  padding: 12px 24px; border-top: 1px solid var(--border);
+  background: var(--panel); font-size: 11px; color: var(--muted); text-align: center;
+}
+.public-footer a { color: var(--muted); text-decoration: none; }
+.public-footer a:hover { color: var(--fg); }
+.public-error, .public-loading {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 14px;
+}
+.public-error { color: var(--err); }
