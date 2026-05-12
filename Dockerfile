@@ -6,6 +6,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/web/package.json packages/web/
+COPY packages/server/package.json packages/server/
 RUN bun install --frozen-lockfile
 COPY packages/shared packages/shared
 COPY packages/web packages/web
@@ -18,6 +19,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/server/package.json packages/server/
+COPY packages/web/package.json packages/web/
 RUN bun install --frozen-lockfile
 COPY packages/shared packages/shared
 COPY packages/server packages/server
