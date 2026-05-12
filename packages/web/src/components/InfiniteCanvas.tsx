@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useAppStore } from "../store";
 import { Tile } from "./Tile";
+import { EmptyStateCards } from "./EmptyStateCards";
 import { api } from "../lib/api";
 import { clampCamera } from "@prixmaviz/shared";
+
+const DEFAULT_PROMO_CARDS: Array<{ name: string; href: string; tagline: string }> = [];
 
 export function InfiniteCanvas() {
   const camera = useAppStore((s) => s.camera);
@@ -68,6 +71,18 @@ export function InfiniteCanvas() {
       onWheel={onWheel}
     >
       <div className="infinite-canvas-bg" />
+      {tiles.length === 0 && (
+        <div className="infinite-canvas-empty">
+          <div className="infinite-canvas-empty-headline">
+            <h2>No diagrams yet</h2>
+            <p>
+              Ask your AI assistant to render a diagram, or open one from the
+              library on the left.
+            </p>
+          </div>
+          <EmptyStateCards cards={DEFAULT_PROMO_CARDS} />
+        </div>
+      )}
       <div
         className="canvas-plane"
         style={{

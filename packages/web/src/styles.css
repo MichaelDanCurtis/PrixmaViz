@@ -399,3 +399,28 @@ select {
 .welcome-actions button:last-child {
   background: transparent; color: #a0a3ad; border: 1px solid #2c2f3a;
 }
+
+.infinite-canvas-empty {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.infinite-canvas-empty-headline {
+  text-align: center; color: var(--muted); max-width: 480px; padding: 0 24px;
+  pointer-events: auto;
+}
+.infinite-canvas-empty-headline h2 {
+  font-size: 18px; margin: 0 0 8px; color: var(--fg); font-weight: 600;
+}
+.infinite-canvas-empty-headline p { font-size: 13px; line-height: 1.5; margin: 0; }
+
+.empty-state-promo { margin-top: 32px; text-align: center; pointer-events: auto; }
+.empty-state-promo-label { color: #a0a3ad; font-size: 12px; margin-bottom: 12px; }
+.empty-state-promo-cards { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.empty-state-promo-card {
+  display: flex; flex-direction: column; gap: 4px;
+  background: #1a1d24; border: 1px solid #2c2f3a; border-radius: 6px;
+  padding: 12px 16px; min-width: 180px; text-decoration: none; color: #e6e7eb;
+}
+.empty-state-promo-card:hover { border-color: #7aa2f7; }
+.empty-state-promo-card span { color: #a0a3ad; font-size: 12px; }
