@@ -155,6 +155,27 @@ export async function handleApi(
     }
   }
 
+  const mcpMatch = p.match(/^\/api\/mcp\/([a-z_]+)$/);
+  if (mcpMatch && req.method === "POST") {
+    const toolName = mcpMatch[1]!;
+    const args = await req.json().catch(() => ({}));
+    const { dispatchTool } = await import("../mcp/tools");
+    try {
+      const result = await dispatchTool(toolName, args as Record<string, unknown>, {
+        sql: deps.sql,
+        workspaceId,
+        kroki: deps.kroki,
+        hub: deps.hub,
+      });
+      return Response.json(result);
+    } catch (e) {
+      return Response.json(
+        { ok: false, error: e instanceof Error ? e.message : String(e) },
+        { status: 400 },
+      );
+    }
+  }
+
   // ─── Annotations ─────────────────────────────────────────
   const annListMatch = p.match(/^\/api\/diagrams\/([^/]+)\/annotations$/);
   if (annListMatch && req.method === "GET") {
