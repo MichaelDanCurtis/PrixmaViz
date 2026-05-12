@@ -15,8 +15,7 @@
     "build:bin:linux-x64": "bun run build:web && bun --filter @prixmaviz/server build:bin:linux-x64",
     "build:bin:windows-x64": "bun run build:web && bun --filter @prixmaviz/server build:bin:windows-x64",
     "tauri": "tauri",
-    "build:tauri": "bun run build:web && bun run build:bin && tauri build",
-    "build:sidecar": "scripts/build-sidecar-for-tauri.sh"
+    "build:tauri": "bun run build:web && tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",

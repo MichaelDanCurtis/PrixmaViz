@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "io.prixmaviz.app",
   "build": {
-    "beforeBuildCommand": "bun run build:web && bun run build:bin",
+    "beforeBuildCommand": "bun run build:web",
     "beforeDevCommand": "bun run dev:web",
     "devUrl": "http://localhost:5181",
     "frontendDist": "../packages/web/dist"
@@ -25,7 +25,6 @@
   "bundle": {
     "active": true,
     "targets": ["app", "dmg", "msi", "deb", "appimage"],
-    "externalBin": ["binaries/prixmaviz-server"],
     "resources": [
       "resources/plugin/**/*"
     ],
