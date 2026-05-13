@@ -1,0 +1,47 @@
+# Hostinger single-VPS overlay for PrixmaViz.
+#
+# Usage:
+#   docker compose -f docker-compose.yaml -f docker-compose.hostinger.yaml up -d
+#
+# Tailored for a single-host deployment where:
+#   - Postgres is bundled (no external DB on Hostinger KVM plans)
+#   - Caddy on the host terminates TLS and proxies to 127.0.0.1:5180
+#   - All services restart on failure / boot
+#
+# The Postgres password is read from POSTGRES_PASSWORD in .env (generated
+# by scripts/deploy-hostinger.sh on first run). DATABASE_URL in the same
+# .env embeds the same password.
+
+services:
+  prixmaviz:
+    # Bind to loopback only — Caddy on the host fronts public traffic.
+    ports:
+      - "127.0.0.1:5180:5180"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  postgres:
+    environment:
+      POSTGRES_USER: prixmaviz
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-prixmaviz}
+      POSTGRES_DB: prixmaviz
+    restart: always
+
+  kroki:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  kroki-mermaid:
+    restart: always
+
+  kroki-bpmn:
+    restart: always
+
+  kroki-excalidraw:
+    restart: always

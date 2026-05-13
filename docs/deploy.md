@@ -163,3 +163,58 @@ Each pass that deletes anything logs `reaper: deleted N expired workspaces` to t
 PrixmaViz itself only listens HTTP. TLS is the reverse proxy's job. This keeps Bun's network stack simple and lets you use whatever cert tooling your team already has.
 
 The `/p/<id>` public-view endpoint sends `Content-Security-Policy: frame-ancestors *` so the SVG can be embedded in any site's iframe. Adjust your reverse proxy's CSP if you want to restrict this.
+
+## Quick deploy: Hostinger VPS
+
+If you have a Hostinger VPS (Ubuntu 24.04, Docker preinstalled):
+
+1. **Point DNS.** Add an A record for `prixmaviz.alexis.com` → your VPS public IP. Wait for propagation (typically <5 minutes; verify with `dig prixmaviz.alexis.com`).
+
+2. **SSH in and run the deploy script:**
+
+   ```bash
+   ssh root@<your-vps-ip>
+   curl -fsSL https://raw.githubusercontent.com/MichaelDanCurtis/PrixmaViz/main/scripts/deploy-hostinger.sh | bash
+   ```
+
+   First run will:
+   - Install Caddy
+   - Clone the repo to `/srv/prixmaviz`
+   - Generate `.env` with a strong Postgres password
+   - Exit and ask you to review
+
+3. **Review `/srv/prixmaviz/.env`** — adjust `PRIXMAVIZ_WORKSPACE_TTL_MINUTES` if you want longer/shorter TTL, set `KROKI_URL` if you want an external Kroki. Save.
+
+4. **Re-run the script** to build + start:
+
+   ```bash
+   cd /srv/prixmaviz && bash scripts/deploy-hostinger.sh
+   ```
+
+   The script will build the image, start the stack, wait for `/api/health`, and verify the external HTTPS endpoint.
+
+5. **Visit `https://prixmaviz.alexis.com/`** — your workspace is ready. Bookmark the URL it creates.
+
+### Updates after the first deploy
+
+```bash
+ssh root@<vps>
+cd /srv/prixmaviz && bash scripts/deploy-hostinger.sh
+```
+
+The script is idempotent — it'll `git pull`, rebuild the image, recreate containers with the new image, and verify health.
+
+### Logs and troubleshooting
+
+```bash
+# Application logs
+docker compose -f docker-compose.yaml -f docker-compose.hostinger.yaml logs -f prixmaviz
+
+# Reverse proxy + cert logs
+sudo journalctl -u caddy -f
+sudo tail -f /var/log/caddy/prixmaviz.log
+
+# Container status
+docker compose -f docker-compose.yaml -f docker-compose.hostinger.yaml ps
+```
+
