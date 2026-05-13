@@ -1,6 +1,6 @@
 {
   "name": "prixmaviz-local",
-  "description": "Local marketplace for the PrixmaViz Claude Code plugin (bundled in the .app).",
+  "description": "Local marketplace for the PrixmaViz Claude Code plugin (stdio shim forwarding to a hosted or self-hosted PrixmaViz server).",
   "owner": {
     "name": "Michael Curtis",
     "email": "michaeldancurtis@gmail.com"
@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "prixmaviz",
-      "description": "AI-native diagram tool — 28+ engines, annotations, infinite canvas.",
-      "version": "0.3.0",
+      "description": "AI-native diagram tool — 28+ engines, annotations, infinite canvas. Renders to a browser tab via the hosted service or your own self-hosted PrixmaViz server.",
+      "version": "0.4.0",
       "source": "./"
     }
   ]

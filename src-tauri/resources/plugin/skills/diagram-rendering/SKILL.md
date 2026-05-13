@@ -5,11 +5,9 @@ description: Use whenever the user wants any kind of diagram, chart, flowchart, 
 
 # Diagram Rendering with PrixmaViz
 
-PrixmaViz is the user's visual partner. When the user asks for a diagram or describes content that visualizes well, render it via the PrixmaViz MCP tools instead of inline ASCII art. The diagram appears in either:
-- The user's **browser** (the MCP server provides its own URL — works always, no installation required), or
-- The user's **PrixmaViz desktop window** if the .app is installed (richer experience, optional).
+PrixmaViz is the user's visual partner. When the user asks for a diagram or describes content that visualizes well, render it via the PrixmaViz MCP tools instead of inline ASCII art. The diagram appears in a **browser tab** at the workspace URL — the hosted service (`https://prixmaviz.alexis.com`) or a self-hosted server, whichever the user has configured.
 
-Either way, you participate in a continuous back-and-forth conversation about the diagram. **Always tell the user where to view what you rendered** — the URL from `get_view_url()` is the reliable answer.
+You participate in a continuous back-and-forth conversation about the diagram. **Always tell the user where to view what you rendered** — the URL from `get_view_url()` is the reliable answer.
 
 ## When to render
 
@@ -60,8 +58,8 @@ Example flow:
 User:  "Show me the TCP handshake."
 You:   [call create_diagram engine=plantuml kind=passthrough name="tcp-handshake",
         then apply_patch (or render_dsl) with the PlantUML source. Note the diagramId.]
-       "The handshake is in your PrixmaViz tab — three exchanges
-        between client and server."
+       "The handshake is rendered in your PrixmaViz workspace — three
+        exchanges between client and server."
 
 User:  "Show me TCP+TLS."
 You:   [call apply_patch on the SAME diagramId, adding TLS messages between
@@ -104,21 +102,19 @@ If the user says "this looks wrong" and you can't determine why from those struc
 
 Call `get_view_url()` after you call `create_diagram`, `apply_patch`, or `render_dsl`. Include the URL in your response:
 
-> "Rendered your sequence diagram — view at http://127.0.0.1:<port>/.
->  The browser tab should have opened automatically; if not, open the URL above."
+> "Rendered your sequence diagram — view at <workspace URL>.
+>  Open that URL in a browser tab to see it."
 
-The MCP server auto-opens a browser tab on first startup. Subsequent renders update the same tab via WebSocket — no new tabs.
+`get_view_url()` returns the URL based on the `PRIXMAVIZ_PUBLIC_URL` env var configured at server startup — the hosted service URL, or whatever the user configured for their self-hosted instance. The user keeps that tab open; subsequent renders update it live via WebSocket — no new tabs.
 
 Example:
 
 ```
 You:   [render the diagram]
-       [call get_view_url() → returns { url: "http://127.0.0.1:53412/" }]
-       "TCP handshake rendered — view at http://127.0.0.1:53412/.
-        The browser tab should have auto-opened; if not, open the URL above."
+       [call get_view_url() → returns { url: "https://prixmaviz.alexis.com/" }]
+       "TCP handshake rendered — view at https://prixmaviz.alexis.com/.
+        Open that URL in a browser tab to see it."
 ```
-
-If the user has the optional PrixmaViz desktop app (Tauri) installed and running, the AI's renders go there instead of the browser. You can detect this by calling `check_app_running` — but it's not necessary by default. Only check when the user explicitly asks about the desktop app.
 
 ## Tool surface available
 
@@ -130,11 +126,8 @@ If the user has the optional PrixmaViz desktop app (Tauri) installed and running
 - `list_diagrams()` — library listing
 - `get_annotations(diagramId, includeResolved?)` — read user's marks
 - `get_focused_tile()` — which tile is "the current one"
-- `get_view_url()` — **call after every render**; returns the browser URL where the diagram is viewable
-- `check_app_running()` — optional; is the Tauri desktop app running (browser URL works regardless)
-- `launch_app()` — optional; launch the Tauri desktop app (only after user consent; gracefully degrades if .app not installed)
+- `get_view_url()` — **call after every render**; returns the workspace URL where the diagram is viewable
 - `update_tile(tileId, patch)` — move/resize/focus
 - `set_view({camera?, arrange?})` — viewport + auto-arrange
-- `install_mcp_plugin(host, confirm)` — for advanced reinstall flows; users normally don't need this
 
 When the user explicitly invokes the `/prixmaviz` slash command, use it for direct workspace operations.
