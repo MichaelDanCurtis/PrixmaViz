@@ -462,14 +462,19 @@ async function getFocusedTileImpl(_args: Record<string, unknown>, ctx: ToolCtx) 
   return { tile: focused ?? null };
 }
 
-async function getViewUrlImpl(_args: Record<string, unknown>, _ctx: ToolCtx) {
-  const url = process.env.PRIXMAVIZ_PUBLIC_URL;
-  if (!url) {
+async function getViewUrlImpl(_args: Record<string, unknown>, ctx: ToolCtx) {
+  const baseUrl = process.env.PRIXMAVIZ_PUBLIC_URL;
+  if (!baseUrl) {
     return {
       url: null,
       message: "PRIXMAVIZ_PUBLIC_URL not set",
     };
   }
+  // Deep-link to the caller's workspace so opening the URL in a fresh browser
+  // tab lands on the SAME workspace the AI just rendered into, not a freshly
+  // bootstrapped empty one. The web client honors /w/<uuid> by caching the
+  // UUID in localStorage and using it as the Bearer token for subsequent calls.
+  const url = `${baseUrl.replace(/\/$/, "")}/w/${ctx.workspaceId}`;
   return {
     url,
     note: "Open this URL in any browser to see the rendered diagrams and annotate them.",
