@@ -182,7 +182,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "get_view_url",
-    description: "Return the URL where the user can view rendered diagrams in their browser. The server hosts the UI; this URL works whether or not the Tauri .app is installed. ALWAYS call this after rendering and include the URL in your response.",
+    description: "Return the URL where the user can view rendered diagrams in their browser. ALWAYS call this after rendering and include the URL in your response so the user can see the diagram.",
     inputSchema: { type: "object", properties: {} },
     run: getViewUrlImpl,
   },
@@ -472,7 +472,7 @@ async function getViewUrlImpl(_args: Record<string, unknown>, _ctx: ToolCtx) {
   }
   return {
     url,
-    note: "This URL serves the same UI as the Tauri .app. The user can open it in any browser; no .app required.",
+    note: "Open this URL in any browser to see the rendered diagrams and annotate them.",
   };
 }
 
