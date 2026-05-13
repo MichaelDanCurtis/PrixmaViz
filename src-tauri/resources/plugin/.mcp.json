@@ -1,7 +1,8 @@
 {
   "mcpServers": {
     "prixmaviz": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/bin/prixmaviz-mcp",
+      "command": "./bin/prixmaviz-mcp",
+      "cwd": ".",
       "args": [],
       "env": {
         "PRIXMAVIZ_REMOTE_URL": "https://prixmaviz.ailuxis.com"
