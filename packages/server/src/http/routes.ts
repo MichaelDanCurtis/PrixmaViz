@@ -141,6 +141,39 @@ export async function handleApi(
     });
   }
 
+  // ─── Library (alias for /api/diagrams + Postgres-backed thumb) ───
+  // The web Library component expects the cycle-3 LibraryEntry shape:
+  //   { name, path, engine, kind, tags, createdAt, updatedAt }
+  // `path` is synthesized from the slug (the web client extracts the slug
+  // back out with basename(path).replace(/\.pviz$/, "")).
+  if (p === "/api/library" && req.method === "GET") {
+    const rows = await dbListDiagrams(deps.sql, workspaceId);
+    return Response.json({
+      entries: rows.map((d) => ({
+        name: d.name,
+        path: `${d.slug}.pviz`,
+        engine: d.engine,
+        kind: d.kind,
+        tags: Array.isArray((d.meta as { tags?: unknown }).tags)
+          ? (d.meta as { tags: string[] }).tags
+          : [],
+        createdAt: d.createdAt,
+        updatedAt: d.updatedAt,
+      })),
+    });
+  }
+
+  const thumbMatch = p.match(/^\/api\/library\/([^/]+)\/thumb$/);
+  if (thumbMatch && req.method === "GET") {
+    const slug = thumbMatch[1]!;
+    const d = await dbGetDiagramBySlug(deps.sql, workspaceId, slug);
+    if (!d || !d.svg) return new Response("not found", { status: 404 });
+    return new Response(d.svg, {
+      status: 200,
+      headers: { "Content-Type": "image/svg+xml; charset=utf-8" },
+    });
+  }
+
   if (p === "/api/diagrams" && req.method === "POST") {
     const body = await req.json() as {
       name: string; engine: DiagramEngine; kind?: DiagramKind; initialDsl?: string;
