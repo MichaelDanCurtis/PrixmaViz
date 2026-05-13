@@ -1,5 +1,11 @@
 # PrixmaViz
 
+<p align="center">
+  <video src="https://github.com/MichaelDanCurtis/PrixmaViz/releases/download/v0.5.0/prixmaviz-hero-30s.mp4" autoplay muted loop playsinline width="100%"></video>
+  <br/>
+  <em><a href="https://github.com/MichaelDanCurtis/PrixmaViz/releases/download/v0.5.0/prixmaviz-hero-30s.mp4">▶ Watch the 30-second demo</a></em>
+</p>
+
 AI-native diagram tool. 28+ rendering engines (Mermaid, PlantUML, D2, Vega-Lite, TikZ, Graphviz, WaveDrom, Bytefield, …) wrapped behind an MCP server, with annotations, infinite-canvas multi-tile workspace, and a marketing-surface workspace UI. Cycle 4 ships as a hosted service with optional self-host.
 
 ## Try the hosted version
