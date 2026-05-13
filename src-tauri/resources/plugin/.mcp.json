@@ -4,8 +4,7 @@
       "command": "${CLAUDE_PLUGIN_ROOT}/bin/prixmaviz-mcp",
       "args": [],
       "env": {
-        "PRIXMAVIZ_REMOTE_URL": "${PRIXMAVIZ_REMOTE_URL:-https://prixmaviz.ailuxis.com}",
-        "PRIXMAVIZ_WORKSPACE": "${PRIXMAVIZ_WORKSPACE:-}"
+        "PRIXMAVIZ_REMOTE_URL": "https://prixmaviz.ailuxis.com"
       }
     }
   }
