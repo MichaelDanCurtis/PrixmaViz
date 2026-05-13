@@ -9,5 +9,20 @@
   "homepage": "https://github.com/MichaelDanCurtis/PrixmaViz",
   "repository": "https://github.com/MichaelDanCurtis/PrixmaViz",
   "license": "MIT",
-  "keywords": ["diagram", "ai", "mcp", "kroki", "mermaid", "plantuml", "d2", "vega-lite", "annotations", "infinite-canvas"]
+  "keywords": ["diagram", "ai", "mcp", "kroki", "mermaid", "plantuml", "d2", "vega-lite", "annotations", "infinite-canvas"],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "PrixmaViz",
+    "shortDescription": "AI-native diagram tool — Mermaid, PlantUML, D2, Vega-Lite, TikZ, Graphviz, 28+ engines",
+    "longDescription": "PrixmaViz lets your AI coding agent render diagrams in a real browser canvas. Ask for a sequence diagram, an ER schema, a Vega-Lite chart, a TikZ physics scene — it renders via the appropriate engine (Mermaid, PlantUML, D2, Vega-Lite, TikZ, Graphviz, WaveDrom, Bytefield, BPMN, Excalidraw, and 18 others), persists into an annotatable infinite-canvas workspace, and feeds your region/pin/tag annotations back to the AI so the next iteration knows what you pointed at. Hosted free at prixmaviz.ailuxis.com; self-host via docker-compose.",
+    "developerName": "Michael Curtis",
+    "category": "Diagrams",
+    "websiteURL": "https://prixmaviz.ailuxis.com",
+    "defaultPrompt": [
+      "Draw me the OAuth 2.1 PKCE flow as a sequence diagram",
+      "Render a Vega-Lite chart of the Fibonacci sequence to N=20",
+      "Show the causal structure of Minkowski spacetime with light cones"
+    ],
+    "brandColor": "#0d1117"
+  }
 }
