@@ -1,6 +1,6 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, mkdir, open } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 
 function workspaceConfigPath(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE;
@@ -34,9 +34,30 @@ export async function resolveWorkspaceId(remoteUrl: string): Promise<string> {
   const data = (await resp.json()) as { id?: string };
   if (!data.id) throw new Error(`workspace bootstrap returned no id`);
 
-  // Persist
-  await mkdir(join(cfgPath, ".."), { recursive: true });
-  await writeFile(cfgPath, data.id, "utf-8");
-  console.error(`prixmaviz: workspace ${data.id} — view at ${remoteUrl}/w/${data.id}`);
-  return data.id;
+  // Persist — use atomic exclusive-create to avoid a race where two shim
+  // processes concurrently bootstrap and clobber each other's cache file.
+  // The mint POST above cannot be undone; if we lose the race, our freshly
+  // minted UUID becomes an unused orphan workspace on the server (harmless,
+  // just unreferenced).
+  await mkdir(dirname(cfgPath), { recursive: true });
+
+  try {
+    const fh = await open(cfgPath, "wx");
+    try {
+      await fh.writeFile(data.id, "utf-8");
+    } finally {
+      await fh.close();
+    }
+    console.error(`prixmaviz: workspace ${data.id} — view at ${remoteUrl}/w/${data.id}`);
+    return data.id;
+  } catch (e: any) {
+    if (e.code === "EEXIST") {
+      // Another shim instance won the bootstrap race; use their UUID instead.
+      // Our freshly-minted UUID becomes an unused orphan on the server (harmless).
+      const peer = (await readFile(cfgPath, "utf-8")).trim();
+      console.error(`prixmaviz: lost bootstrap race, using peer workspace ${peer}`);
+      return peer;
+    }
+    throw e;
+  }
 }
