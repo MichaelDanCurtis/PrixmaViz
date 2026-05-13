@@ -2,6 +2,7 @@ import type { ServerToClient } from "@prixmaviz/shared";
 
 export interface WsMember {
   send(data: string): void;
+  workspaceId: string | null;
 }
 
 export class WsHub {
@@ -15,14 +16,22 @@ export class WsHub {
     this.members.delete(m);
   }
 
-  // TODO(cycle-4 follow-up): WsHub.broadcast currently fans out to every connected
-  // client regardless of workspace. In a multi-tenant deployment this leaks rendered
-  // SVG / IR / annotations / tile changes across workspaces. Either (a) shard the
-  // hub by workspaceId, or (b) add workspaceId to every ServerToClient message and
-  // have the client filter. Tracked as a Wave 1.5 follow-up.
-  broadcast(msg: ServerToClient): void {
+  /**
+   * Send `msg` to every connection authenticated for `workspaceId`.
+   *
+   * Pass `null` to broadcast to every connected client regardless of
+   * workspace (legacy / system-wide events only — prefer the scoped form).
+   * Connections that arrived without a valid bearer token have
+   * `workspaceId === null` and therefore receive only `null`-scoped
+   * broadcasts (currently none).
+   */
+  broadcast(workspaceId: string | null, msg: ServerToClient): void {
     const data = JSON.stringify(msg);
-    for (const m of this.members) m.send(data);
+    for (const m of this.members) {
+      if (workspaceId === null || m.workspaceId === workspaceId) {
+        try { m.send(data); } catch { /* client likely disconnected */ }
+      }
+    }
   }
 
   size(): number {

@@ -326,7 +326,7 @@ export async function handleApi(
     }
 
     const saved = await dbAddAnnotation(deps.sql, body.diagramId, ann);
-    deps.hub.broadcast({ type: "annotation:created", diagramId: body.diagramId, annotation: saved });
+    deps.hub.broadcast(workspaceId, { type: "annotation:created", diagramId: body.diagramId, annotation: saved });
     return Response.json({ annotation: saved });
   }
 
@@ -338,7 +338,7 @@ export async function handleApi(
     if (!d) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
     const updated = await dbUpdateAnnotation(deps.sql, body.diagramId, annId, body.patch);
     if (!updated) return Response.json({ ok: false, error: "annotation not found" }, { status: 404 });
-    deps.hub.broadcast({ type: "annotation:updated", diagramId: body.diagramId, annotation: updated });
+    deps.hub.broadcast(workspaceId, { type: "annotation:updated", diagramId: body.diagramId, annotation: updated });
     return Response.json({ annotation: updated });
   }
 
@@ -349,7 +349,7 @@ export async function handleApi(
     const d = await dbGetDiagram(deps.sql, workspaceId, body.diagramId);
     if (!d) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
     await dbDeleteAnnotation(deps.sql, body.diagramId, annId);
-    deps.hub.broadcast({ type: "annotation:deleted", diagramId: body.diagramId, annotationId: annId });
+    deps.hub.broadcast(workspaceId, { type: "annotation:deleted", diagramId: body.diagramId, annotationId: annId });
     return Response.json({ ok: true });
   }
 
@@ -378,7 +378,7 @@ export async function handleApi(
     await dbUpdateWorkspaceCamera(deps.sql, workspaceId, body);
     const ws = await dbGetWorkspace(deps.sql, workspaceId);
     if (!ws) return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
-    deps.hub.broadcast({ type: "workspace", camera: ws.camera, tiles: ws.tiles });
+    deps.hub.broadcast(workspaceId, { type: "workspace", camera: ws.camera, tiles: ws.tiles });
     return Response.json(ws);
   }
 
@@ -397,7 +397,7 @@ export async function handleApi(
     const nextTiles = [...ws.tiles, tile];
     await dbUpdateWorkspaceTiles(deps.sql, workspaceId, nextTiles);
     const updated = await dbGetWorkspace(deps.sql, workspaceId);
-    if (updated) deps.hub.broadcast({ type: "workspace", camera: updated.camera, tiles: updated.tiles });
+    if (updated) deps.hub.broadcast(workspaceId, { type: "workspace", camera: updated.camera, tiles: updated.tiles });
     return Response.json({ tile });
   }
 
@@ -413,7 +413,7 @@ export async function handleApi(
     nextTiles[idx] = { ...nextTiles[idx]!, ...body, id: tileId };
     await dbUpdateWorkspaceTiles(deps.sql, workspaceId, nextTiles);
     const updated = await dbGetWorkspace(deps.sql, workspaceId);
-    if (updated) deps.hub.broadcast({ type: "workspace", camera: updated.camera, tiles: updated.tiles });
+    if (updated) deps.hub.broadcast(workspaceId, { type: "workspace", camera: updated.camera, tiles: updated.tiles });
     return Response.json({ tile: nextTiles[idx] });
   }
 
@@ -424,7 +424,7 @@ export async function handleApi(
     const nextTiles = ws.tiles.filter((t) => t.id !== tileId);
     await dbUpdateWorkspaceTiles(deps.sql, workspaceId, nextTiles);
     const updated = await dbGetWorkspace(deps.sql, workspaceId);
-    if (updated) deps.hub.broadcast({ type: "workspace", camera: updated.camera, tiles: updated.tiles });
+    if (updated) deps.hub.broadcast(workspaceId, { type: "workspace", camera: updated.camera, tiles: updated.tiles });
     return Response.json({ ok: true });
   }
 
@@ -487,7 +487,7 @@ async function createDiagramRoute(
     return Response.json({ ok: false, error: outcome.error }, { status: 502 });
   }
   await dbUpdateDiagram(deps.sql, workspaceId, row.id, { svg: outcome.result.svg });
-  broadcastRender(deps.hub, diagram, outcome.result.svg, outcome.warnings);
+  broadcastRender(deps.hub, workspaceId, diagram, outcome.result.svg, outcome.warnings);
   return Response.json({
     diagramId: row.id,
     slug: row.slug,
@@ -517,7 +517,7 @@ async function patchDiagramRoute(
 
   await dbUpdateDiagram(deps.sql, workspaceId, id, { svg: outcome.result.svg });
   const warnings = [...result.warnings, ...outcome.warnings];
-  broadcastRender(deps.hub, diagram, outcome.result.svg, warnings);
+  broadcastRender(deps.hub, workspaceId, diagram, outcome.result.svg, warnings);
   return Response.json({
     diagramId: id,
     ir: result.ir,
@@ -533,7 +533,7 @@ async function loadDiagramRoute(slug: string, workspaceId: string, deps: RouteDe
   const outcome = await renderDiagram(diagram, { kroki: deps.kroki });
   if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
   await dbUpdateDiagram(deps.sql, workspaceId, row.id, { svg: outcome.result.svg });
-  broadcastRender(deps.hub, diagram, outcome.result.svg, outcome.warnings);
+  broadcastRender(deps.hub, workspaceId, diagram, outcome.result.svg, outcome.warnings);
   return Response.json({
     diagramId: row.id,
     ir: diagram.ir,
@@ -579,12 +579,13 @@ async function renderDslRoute(
   const outcome = await renderDiagram(diagram, { kroki: deps.kroki });
   if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
   await dbUpdateDiagram(deps.sql, workspaceId, row.id, { svg: outcome.result.svg });
-  broadcastRender(deps.hub, diagram, outcome.result.svg, outcome.warnings);
+  broadcastRender(deps.hub, workspaceId, diagram, outcome.result.svg, outcome.warnings);
   return Response.json({ diagramId: row.id, slug: row.slug, render: outcome.result });
 }
 
 function broadcastRender(
   hub: WsHub,
+  workspaceId: string,
   d: Diagram,
   svg: string,
   warnings: string[],
@@ -597,5 +598,5 @@ function broadcastRender(
     svg,
     warnings: warnings.length ? warnings : undefined,
   };
-  hub.broadcast(msg);
+  hub.broadcast(workspaceId, msg);
 }

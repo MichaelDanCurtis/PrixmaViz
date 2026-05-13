@@ -2,10 +2,17 @@ import { loadConfig } from "./bootstrap";
 import { runMigrations } from "./db/migrate";
 import { getDb } from "./db/client";
 import { KrokiClient } from "./kroki/client";
-import { WsHub } from "./ws/broadcast";
+import { WsHub, type WsMember } from "./ws/broadcast";
 import { handleApi } from "./http/routes";
 import { serveStatic } from "./static";
+import { authenticate } from "./auth/bearer";
 import { existsSync } from "node:fs";
+
+interface WsData {
+  id: string;
+  workspaceId: string | null;
+  member?: WsMember;
+}
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -21,18 +28,29 @@ async function main(): Promise<void> {
   const bundleStatus = existsSync(config.webDist) ? "found" : "missing";
   const fallbackHtml = `<!doctype html><meta charset="utf-8"><title>PrixmaViz</title><h1>PrixmaViz</h1><p>Web bundle missing at <code>${config.webDist}</code>.</p>`;
 
-  const server = Bun.serve<{ id: string }>({
+  const server = Bun.serve<WsData>({
     hostname: config.bindHost,
     port: config.bindPort,
     async fetch(req, srv) {
       const url = new URL(req.url);
       if (url.pathname === "/ws") {
-        // TODO(cycle-4): authenticate the WebSocket upgrade. The web client
-        // already passes `?token=<workspaceId>`; we accept any connection for
-        // now and rely on broadcast messages being scoped at the publisher
-        // side. This is acceptable for the marketing-surface preview but must
-        // be hardened before any multi-tenant production deploy.
-        const ok = srv.upgrade(req, { data: { id: crypto.randomUUID() } });
+        // Authenticate the WebSocket upgrade against the bearer token the
+        // web client passes as ?token=<workspaceId>. Connections without a
+        // valid token are still allowed (workspaceId = null) but receive
+        // only globally-scoped broadcasts (currently none). WsHub scopes
+        // every workspace-bearing broadcast by workspaceId from here on.
+        const token = url.searchParams.get("token");
+        let wsWorkspaceId: string | null = null;
+        if (token) {
+          const fakeReq = new Request(req.url, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const result = await authenticate(fakeReq, sql);
+          if (result.ok) wsWorkspaceId = result.workspaceId;
+        }
+        const ok = srv.upgrade(req, {
+          data: { id: crypto.randomUUID(), workspaceId: wsWorkspaceId },
+        });
         return ok ? undefined : new Response("upgrade failed", { status: 400 });
       }
       const apiResp = await handleApi(req, url, deps);
@@ -46,8 +64,18 @@ async function main(): Promise<void> {
       return new Response("not found", { status: 404 });
     },
     websocket: {
-      open(ws) { hub.add({ send: (s) => ws.send(s) }); },
-      close() {},
+      open(ws) {
+        const member: WsMember = {
+          send: (s: string) => ws.send(s),
+          workspaceId: ws.data.workspaceId,
+        };
+        ws.data.member = member;
+        hub.add(member);
+      },
+      close(ws) {
+        const member = ws.data.member;
+        if (member) hub.remove(member);
+      },
       message() {},
     },
   });

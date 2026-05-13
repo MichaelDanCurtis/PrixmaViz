@@ -222,7 +222,7 @@ function dbDiagramToDomain(d: DbDiagram): Diagram {
   };
 }
 
-function broadcast(hub: WsHub, d: Diagram, svg: string, warnings: string[]): void {
+function broadcast(hub: WsHub, workspaceId: string, d: Diagram, svg: string, warnings: string[]): void {
   const msg: ServerToClient = {
     type: "render",
     diagramId: d.id,
@@ -231,13 +231,13 @@ function broadcast(hub: WsHub, d: Diagram, svg: string, warnings: string[]): voi
     svg,
     warnings: warnings.length ? warnings : undefined,
   };
-  hub.broadcast(msg);
+  hub.broadcast(workspaceId, msg);
 }
 
 async function broadcastWorkspace(ctx: ToolCtx): Promise<void> {
   const ws = await dbGetWorkspace(ctx.sql, ctx.workspaceId);
   if (!ws) return;
-  ctx.hub.broadcast({ type: "workspace", camera: ws.camera, tiles: ws.tiles });
+  ctx.hub.broadcast(ctx.workspaceId, { type: "workspace", camera: ws.camera, tiles: ws.tiles });
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -266,7 +266,7 @@ async function createDiagramImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
   if (!outcome.ok) throw new Error(outcome.error);
   await dbUpdateDiagram(ctx.sql, ctx.workspaceId, row.id, { svg: outcome.result.svg });
-  broadcast(ctx.hub, diagram, outcome.result.svg, outcome.warnings);
+  broadcast(ctx.hub, ctx.workspaceId, diagram, outcome.result.svg, outcome.warnings);
   return { diagramId: row.id, slug: row.slug, render: outcome.result };
 }
 
@@ -286,7 +286,7 @@ async function applyPatchImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   if (!outcome.ok) throw new Error(outcome.error);
   await dbUpdateDiagram(ctx.sql, ctx.workspaceId, id, { svg: outcome.result.svg });
   const warnings = [...result.warnings, ...outcome.warnings];
-  broadcast(ctx.hub, diagram, outcome.result.svg, warnings);
+  broadcast(ctx.hub, ctx.workspaceId, diagram, outcome.result.svg, warnings);
   return { diagramId: id, ir: result.ir, render: outcome.result, warnings };
 }
 
@@ -313,7 +313,7 @@ async function loadDiagramImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
   if (!outcome.ok) throw new Error(outcome.error);
   await dbUpdateDiagram(ctx.sql, ctx.workspaceId, row.id, { svg: outcome.result.svg });
-  broadcast(ctx.hub, diagram, outcome.result.svg, outcome.warnings);
+  broadcast(ctx.hub, ctx.workspaceId, diagram, outcome.result.svg, outcome.warnings);
   return { diagramId: row.id, ir: diagram.ir, dsl: diagram.dsl, render: outcome.result };
 }
 
@@ -366,7 +366,7 @@ async function renderDslImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
   if (!outcome.ok) throw new Error(outcome.error);
   await dbUpdateDiagram(ctx.sql, ctx.workspaceId, row.id, { svg: outcome.result.svg });
-  broadcast(ctx.hub, diagram, outcome.result.svg, outcome.warnings);
+  broadcast(ctx.hub, ctx.workspaceId, diagram, outcome.result.svg, outcome.warnings);
   return { diagramId: row.id, slug: row.slug, render: outcome.result };
 }
 
@@ -450,7 +450,7 @@ async function setViewImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   }
   const ws = await dbGetWorkspace(ctx.sql, ctx.workspaceId);
   if (!ws) throw new Error("workspace not found");
-  ctx.hub.broadcast({ type: "workspace", camera: ws.camera, tiles: ws.tiles });
+  ctx.hub.broadcast(ctx.workspaceId, { type: "workspace", camera: ws.camera, tiles: ws.tiles });
   return { camera: ws.camera, tiles: ws.tiles };
 }
 
