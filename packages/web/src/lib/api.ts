@@ -67,8 +67,18 @@ export async function ensureWorkspaceId(): Promise<string> {
  * `/api/*` call (except the bootstrap POST /api/workspaces itself).
  *
  * Public `/api/public/*` and the bootstrap route are exempt.
+ *
+ * On 401, the cached workspace UUID is treated as stale (server may have
+ * reaped it). The function clears it, bootstraps a fresh workspace, and
+ * retries the original request ONCE with the new token. Non-401 errors are
+ * returned as-is; a second 401 also returns as-is.
+ *
+ * Limitation: the retry re-sends `init.body` verbatim. For string/Blob/
+ * ArrayBuffer bodies this is fine. A `ReadableStream` body is single-shot
+ * and the retry would fail — Cycle 4 only sends JSON-string bodies, so
+ * this is not a current concern.
  */
-export function authFetch(input: string, init?: RequestInit): Promise<Response> {
+export async function authFetch(input: string, init?: RequestInit): Promise<Response> {
   const isApi = input.startsWith("/api/");
   const isPublic = input.startsWith("/api/public/");
   const isBootstrap = input === "/api/workspaces" && (init?.method === "POST" || !init?.method);
@@ -78,7 +88,19 @@ export function authFetch(input: string, init?: RequestInit): Promise<Response> 
   const id = getWorkspaceId();
   const headers = new Headers(init?.headers);
   if (id) headers.set("Authorization", `Bearer ${id}`);
-  return fetch(input, { ...init, headers });
+  const res = await fetch(input, { ...init, headers });
+  if (res.status !== 401) return res;
+  // Stale workspace UUID — drop it, bootstrap a fresh one, retry exactly once.
+  clearWorkspaceId();
+  let freshId: string;
+  try {
+    freshId = await ensureWorkspaceId();
+  } catch {
+    return res;
+  }
+  const retryHeaders = new Headers(init?.headers);
+  retryHeaders.set("Authorization", `Bearer ${freshId}`);
+  return fetch(input, { ...init, headers: retryHeaders });
 }
 
 export async function jsonOrThrow<T>(res: Response): Promise<T> {
