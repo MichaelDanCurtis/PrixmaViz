@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Tile as TileT } from "@prixmaviz/shared";
 import { SNAP_GRID } from "@prixmaviz/shared";
 import { useAppStore } from "../store";
-import { api } from "../lib/api";
+import { api, authFetch } from "../lib/api";
 import { DiagramView } from "./DiagramView";
 import { AnnotationLayer } from "./AnnotationLayer";
 import { PublicViewToggle } from "./PublicViewToggle";
@@ -33,9 +33,14 @@ export function Tile({ tile }: Props) {
   }
 
   // Fetch the tile's SVG (load by slug). v1: use library/thumb endpoint
+  // NOTE: must go through authFetch — `/api/library/<slug>/thumb` requires
+  // `Authorization: Bearer <workspaceId>`. Raw fetch() omits the header and
+  // returns 401 → svg="" → tile body renders as blank white (the tile's own
+  // background bleeds through because DiagramView never mounts). This was the
+  // "blank tile after deep-link" bug.
   useEffect(() => {
     let stop = false;
-    fetch(`/api/library/${encodeURIComponent(tile.diagramSlug)}/thumb`)
+    authFetch(`/api/library/${encodeURIComponent(tile.diagramSlug)}/thumb`)
       .then(r => r.ok ? r.text() : "")
       .then(s => { if (!stop) setSvg(s); });
     return () => { stop = true; };

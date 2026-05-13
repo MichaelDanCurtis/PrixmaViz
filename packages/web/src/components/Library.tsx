@@ -1,8 +1,34 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAppStore } from "../store";
-import { api } from "../lib/api";
+import { api, authFetch } from "../lib/api";
 import { basename } from "../lib/path";
 import type { LibraryEntry } from "@prixmaviz/shared";
+
+/**
+ * Library thumbnails go through an auth'd fetch → blob URL because the
+ * server requires `Authorization: Bearer <workspaceId>` on `/api/library/
+ * <slug>/thumb`, and browsers don't let you attach headers to a bare
+ * `<img src>`. Without this, every thumbnail 401s and shows blank.
+ */
+function LibraryThumb({ slug }: { slug: string }) {
+  const [blobUrl, setBlobUrl] = useState<string>("");
+  useEffect(() => {
+    let cancelled = false;
+    let createdUrl = "";
+    authFetch(`/api/library/${encodeURIComponent(slug)}/thumb`)
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((b) => {
+        if (cancelled || !b) return;
+        createdUrl = URL.createObjectURL(b);
+        setBlobUrl(createdUrl);
+      });
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [slug]);
+  return blobUrl ? <img src={blobUrl} alt="" /> : null;
+}
 
 export function Library() {
   const library = useAppStore((s) => s.library);
@@ -84,7 +110,7 @@ export function Library() {
               onClick={() => open(entry)}
             >
               <div className="library-thumb">
-                <img src={`/api/library/${encodeURIComponent(slug)}/thumb`} alt="" />
+                <LibraryThumb slug={slug} />
               </div>
               <div className="library-name">{entry.name}</div>
               <div className="library-meta">
