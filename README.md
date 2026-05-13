@@ -12,18 +12,35 @@ AI-native diagram tool. 28+ rendering engines (Mermaid, PlantUML, D2, Vega-Lite,
 
 Visit **https://prixmaviz.ailuxis.com** — your workspace is created automatically and the URL is bookmarkable. Lose the URL, lose the workspace, so save it somewhere.
 
-## Install for Claude Code
+## Install
+
+Supported platforms: macOS (Apple Silicon + Intel), Linux (x64 + arm64), Windows (x64). The plugin install itself is tiny (~3 KB launcher script). On your first diagram render, the launcher downloads the matching pre-built shim binary (~60–115 MB depending on platform) from this repo's GitHub Releases and caches it at `~/.cache/prixmaviz/bin/` (POSIX) or `%LOCALAPPDATA%\prixmaviz\bin\` (Windows). Subsequent calls hit the cache — zero network.
+
+### Claude Code
 
 ```bash
-claude plugins marketplace add https://github.com/MichaelDanCurtis/PrixmaViz#main:src-tauri/resources/plugin
-claude plugins install prixmaviz@prixmaviz-local
+claude plugins marketplace add MichaelDanCurtis/PrixmaViz
+claude plugins install prixmaviz@prixmaviz
 ```
 
-Supported platforms: macOS (Apple Silicon + Intel), Linux (x64 + arm64), Windows (x64).
+### Codex CLI
 
-The plugin install itself is tiny (~3 KB launcher script). On your first diagram render, the launcher downloads the matching pre-built shim binary (~60–115 MB depending on platform) from this repo's GitHub Releases and caches it at `~/.cache/prixmaviz/bin/` (POSIX) or `%LOCALAPPDATA%\prixmaviz\bin\` (Windows). Subsequent calls hit the cache — zero network.
+```bash
+codex plugin marketplace add MichaelDanCurtis/PrixmaViz
+```
 
-The plugin uses `https://prixmaviz.ailuxis.com` by default. To point at your own instance, set `PRIXMAVIZ_REMOTE_URL` in the cached `.mcp.json`. To run a locally-built binary instead of the released one, set `PRIXMAVIZ_MCP_BIN` to its absolute path.
+Then enable the plugin in `~/.codex/config.toml`:
+
+```toml
+[plugins."prixmaviz@prixmaviz"]
+enabled = true
+```
+
+Restart Codex. Your next prompt that mentions diagrams will route through PrixmaViz.
+
+### Both: configuration
+
+The plugin uses `https://prixmaviz.ailuxis.com` by default. To point at your own self-hosted instance, set `PRIXMAVIZ_REMOTE_URL` in the cached `.mcp.json` (`~/.claude/plugins/cache/.../<version>/.mcp.json` or `~/.codex/.tmp/marketplaces/prixmaviz/src-tauri/resources/plugin/.mcp.json`). To run a locally-built binary instead of the released one, set `PRIXMAVIZ_MCP_BIN` to its absolute path.
 
 The AI will now use PrixmaViz whenever you ask for diagrams. Try:
 
