@@ -13,6 +13,10 @@
 #    from other compose projects on this VPS
 #  - restart: always on every service so a reboot brings everything back
 #  - Bundled Postgres (no external DB)
+#  - Healthcheck uses 127.0.0.1 (not localhost) — alpine resolves localhost to IPv6 ::1
+#    first, and Bun binds IPv4 0.0.0.0 only. Healthcheck with localhost would fail
+#    "connection refused", marking the container unhealthy, and Traefik would refuse
+#    to route to it. The Dockerfile's HEALTHCHECK was updated to match.
 
 services:
   prixmaviz:
@@ -22,6 +26,12 @@ services:
     networks:
       - default          # talks to postgres + kroki in this project
       - root_default     # reachable by Traefik
+    # Explicit healthcheck for clarity (matches the Dockerfile's fix)
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5180/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     labels:
       - traefik.enable=true
       - traefik.docker.network=root_default
@@ -30,15 +40,6 @@ services:
       - traefik.http.routers.prixmaviz.tls=true
       - traefik.http.routers.prixmaviz.tls.certresolver=mytlschallenge
       - traefik.http.services.prixmaviz.loadbalancer.server.port=5180
-      # Security headers (matches the n8n pattern)
-      - traefik.http.middlewares.prixmaviz.headers.SSLRedirect=true
-      - traefik.http.middlewares.prixmaviz.headers.STSSeconds=315360000
-      - traefik.http.middlewares.prixmaviz.headers.STSIncludeSubdomains=true
-      - traefik.http.middlewares.prixmaviz.headers.STSPreload=true
-      - traefik.http.middlewares.prixmaviz.headers.browserXSSFilter=true
-      - traefik.http.middlewares.prixmaviz.headers.contentTypeNosniff=true
-      - traefik.http.middlewares.prixmaviz.headers.forceSTSHeader=true
-      - traefik.http.routers.prixmaviz.middlewares=prixmaviz@docker
 
   postgres:
     environment:

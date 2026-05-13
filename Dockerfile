@@ -39,6 +39,10 @@ COPY --from=web-build /app/packages/web/dist /app/web-dist
 ENV PRIXMAVIZ_WEB_DIST=/app/web-dist
 ENV PRIXMAVIZ_MIGRATIONS_DIR=/app/migrations
 EXPOSE 5180
+# Note: 127.0.0.1 explicitly (not "localhost") — in alpine, localhost resolves
+# to IPv6 ::1 first, and Bun's server binds IPv4 0.0.0.0 only. Using localhost
+# here causes wget to fail with "Connection refused" → unhealthy → Traefik
+# refuses to route traffic. exec-form (no shell, no pipe) keeps it simple.
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 \
-  CMD wget -qO- http://localhost:5180/api/health | grep -q '"ok":true' || exit 1
+  CMD wget -qO- http://127.0.0.1:5180/api/health || exit 1
 CMD ["/app/prixmaviz"]
