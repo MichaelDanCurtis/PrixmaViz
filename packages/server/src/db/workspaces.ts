@@ -3,6 +3,11 @@ import type { Workspace, Camera, Tile } from "@prixmaviz/shared";
 
 type Sql = ReturnType<typeof postgres>;
 
+// porsager/postgres' JSONValue type intentionally rejects plain `object` and
+// types without an index signature; in practice JSON.stringify accepts them.
+// Cast through `unknown` keeps the call sites readable without `any`.
+type JSONLike = Parameters<Sql["json"]>[0];
+
 function rowToWorkspace(row: Record<string, unknown>): Workspace {
   return {
     id: row.id as string,
@@ -21,7 +26,7 @@ export async function createWorkspace(sql: Sql, name?: string): Promise<Workspac
     INSERT INTO workspaces (name) VALUES (${name ?? null})
     RETURNING *
   `;
-  return rowToWorkspace(rows[0]);
+  return rowToWorkspace(rows[0]!);
 }
 
 export async function getWorkspace(sql: Sql, id: string): Promise<Workspace | null> {
@@ -29,13 +34,13 @@ export async function getWorkspace(sql: Sql, id: string): Promise<Workspace | nu
   if (rows.length === 0) return null;
   // Update last_seen_at on every fetch
   await sql`UPDATE workspaces SET last_seen_at = now() WHERE id = ${id}`;
-  return rowToWorkspace(rows[0]);
+  return rowToWorkspace(rows[0]!);
 }
 
 export async function updateWorkspaceCamera(sql: Sql, id: string, camera: Camera): Promise<void> {
   await sql`
     UPDATE workspaces
-    SET camera = ${sql.json(camera)}, updated_at = now()
+    SET camera = ${sql.json(camera as unknown as JSONLike)}, updated_at = now()
     WHERE id = ${id}
   `;
 }
@@ -43,7 +48,7 @@ export async function updateWorkspaceCamera(sql: Sql, id: string, camera: Camera
 export async function updateWorkspaceTiles(sql: Sql, id: string, tiles: Tile[]): Promise<void> {
   await sql`
     UPDATE workspaces
-    SET tiles = ${sql.json(tiles)}, updated_at = now()
+    SET tiles = ${sql.json(tiles as unknown as JSONLike)}, updated_at = now()
     WHERE id = ${id}
   `;
 }
@@ -55,7 +60,7 @@ export async function updateWorkspaceName(sql: Sql, id: string, name: string | n
 export async function updateWorkspaceSettings(sql: Sql, id: string, settings: Record<string, unknown>): Promise<void> {
   await sql`
     UPDATE workspaces
-    SET settings = ${sql.json(settings as Parameters<Sql["json"]>[0])}, updated_at = now()
+    SET settings = ${sql.json(settings as unknown as JSONLike)}, updated_at = now()
     WHERE id = ${id}
   `;
 }
