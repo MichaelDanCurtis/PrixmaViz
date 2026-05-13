@@ -114,9 +114,9 @@ export function Tile({ tile }: Props) {
           </button>
           {exportMenuOpen && (
             <div className="tile-export-menu" onMouseDown={(e) => e.stopPropagation()}>
-              <button onClick={() => onExport("svg")}>Save as SVG</button>
-              <button onClick={() => onExport("png")}>Save as PNG</button>
-              <button onClick={() => onExport("jpeg")}>Save as JPEG</button>
+              <button onClick={() => onExport("svg")}>Download as SVG</button>
+              <button onClick={() => onExport("png")}>Download as PNG</button>
+              <button onClick={() => onExport("jpeg")}>Download as JPEG</button>
             </div>
           )}
         </div>

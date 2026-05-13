@@ -72,9 +72,9 @@ export function Topbar({ onOpenSettings }: TopbarProps = {}) {
         <button className="topbar-button" onClick={() => setExportMenuOpen((v) => !v)} title="Export focused tile">⬇ Export</button>
         {exportMenuOpen && (
           <div className="tile-export-menu" style={{ top: 32 }}>
-            <button onClick={() => onTopbarExport("svg")}>Save as SVG</button>
-            <button onClick={() => onTopbarExport("png")}>Save as PNG</button>
-            <button onClick={() => onTopbarExport("jpeg")}>Save as JPEG</button>
+            <button onClick={() => onTopbarExport("svg")}>Download as SVG</button>
+            <button onClick={() => onTopbarExport("png")}>Download as PNG</button>
+            <button onClick={() => onTopbarExport("jpeg")}>Download as JPEG</button>
           </div>
         )}
       </div>
