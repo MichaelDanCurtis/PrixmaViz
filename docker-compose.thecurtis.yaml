@@ -1,0 +1,67 @@
+# thecurtis.cloud overlay for PrixmaViz.
+# Targets the existing VPS running Traefik (root_default network) +
+# n8n + arc + friends. Mirrors the arc-web Traefik-integration pattern.
+#
+# Usage on the VPS:
+#   cd /docker/prixmaviz
+#   docker compose -f docker-compose.yaml -f docker-compose.thecurtis.yaml up -d
+#
+# Properties:
+#  - Public HTTPS at prixmaviz.ailuxis.com via existing Traefik + mytlschallenge resolver
+#  - Drops the external 5180 port binding (Traefik routes internally)
+#  - Postgres + Kroki + sidecars stay on the project-private network — not reachable
+#    from other compose projects on this VPS
+#  - restart: always on every service so a reboot brings everything back
+#  - Bundled Postgres (no external DB)
+
+services:
+  prixmaviz:
+    # Drop external port binding — Traefik handles ingress
+    ports: !reset []
+    restart: always
+    networks:
+      - default          # talks to postgres + kroki in this project
+      - root_default     # reachable by Traefik
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=root_default
+      - traefik.http.routers.prixmaviz.rule=Host(`prixmaviz.ailuxis.com`)
+      - traefik.http.routers.prixmaviz.entrypoints=websecure
+      - traefik.http.routers.prixmaviz.tls=true
+      - traefik.http.routers.prixmaviz.tls.certresolver=mytlschallenge
+      - traefik.http.services.prixmaviz.loadbalancer.server.port=5180
+      # Security headers (matches the n8n pattern)
+      - traefik.http.middlewares.prixmaviz.headers.SSLRedirect=true
+      - traefik.http.middlewares.prixmaviz.headers.STSSeconds=315360000
+      - traefik.http.middlewares.prixmaviz.headers.STSIncludeSubdomains=true
+      - traefik.http.middlewares.prixmaviz.headers.STSPreload=true
+      - traefik.http.middlewares.prixmaviz.headers.browserXSSFilter=true
+      - traefik.http.middlewares.prixmaviz.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.prixmaviz.headers.forceSTSHeader=true
+      - traefik.http.routers.prixmaviz.middlewares=prixmaviz@docker
+
+  postgres:
+    environment:
+      POSTGRES_USER: prixmaviz
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-prixmaviz}
+      POSTGRES_DB: prixmaviz
+    restart: always
+    # Stays on default network only — not exposed to root_default
+
+  kroki:
+    restart: always
+
+  kroki-mermaid:
+    restart: always
+
+  kroki-bpmn:
+    restart: always
+
+  kroki-excalidraw:
+    restart: always
+
+networks:
+  # Pre-existing network where Traefik lives.
+  # `external: true` means compose doesn't try to create it.
+  root_default:
+    external: true
