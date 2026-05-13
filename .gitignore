@@ -19,3 +19,6 @@ src-tauri/resources/plugin/bin/
 
 # Runtime test project roots
 .prixmaviz-test/
+
+# Runtime workspace state (Cycle 3 era, also covers ad-hoc local testing)
+.prixmaviz/
