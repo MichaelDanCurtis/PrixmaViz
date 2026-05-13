@@ -14,8 +14,13 @@ src-tauri/Cargo.lock
 src-tauri/gen/
 cdt-screenshots/
 
-# Plugin sidecar binary (built by build:bin, not tracked in git)
-src-tauri/resources/plugin/bin/
+# Plugin compiled shim binaries — published via GitHub Releases, downloaded
+# lazily by the launcher (bin/prixmaviz-mcp + bin/prixmaviz-mcp.cmd, both
+# tracked). Allow-list pattern: ignore everything in bin/ that looks like a
+# compiled binary, but keep the launcher scripts.
+src-tauri/resources/plugin/bin/prixmaviz-mcp-*
+src-tauri/resources/plugin/bin/*.exe.partial
+src-tauri/resources/plugin/bin/*.partial
 
 # Runtime test project roots
 .prixmaviz-test/

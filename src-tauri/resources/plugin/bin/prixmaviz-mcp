@@ -1,0 +1,57 @@
+#!/usr/bin/env sh
+# PrixmaViz MCP shim launcher (POSIX).
+#
+# Detects the host platform, lazy-downloads the matching pre-built binary from
+# GitHub Releases on first run, caches it at ${PRIXMAVIZ_BIN_CACHE:-~/.cache/
+# prixmaviz/bin}, and exec's it. Re-runs hit the cache (no network).
+#
+# Override the binary location entirely by exporting PRIXMAVIZ_MCP_BIN to an
+# absolute path — useful for local development.
+set -e
+
+VERSION="0.5.0"
+REPO="MichaelDanCurtis/PrixmaViz"
+
+if [ -n "$PRIXMAVIZ_MCP_BIN" ] && [ -x "$PRIXMAVIZ_MCP_BIN" ]; then
+  exec "$PRIXMAVIZ_MCP_BIN" "$@"
+fi
+
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64)              PLATFORM="darwin-arm64" ;;
+  Darwin-x86_64)             PLATFORM="darwin-x64" ;;
+  Linux-aarch64|Linux-arm64) PLATFORM="linux-arm64" ;;
+  Linux-x86_64)              PLATFORM="linux-x64" ;;
+  *)
+    echo "prixmaviz-mcp: unsupported platform: $(uname -sm)" >&2
+    echo "Supported: darwin-arm64, darwin-x64, linux-arm64, linux-x64, windows-x64" >&2
+    echo "File an issue if you're on a supported platform and seeing this:" >&2
+    echo "  https://github.com/${REPO}/issues" >&2
+    exit 1
+    ;;
+esac
+
+CACHE_DIR="${PRIXMAVIZ_BIN_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/prixmaviz/bin}"
+BIN="$CACHE_DIR/prixmaviz-mcp-${VERSION}-${PLATFORM}"
+
+if [ ! -x "$BIN" ]; then
+  mkdir -p "$CACHE_DIR"
+  URL="https://github.com/${REPO}/releases/download/v${VERSION}/prixmaviz-mcp-${PLATFORM}"
+  echo "prixmaviz-mcp: first-time setup — downloading ${PLATFORM} binary (~60–100 MB)…" >&2
+  echo "  from: ${URL}" >&2
+  echo "  to:   ${BIN}" >&2
+  TMP="$BIN.partial"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fSL --progress-bar -o "$TMP" "$URL"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -O "$TMP" "$URL"
+  else
+    echo "prixmaviz-mcp: neither curl nor wget found — cannot download binary." >&2
+    echo "Install curl, or set PRIXMAVIZ_MCP_BIN to a pre-downloaded binary." >&2
+    exit 1
+  fi
+  chmod +x "$TMP"
+  mv "$TMP" "$BIN"
+  echo "prixmaviz-mcp: ready." >&2
+fi
+
+exec "$BIN" "$@"

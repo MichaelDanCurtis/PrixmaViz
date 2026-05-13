@@ -13,7 +13,11 @@ claude plugins marketplace add https://github.com/MichaelDanCurtis/PrixmaViz#mai
 claude plugins install prixmaviz@prixmaviz-local
 ```
 
-The plugin uses `https://prixmaviz.ailuxis.com` by default. To point at your own instance, set `PRIXMAVIZ_REMOTE_URL` in `.mcp.json`.
+Supported platforms: macOS (Apple Silicon + Intel), Linux (x64 + arm64), Windows (x64).
+
+The plugin install itself is tiny (~3 KB launcher script). On your first diagram render, the launcher downloads the matching pre-built shim binary (~60–115 MB depending on platform) from this repo's GitHub Releases and caches it at `~/.cache/prixmaviz/bin/` (POSIX) or `%LOCALAPPDATA%\prixmaviz\bin\` (Windows). Subsequent calls hit the cache — zero network.
+
+The plugin uses `https://prixmaviz.ailuxis.com` by default. To point at your own instance, set `PRIXMAVIZ_REMOTE_URL` in the cached `.mcp.json`. To run a locally-built binary instead of the released one, set `PRIXMAVIZ_MCP_BIN` to its absolute path.
 
 The AI will now use PrixmaViz whenever you ask for diagrams. Try:
 
