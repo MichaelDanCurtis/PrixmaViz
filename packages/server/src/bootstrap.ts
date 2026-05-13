@@ -6,6 +6,8 @@ export interface PrixmaConfig {
   bindPort: number;
   webDist: string;
   migrationsDir: string;
+  workspaceTtlMinutes: number;
+  reapIntervalMinutes: number;
 }
 
 export function loadConfig(): PrixmaConfig {
@@ -19,5 +21,7 @@ export function loadConfig(): PrixmaConfig {
     bindPort: parseInt(env.PRIXMAVIZ_BIND_PORT ?? "5180", 10),
     webDist: env.PRIXMAVIZ_WEB_DIST ?? "packages/web/dist",
     migrationsDir: env.PRIXMAVIZ_MIGRATIONS_DIR ?? "packages/server/migrations",
+    workspaceTtlMinutes: parseInt(env.PRIXMAVIZ_WORKSPACE_TTL_MINUTES ?? "60", 10),
+    reapIntervalMinutes: parseInt(env.PRIXMAVIZ_REAP_INTERVAL_MINUTES ?? "5", 10),
   };
 }

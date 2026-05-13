@@ -8,6 +8,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://prixmaviz:prixmaviz@postgres:5432/prixmaviz}
       KROKI_URL: ${KROKI_URL:-http://kroki:8000}
       PRIXMAVIZ_PUBLIC_URL: ${PRIXMAVIZ_PUBLIC_URL:-http://localhost:5180}
+      PRIXMAVIZ_WORKSPACE_TTL_MINUTES: ${PRIXMAVIZ_WORKSPACE_TTL_MINUTES:-60}
+      PRIXMAVIZ_REAP_INTERVAL_MINUTES: ${PRIXMAVIZ_REAP_INTERVAL_MINUTES:-5}
     depends_on:
       postgres:
         condition: service_healthy

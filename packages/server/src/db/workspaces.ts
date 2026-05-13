@@ -68,3 +68,23 @@ export async function updateWorkspaceSettings(sql: Sql, id: string, settings: Re
 export async function deleteWorkspace(sql: Sql, id: string): Promise<void> {
   await sql`DELETE FROM workspaces WHERE id = ${id}`;
 }
+
+/**
+ * Delete workspaces whose `last_seen_at` is older than `ttlMinutes` ago,
+ * EXCEPT workspaces that contain at least one public-view diagram (those are
+ * indefinitely "pinned" — toggling a diagram public is the user's signal to
+ * keep the workspace).
+ *
+ * Returns the IDs of deleted workspaces (caller can log).
+ */
+export async function deleteExpiredWorkspaces(sql: Sql, ttlMinutes: number): Promise<string[]> {
+  const rows = await sql`
+    DELETE FROM workspaces w
+    WHERE w.last_seen_at < now() - make_interval(mins => ${ttlMinutes})
+      AND NOT EXISTS (
+        SELECT 1 FROM diagrams d WHERE d.workspace_id = w.id AND d.public_view = true
+      )
+    RETURNING id
+  `;
+  return rows.map((r) => r.id as string);
+}

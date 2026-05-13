@@ -80,6 +80,27 @@ async function main(): Promise<void> {
     },
   });
 
+  // Workspace TTL reaper. Runs every `reapIntervalMinutes`, deletes workspaces
+  // with no activity for `workspaceTtlMinutes` UNLESS they contain a public
+  // diagram. Set PRIXMAVIZ_WORKSPACE_TTL_MINUTES=0 to disable entirely.
+  if (config.workspaceTtlMinutes > 0) {
+    const { deleteExpiredWorkspaces } = await import("./db/workspaces");
+    const intervalMs = config.reapIntervalMinutes * 60 * 1000;
+    const reap = async () => {
+      try {
+        const ids = await deleteExpiredWorkspaces(sql, config.workspaceTtlMinutes);
+        if (ids.length > 0) {
+          console.error(`reaper: deleted ${ids.length} expired workspaces`);
+        }
+      } catch (e) {
+        console.error("reaper failed:", e);
+      }
+    };
+    setInterval(reap, intervalMs);
+    // Run once on startup so a long-down server catches up immediately.
+    void reap();
+  }
+
   console.error(`prixmaviz listening on http://${config.bindHost}:${server.port} web=${config.webDist} (${bundleStatus})`);
 }
 

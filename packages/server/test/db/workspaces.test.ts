@@ -8,6 +8,7 @@ import {
   updateWorkspaceCamera,
   updateWorkspaceTiles,
   deleteWorkspace,
+  deleteExpiredWorkspaces,
 } from "../../src/db/workspaces";
 import { join } from "node:path";
 
@@ -68,5 +69,32 @@ describe("workspaces repo", () => {
     await deleteWorkspace(sql, ws.id);
     const fetched = await getWorkspace(sql, ws.id);
     expect(fetched).toBeNull();
+  });
+
+  it("deleteExpiredWorkspaces removes workspaces past TTL", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    // Backdate last_seen_at to 2 hours ago
+    await sql`UPDATE workspaces SET last_seen_at = now() - interval '2 hours' WHERE id = ${ws.id}`;
+    const deleted = await deleteExpiredWorkspaces(sql, 60);
+    expect(deleted).toContain(ws.id);
+    const stillThere = await getWorkspace(sql, ws.id);
+    expect(stillThere).toBeNull();
+  });
+
+  it("deleteExpiredWorkspaces preserves workspaces containing public diagrams", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    // Need to import createDiagram + setDiagramPublic from db/diagrams at the top of the test file
+    const { createDiagram, setDiagramPublic } = await import("../../src/db/diagrams");
+    const d = await createDiagram(sql, { workspaceId: ws.id, slug: "shared", name: "S", engine: "mermaid", kind: "graph" });
+    await setDiagramPublic(sql, ws.id, d.id, true);
+    // Backdate so it would normally expire
+    await sql`UPDATE workspaces SET last_seen_at = now() - interval '2 hours' WHERE id = ${ws.id}`;
+    const deleted = await deleteExpiredWorkspaces(sql, 60);
+    expect(deleted).not.toContain(ws.id);
+    // Workspace still queryable
+    const stillThere = await getWorkspace(sql, ws.id);
+    expect(stillThere?.id).toBe(ws.id);
   });
 });
