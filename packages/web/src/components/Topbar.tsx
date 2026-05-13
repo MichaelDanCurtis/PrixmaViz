@@ -9,27 +9,12 @@ interface TopbarProps { onOpenSettings?: () => void; }
 export function Topbar({ onOpenSettings }: TopbarProps = {}) {
   const diagram = useAppStore((s) => s.diagram);
   const wsStatus = useAppStore((s) => s.wsStatus);
-  const pending = useAppStore((s) => s.pending);
-  const setPending = useAppStore((s) => s.setPending);
-  const setError = useAppStore((s) => s.setError);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
   const dot =
     wsStatus === "open" ? "ok" :
     wsStatus === "closed" ? "err" :
     "";
-
-  async function onSave() {
-    if (!diagram) return;
-    setPending(true);
-    try {
-      await api.save(diagram.id, { name: diagram.name, tags: diagram.meta.tags });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setPending(false);
-    }
-  }
 
   async function onTopbarExport(format: "svg" | "png" | "jpeg") {
     setExportMenuOpen(false);
@@ -63,11 +48,6 @@ export function Topbar({ onOpenSettings }: TopbarProps = {}) {
       </span>
       <ToolPalette />
       <div className="spacer" />
-      {diagram && (
-        <button className="primary" onClick={onSave} disabled={pending}>
-          {pending ? "Saving…" : "Save"}
-        </button>
-      )}
       <div style={{ position: "relative", display: "inline-block" }}>
         <button className="topbar-button" onClick={() => setExportMenuOpen((v) => !v)} title="Export focused tile">⬇ Export</button>
         {exportMenuOpen && (

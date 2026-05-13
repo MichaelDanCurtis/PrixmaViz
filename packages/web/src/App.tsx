@@ -4,7 +4,6 @@ import { Library } from "./components/Library";
 import { InfiniteCanvas } from "./components/InfiniteCanvas";
 import { useWebSocket } from "./lib/ws";
 import { SettingsPanel } from "./components/SettingsPanel";
-import { UninstallDialog } from "./components/UninstallDialog";
 import { Footer } from "./components/Footer";
 import { WelcomePanel } from "./components/WelcomePanel";
 import { PublicDiagram } from "./pages/PublicDiagram";
@@ -27,7 +26,6 @@ export function App() {
 
 function WorkspaceApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [uninstallOpen, setUninstallOpen] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
@@ -67,11 +65,6 @@ function WorkspaceApp() {
         .then((unlisten: () => void) => {
           cleanups.push(unlisten);
         });
-      tauri.event
-        .listen("open-uninstall", () => setUninstallOpen(true))
-        .then((unlisten: () => void) => {
-          cleanups.push(unlisten);
-        });
       return () => {
         cleanups.forEach((fn) => fn());
       };
@@ -105,7 +98,6 @@ function WorkspaceApp() {
         />
       )}
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
-      {uninstallOpen && <UninstallDialog onClose={() => setUninstallOpen(false)} />}
     </div>
   );
 }
