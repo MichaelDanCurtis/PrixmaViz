@@ -1,0 +1,49 @@
+# Production overlay for PrixmaViz.
+# Usage:  docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
+#
+# Provides:
+#  - External Postgres via DATABASE_URL (no bundled postgres container)
+#  - 127.0.0.1 bind so a host-level reverse proxy terminates TLS
+#  - restart: always on all services
+#  - Memory limits on Java-based Kroki services (mermaid orchestrator is a JVM)
+#
+# Required env (in .env or shell):
+#   DATABASE_URL=postgres://<user>:<pass>@<host>:5432/prixmaviz
+#   PRIXMAVIZ_PUBLIC_URL=https://prixmaviz.alexis.com
+#   HOST_PORT=127.0.0.1:5180   # bind only to loopback for reverse-proxy
+
+services:
+  prixmaviz:
+    # Override port binding: only listen on loopback
+    ports:
+      - "${HOST_PORT:-127.0.0.1:5180}:5180"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Remove the bundled postgres service. The compose merge behaviour will
+  # silently keep services it doesn't override, so we use a deploy.replicas: 0
+  # trick (compose ignores it in non-swarm but it's a tag for the reader).
+  # In practice, deployers comment out the postgres service in the main compose
+  # file or use a separate compose project.
+  # See docs/deploy.md for the recommended pattern.
+  postgres:
+    profiles: ["never"]  # exclude from default profile
+
+  kroki:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  kroki-mermaid:
+    restart: always
+
+  kroki-bpmn:
+    restart: always
+
+  kroki-excalidraw:
+    restart: always
