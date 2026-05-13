@@ -5,7 +5,7 @@ description: Use whenever the user wants any kind of diagram, chart, flowchart, 
 
 # Diagram Rendering with PrixmaViz
 
-PrixmaViz is the user's visual partner. When the user asks for a diagram or describes content that visualizes well, render it via the PrixmaViz MCP tools instead of inline ASCII art. The diagram appears in a **browser tab** at the workspace URL — the hosted service (`https://prixmaviz.alexis.com`) or a self-hosted server, whichever the user has configured.
+PrixmaViz is the user's visual partner. When the user asks for a diagram or describes content that visualizes well, render it via the PrixmaViz MCP tools instead of inline ASCII art. The diagram appears in a **browser tab** at the workspace URL — the hosted service (`https://prixmaviz.ailuxis.com`) or a self-hosted server, whichever the user has configured.
 
 You participate in a continuous back-and-forth conversation about the diagram. **Always tell the user where to view what you rendered** — the URL from `get_view_url()` is the reliable answer.
 
@@ -111,8 +111,8 @@ Example:
 
 ```
 You:   [render the diagram]
-       [call get_view_url() → returns { url: "https://prixmaviz.alexis.com/" }]
-       "TCP handshake rendered — view at https://prixmaviz.alexis.com/.
+       [call get_view_url() → returns { url: "https://prixmaviz.ailuxis.com/" }]
+       "TCP handshake rendered — view at https://prixmaviz.ailuxis.com/.
         Open that URL in a browser tab to see it."
 ```
 

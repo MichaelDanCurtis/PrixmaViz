@@ -1,6 +1,6 @@
 # Deploy PrixmaViz to production
 
-This playbook deploys PrixmaViz at a canonical URL (e.g. `prixmaviz.alexis.com`) using Docker Compose, an external Postgres, and a host-level reverse proxy for TLS.
+This playbook deploys PrixmaViz at a canonical URL (e.g. `prixmaviz.ailuxis.com`) using Docker Compose, an external Postgres, and a host-level reverse proxy for TLS.
 
 ## Prerequisites
 
@@ -34,7 +34,7 @@ docker build -t prixmaviz:0.4.0 .
 Create a deploy directory on the host and copy `docker-compose.yaml`, `docker-compose.prod.yaml`, and a production `.env`:
 
 ```bash
-ssh prixmaviz.alexis.com
+ssh prixmaviz.ailuxis.com
 mkdir -p /srv/prixmaviz
 cd /srv/prixmaviz
 
@@ -45,7 +45,7 @@ curl -O https://raw.githubusercontent.com/MichaelDanCurtis/PrixmaViz/main/docker
 # Create the production .env
 cat > .env <<EOF
 DATABASE_URL=postgres://prixmaviz:STRONG_PASSWORD@your-postgres-host:5432/prixmaviz
-PRIXMAVIZ_PUBLIC_URL=https://prixmaviz.alexis.com
+PRIXMAVIZ_PUBLIC_URL=https://prixmaviz.ailuxis.com
 HOST_PORT=127.0.0.1:5180
 # Idle anonymous workspaces are reaped after this many minutes. Workspaces
 # containing any public-view diagram are exempt. Set to 0 to disable.
@@ -87,7 +87,7 @@ docker compose ps
 ### Caddy
 
 ```caddy
-prixmaviz.alexis.com {
+prixmaviz.ailuxis.com {
     reverse_proxy 127.0.0.1:5180
     # Caddy handles TLS automatically via Let's Encrypt
 }
@@ -97,7 +97,7 @@ prixmaviz.alexis.com {
 
 ```nginx
 server {
-    server_name prixmaviz.alexis.com;
+    server_name prixmaviz.ailuxis.com;
     listen 443 ssl http2;
     # Add your cert paths here
 
@@ -117,11 +117,11 @@ Note: WebSocket support requires the `Upgrade`/`Connection` headers above.
 ## 6. Verify
 
 ```bash
-curl https://prixmaviz.alexis.com/api/health
+curl https://prixmaviz.ailuxis.com/api/health
 # {"ok":true}
 ```
 
-Then open `https://prixmaviz.alexis.com/` in a browser — your workspace is ready.
+Then open `https://prixmaviz.ailuxis.com/` in a browser — your workspace is ready.
 
 ## Operations
 
@@ -182,9 +182,9 @@ TLS paths:
 
 ### Path A: grey cloud (DNS-only)
 
-1. **Point DNS.** Add an A record for `prixmaviz.alexis.com` → your VPS public
+1. **Point DNS.** Add an A record for `prixmaviz.ailuxis.com` → your VPS public
    IP, with Cloudflare's proxy DISABLED (grey cloud). Verify with
-   `dig prixmaviz.alexis.com` returns the VPS IP, not Cloudflare's.
+   `dig prixmaviz.ailuxis.com` returns the VPS IP, not Cloudflare's.
 2. **SSH in and run the deploy script:**
    ```bash
    ssh root@<your-vps-ip>
@@ -199,11 +199,11 @@ TLS paths:
 1. **Create a Cloudflare API token.** Go to
    [My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens),
    click "Create Token", pick the **"Edit zone DNS"** template, scope it to
-   the zone `alexis.com` (or whichever parent zone owns the domain), and
+   the zone `ailuxis.com` (or whichever parent zone owns the domain), and
    save. Copy the token — Cloudflare only shows it once.
 
 2. **Point DNS via Cloudflare** with the proxy ENABLED (orange cloud).
-   `dig prixmaviz.alexis.com` will return Cloudflare IPs (`104.21.x` /
+   `dig prixmaviz.ailuxis.com` will return Cloudflare IPs (`104.21.x` /
    `172.67.x`), not your VPS IP — that's expected.
 
 3. **Set Cloudflare's SSL/TLS mode to "Full (strict)"** for the zone.
@@ -237,7 +237,7 @@ TLS paths:
    sudo apt-mark hold caddy
    ```
 
-7. **Visit `https://prixmaviz.alexis.com/`** — your workspace is ready.
+7. **Visit `https://prixmaviz.ailuxis.com/`** — your workspace is ready.
    Bookmark the URL it creates.
 
 ### Re-issuing the cert if it failed
@@ -260,7 +260,7 @@ sudo grep CF_API_TOKEN /etc/systemd/system/caddy.service.d/cloudflare-token.conf
 #    c) Stale state in Caddy's data dir (rare): force re-acquisition:
 sudo systemctl reload caddy        # picks up Caddyfile changes; usually enough
 # If still stuck, nuke just this domain's cached cert and let Caddy retry:
-sudo rm -rf /var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/prixmaviz.alexis.com
+sudo rm -rf /var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/prixmaviz.ailuxis.com
 sudo systemctl restart caddy
 
 # 3. Tail the live log while it retries

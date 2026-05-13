@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "d_57e83345c86f4418",
+  "name": "cycle-4-architecture",
+  "engine": "mermaid",
+  "kind": "passthrough",
+  "dsl": "flowchart TB\n  subgraph User[\"User\"]\n    cc[Claude Code session]\n    browser[\"Browser at prixmaviz.your.app/w/uuid\"]\n  end\n\n  subgraph Shim[\"MCP shim — Bun binary\"]\n    sh[\"prixmaviz-mcp<br/>--remote --workspace=uuid\"]\n  end\n\n  subgraph Stack[\"docker-compose stack\"]\n    pv[prixmaviz<br/>Bun HTTP+WS+webview<br/>:5180]\n    pg[(postgres<br/>workspaces, diagrams,<br/>annotations)]\n    subgraph KrokiCluster[\"Kroki rendering cluster\"]\n      k[kroki orchestrator]\n      km[kroki-mermaid]\n      kp[kroki-plantuml]\n      kb[kroki-bpmn]\n      kx[kroki-excalidraw]\n    end\n  end\n\n  cc -.-> sh\n  sh -- HTTPS Bearer uuid --> pv\n  browser -- HTTPS WS --> pv\n  pv -- SQL --> pg\n  pv -- HTTP --> k\n  k --> km\n  k --> kp\n  k --> kb\n  k --> kx\n\n  classDef user fill:#dbeafe,stroke:#3b82f6\n  classDef shim fill:#fef3c7,stroke:#f59e0b\n  classDef stack fill:#dcfce7,stroke:#22c55e\n  classDef data fill:#fce7f3,stroke:#ec4899\n  classDef kroki fill:#e9d5ff,stroke:#a855f7\n  class cc,browser user\n  class sh shim\n  class pv stack\n  class pg data\n  class k,km,kp,kb,kx kroki",
+  "meta": {
+    "createdAt": "2026-05-12T04:48:23.421Z",
+    "updatedAt": "2026-05-12T04:48:23.421Z",
+    "tags": [],
+    "sourcePaths": []
+  }
+}

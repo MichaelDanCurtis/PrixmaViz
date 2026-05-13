@@ -4,7 +4,7 @@ AI-native diagram tool. 28+ rendering engines (Mermaid, PlantUML, D2, Vega-Lite,
 
 ## Try the hosted version
 
-Visit **https://prixmaviz.alexis.com** — your workspace is created automatically and the URL is bookmarkable. Lose the URL, lose the workspace, so save it somewhere.
+Visit **https://prixmaviz.ailuxis.com** — your workspace is created automatically and the URL is bookmarkable. Lose the URL, lose the workspace, so save it somewhere.
 
 ## Install for Claude Code
 
@@ -13,7 +13,7 @@ claude plugins marketplace add https://github.com/MichaelDanCurtis/PrixmaViz#mai
 claude plugins install prixmaviz@prixmaviz-local
 ```
 
-The plugin uses `https://prixmaviz.alexis.com` by default. To point at your own instance, set `PRIXMAVIZ_REMOTE_URL` in `.mcp.json`.
+The plugin uses `https://prixmaviz.ailuxis.com` by default. To point at your own instance, set `PRIXMAVIZ_REMOTE_URL` in `.mcp.json`.
 
 The AI will now use PrixmaViz whenever you ask for diagrams. Try:
 

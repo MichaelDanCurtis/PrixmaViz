@@ -20,7 +20,7 @@ set -euo pipefail
 DEPLOY_DIR="/srv/prixmaviz"
 REPO_URL="https://github.com/MichaelDanCurtis/PrixmaViz.git"
 BRANCH="main"
-DOMAIN="prixmaviz.alexis.com"
+DOMAIN="prixmaviz.ailuxis.com"
 COMPOSE_FILES=(-f docker-compose.yaml -f docker-compose.hostinger.yaml)
 
 log() { echo "[deploy] $*"; }

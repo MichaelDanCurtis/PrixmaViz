@@ -9,7 +9,7 @@
 #
 # Required env (in .env or shell):
 #   DATABASE_URL=postgres://<user>:<pass>@<host>:5432/prixmaviz
-#   PRIXMAVIZ_PUBLIC_URL=https://prixmaviz.alexis.com
+#   PRIXMAVIZ_PUBLIC_URL=https://prixmaviz.ailuxis.com
 #   HOST_PORT=127.0.0.1:5180   # bind only to loopback for reverse-proxy
 
 services:

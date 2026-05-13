@@ -23,7 +23,7 @@ export PRIXMAVIZ_REMOTE_URL=http://localhost:5180   # or your prod URL
 claude
 ```
 
-The `.mcp.json` declares `PRIXMAVIZ_REMOTE_URL=${PRIXMAVIZ_REMOTE_URL:-https://prixmaviz.alexis.com}`, so a shell-level env var wins and the hosted URL is the fallback.
+The `.mcp.json` declares `PRIXMAVIZ_REMOTE_URL=${PRIXMAVIZ_REMOTE_URL:-https://prixmaviz.ailuxis.com}`, so a shell-level env var wins and the hosted URL is the fallback.
 
 **Verify:**
 
@@ -49,7 +49,7 @@ These wrap the same `claude` CLI under the hood, so the plugin install above app
     "prixmaviz": {
       "command": "/path/to/prixmaviz-mcp",
       "env": {
-        "PRIXMAVIZ_REMOTE_URL": "https://prixmaviz.alexis.com"
+        "PRIXMAVIZ_REMOTE_URL": "https://prixmaviz.ailuxis.com"
       }
     }
   }
@@ -78,7 +78,7 @@ Future cycle. The shim's stdio JSON-RPC is MCP-spec compliant, so any MCP-aware 
 
 ## Self-host backend (any host above)
 
-If you don't want to use the hosted `prixmaviz.alexis.com`, stand up your own:
+If you don't want to use the hosted `prixmaviz.ailuxis.com`, stand up your own:
 
 ```bash
 docker compose up -d

@@ -5,8 +5,8 @@ interface Props {
   crossPromo?: Array<{ name: string; href: string; tagline?: string }>;
 }
 
-const DEFAULT_BRAND = "alexis.com";
-const DEFAULT_BRAND_URL = "https://alexis.com";
+const DEFAULT_BRAND = "ailuxis.com";
+const DEFAULT_BRAND_URL = "https://ailuxis.com";
 const DEFAULT_PROMO: Array<{ name: string; href: string }> = [];
 
 export function Footer({

@@ -31,7 +31,7 @@ export function PublicDiagram({ diagramId }: { diagramId: string }) {
       </header>
       <div className="public-svg" dangerouslySetInnerHTML={{ __html: data.svg ?? "" }} />
       <footer className="public-footer">
-        <a href="https://prixmaviz.alexis.com">Made with PrixmaViz</a>
+        <a href="https://prixmaviz.ailuxis.com">Made with PrixmaViz</a>
       </footer>
     </div>
   );
