@@ -47,6 +47,10 @@ cat > .env <<EOF
 DATABASE_URL=postgres://prixmaviz:STRONG_PASSWORD@your-postgres-host:5432/prixmaviz
 PRIXMAVIZ_PUBLIC_URL=https://prixmaviz.alexis.com
 HOST_PORT=127.0.0.1:5180
+# Idle anonymous workspaces are reaped after this many minutes. Workspaces
+# containing any public-view diagram are exempt. Set to 0 to disable.
+PRIXMAVIZ_WORKSPACE_TTL_MINUTES=60
+PRIXMAVIZ_REAP_INTERVAL_MINUTES=5
 EOF
 chmod 600 .env
 ```
@@ -145,15 +149,14 @@ docker compose logs --tail 100 kroki
 
 ### Anonymous workspace garbage collection
 
-Workspaces with no activity (no `last_seen_at` updates) accumulate forever. There's no built-in TTL today. If your workspace count grows unmanageable, a one-shot SQL purge:
+The server reaps idle anonymous workspaces automatically. Defaults: a workspace whose `last_seen_at` is older than 60 minutes is deleted, unless it contains at least one public-view diagram (those are pinned indefinitely — toggling a diagram public is the user's explicit signal to keep the workspace alive).
 
-```sql
-DELETE FROM workspaces
-WHERE last_seen_at < now() - interval '180 days'
-  AND id NOT IN (SELECT DISTINCT workspace_id FROM diagrams WHERE updated_at > now() - interval '180 days');
-```
+Tune via env:
 
-(Future cycle should add an automated job for this.)
+- `PRIXMAVIZ_WORKSPACE_TTL_MINUTES` (default `60`) — minutes of inactivity before a workspace is eligible for deletion. Set `0` to disable the reaper entirely.
+- `PRIXMAVIZ_REAP_INTERVAL_MINUTES` (default `5`) — how often the reaper job runs.
+
+Each pass that deletes anything logs `reaper: deleted N expired workspaces` to the container's stderr — visible via `docker compose logs prixmaviz | grep reaper`.
 
 ### TLS notes
 

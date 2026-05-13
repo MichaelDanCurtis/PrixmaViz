@@ -35,6 +35,16 @@ For production, set:
 - `DATABASE_URL` — your external Postgres (omit to use the bundled one)
 - TLS terminator in front (nginx, Caddy, Cloudflare, etc.)
 
+### Workspace lifecycle
+
+Anonymous workspaces expire after **1 hour of inactivity**. Activity means any authenticated `/api/*` request — keeping a browser tab open with the workspace loaded is sufficient.
+
+**Pin a workspace indefinitely** by toggling at least one diagram to public (🌐 icon on the tile header). Workspaces with any public diagram are exempt from TTL.
+
+To change the policy, set in your `.env`:
+- `PRIXMAVIZ_WORKSPACE_TTL_MINUTES=60` — how long before idle workspaces expire (set 0 to disable)
+- `PRIXMAVIZ_REAP_INTERVAL_MINUTES=5` — how often the reaper runs
+
 ## Architecture
 
 - **Bun + TypeScript** server: HTTP + WebSocket + 11-tool MCP dispatch, Postgres persistence, Bearer-token workspace auth
