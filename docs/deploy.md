@@ -166,34 +166,106 @@ The `/p/<id>` public-view endpoint sends `Content-Security-Policy: frame-ancesto
 
 ## Quick deploy: Hostinger VPS
 
-If you have a Hostinger VPS (Ubuntu 24.04, Docker preinstalled):
+If you have a Hostinger VPS (Ubuntu 24.04, Docker preinstalled), you have two
+TLS paths:
 
-1. **Point DNS.** Add an A record for `prixmaviz.alexis.com` → your VPS public IP. Wait for propagation (typically <5 minutes; verify with `dig prixmaviz.alexis.com`).
+- **Path A — grey cloud (DNS-only).** Cloudflare or your registrar points the
+  A record directly at the VPS IP, with Cloudflare's proxy OFF. Let's Encrypt
+  uses HTTP-01 (port 80). This is the simplest path; nothing to configure
+  beyond DNS.
+- **Path B — orange cloud (Cloudflare proxy).** Cloudflare proxies traffic to
+  the VPS, hiding the VPS IP and adding DDoS protection / caching. In this
+  mode, Let's Encrypt's HTTP-01 challenge fails because port 80 lands on
+  Cloudflare, not the VPS. The deploy script uses Cloudflare's DNS API to
+  prove ownership via DNS-01 instead — works regardless of how port 80 is
+  routed.
 
+### Path A: grey cloud (DNS-only)
+
+1. **Point DNS.** Add an A record for `prixmaviz.alexis.com` → your VPS public
+   IP, with Cloudflare's proxy DISABLED (grey cloud). Verify with
+   `dig prixmaviz.alexis.com` returns the VPS IP, not Cloudflare's.
 2. **SSH in and run the deploy script:**
+   ```bash
+   ssh root@<your-vps-ip>
+   curl -fsSL https://raw.githubusercontent.com/MichaelDanCurtis/PrixmaViz/main/scripts/deploy-hostinger.sh | bash
+   ```
+3. **Review `/srv/prixmaviz/.env`** — leave `CF_API_TOKEN` empty.
+4. **Re-run** `cd /srv/prixmaviz && bash scripts/deploy-hostinger.sh`. Caddy
+   acquires a cert via HTTP-01.
 
+### Path B: orange cloud (Cloudflare proxy)
+
+1. **Create a Cloudflare API token.** Go to
+   [My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens),
+   click "Create Token", pick the **"Edit zone DNS"** template, scope it to
+   the zone `alexis.com` (or whichever parent zone owns the domain), and
+   save. Copy the token — Cloudflare only shows it once.
+
+2. **Point DNS via Cloudflare** with the proxy ENABLED (orange cloud).
+   `dig prixmaviz.alexis.com` will return Cloudflare IPs (`104.21.x` /
+   `172.67.x`), not your VPS IP — that's expected.
+
+3. **Set Cloudflare's SSL/TLS mode to "Full (strict)"** for the zone.
+   Anything weaker (Flexible, Full) will cause redirect loops or expose
+   traffic in cleartext between Cloudflare and the VPS.
+
+4. **SSH in and run the deploy script** (first run installs Caddy + the
+   Cloudflare DNS module, then exits asking you to populate `.env`):
    ```bash
    ssh root@<your-vps-ip>
    curl -fsSL https://raw.githubusercontent.com/MichaelDanCurtis/PrixmaViz/main/scripts/deploy-hostinger.sh | bash
    ```
 
-   First run will:
-   - Install Caddy
-   - Clone the repo to `/srv/prixmaviz`
-   - Generate `.env` with a strong Postgres password
-   - Exit and ask you to review
+5. **Edit `/srv/prixmaviz/.env`** and paste the token:
+   ```bash
+   CF_API_TOKEN=<paste-your-cloudflare-token-here>
+   ```
 
-3. **Review `/srv/prixmaviz/.env`** — adjust `PRIXMAVIZ_WORKSPACE_TTL_MINUTES` if you want longer/shorter TTL, set `KROKI_URL` if you want an external Kroki. Save.
-
-4. **Re-run the script** to build + start:
-
+6. **Re-run the deploy script** to build, start, and acquire the cert via
+   DNS-01:
    ```bash
    cd /srv/prixmaviz && bash scripts/deploy-hostinger.sh
    ```
+   First run installs the `caddy-dns/cloudflare` module via
+   `caddy add-package` and `apt-mark hold caddy` to prevent future apt
+   upgrades from clobbering the customized binary. To upgrade Caddy later:
+   ```bash
+   sudo apt-mark unhold caddy
+   sudo apt-get install --only-upgrade caddy
+   sudo caddy add-package github.com/caddy-dns/cloudflare
+   sudo apt-mark hold caddy
+   ```
 
-   The script will build the image, start the stack, wait for `/api/health`, and verify the external HTTPS endpoint.
+7. **Visit `https://prixmaviz.alexis.com/`** — your workspace is ready.
+   Bookmark the URL it creates.
 
-5. **Visit `https://prixmaviz.alexis.com/`** — your workspace is ready. Bookmark the URL it creates.
+### Re-issuing the cert if it failed
+
+If Caddy logs show `obtain failed`, `challenge failed`, or any TLS error:
+
+```bash
+# 1. Inspect recent attempts
+sudo journalctl -u caddy --no-pager | grep -E "cert|tls|challenge|error" | tail -50
+
+# 2. Common fixes
+#    a) Cloudflare token missing/wrong scope:
+sudo grep CF_API_TOKEN /etc/systemd/system/caddy.service.d/cloudflare-token.conf
+#    Verify the token's permissions in Cloudflare (Edit zone DNS, scoped to
+#    the correct zone). Update /srv/prixmaviz/.env if needed and re-run the
+#    deploy script — it re-templates the systemd drop-in.
+
+#    b) Cloudflare SSL/TLS mode is not Full (strict): fix it in the dashboard.
+
+#    c) Stale state in Caddy's data dir (rare): force re-acquisition:
+sudo systemctl reload caddy        # picks up Caddyfile changes; usually enough
+# If still stuck, nuke just this domain's cached cert and let Caddy retry:
+sudo rm -rf /var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/prixmaviz.alexis.com
+sudo systemctl restart caddy
+
+# 3. Tail the live log while it retries
+sudo journalctl -u caddy -f
+```
 
 ### Updates after the first deploy
 
@@ -202,7 +274,8 @@ ssh root@<vps>
 cd /srv/prixmaviz && bash scripts/deploy-hostinger.sh
 ```
 
-The script is idempotent — it'll `git pull`, rebuild the image, recreate containers with the new image, and verify health.
+The script is idempotent — it'll `git pull`, rebuild the image, recreate
+containers with the new image, and verify health.
 
 ### Logs and troubleshooting
 
