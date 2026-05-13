@@ -27,3 +27,14 @@ src-tauri/resources/plugin/bin/*.partial
 
 # Runtime workspace state (Cycle 3 era, also covers ad-hoc local testing)
 .prixmaviz/
+
+# HyperFrames-installed agent skills (third-party content, install via
+# `npx skills add heygen-com/hyperframes`). Symlinked under .claude/skills/
+# for CC discovery.
+.agents/
+.claude/skills/
+skills-lock.json
+
+# HyperFrames render outputs (large MP4s, re-renderable from sources;
+# committed renders live as GitHub Release assets instead).
+docs/marketing/hero-demo/renders/

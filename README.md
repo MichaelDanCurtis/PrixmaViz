@@ -1,9 +1,11 @@
 # PrixmaViz
 
 <p align="center">
-  <video src="https://github.com/MichaelDanCurtis/PrixmaViz/releases/download/v0.5.0/prixmaviz-hero-30s.mp4" autoplay muted loop playsinline width="100%"></video>
+  <a href="https://github.com/MichaelDanCurtis/PrixmaViz/releases/download/v0.5.0/prixmaviz-hero-30s.mp4">
+    <img src="docs/marketing/prixmaviz-hero.gif" alt="PrixmaViz hero demo — Claude renders an OAuth 2.1 PKCE sequence diagram, you draw a region on it, the AI explains what you pointed at" width="100%" />
+  </a>
   <br/>
-  <em><a href="https://github.com/MichaelDanCurtis/PrixmaViz/releases/download/v0.5.0/prixmaviz-hero-30s.mp4">▶ Watch the 30-second demo</a></em>
+  <em><a href="https://github.com/MichaelDanCurtis/PrixmaViz/releases/download/v0.5.0/prixmaviz-hero-30s.mp4">▶ Watch the 30-second demo in HD</a></em>
 </p>
 
 AI-native diagram tool. 28+ rendering engines (Mermaid, PlantUML, D2, Vega-Lite, TikZ, Graphviz, WaveDrom, Bytefield, …) wrapped behind an MCP server, with annotations, infinite-canvas multi-tile workspace, and a marketing-surface workspace UI. Cycle 4 ships as a hosted service with optional self-host.
