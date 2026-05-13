@@ -1,27 +1,62 @@
 import type {
-  Diagram, DiagramId, PatchOp, ServerToClient,
+  Annotation, Camera, Diagram, DiagramEngine, DiagramId, DiagramKind, GraphIR, PatchOp, ServerToClient, Tile,
 } from "@prixmaviz/shared";
-import type { Annotation } from "@prixmaviz/shared";
-import { emptyGraphIR, emptyMeta, inferKind, newAnnotationId } from "@prixmaviz/shared";
+import { emptyGraphIR, emptyMeta, inferKind, newAnnotationId, newTileId } from "@prixmaviz/shared";
+import type postgres from "postgres";
 import type { KrokiClient } from "../kroki/client";
 import { applyPatch } from "../ir/engine";
 import { renderDiagram } from "../render";
-import { DiagramStore, newDiagramId } from "../store/diagrams";
-import { listPvizEntries, readPviz, writePviz } from "../pviz/io";
-import type { PrixmaPaths } from "../bootstrap";
 import type { WsHub } from "../ws/broadcast";
-import { AnnotationStore } from "../annotations/store";
 import { getHitTester } from "../hit-test";
-import { WorkspaceStore } from "../canvas/store";
+import { authenticate } from "../auth/bearer";
+import {
+  createDiagram as dbCreateDiagram,
+  getDiagram as dbGetDiagram,
+  getDiagramBySlug as dbGetDiagramBySlug,
+  listDiagrams as dbListDiagrams,
+  updateDiagram as dbUpdateDiagram,
+  type DbDiagram,
+} from "../db/diagrams";
+import {
+  addAnnotation as dbAddAnnotation,
+  deleteAnnotation as dbDeleteAnnotation,
+  listAnnotations as dbListAnnotations,
+  updateAnnotation as dbUpdateAnnotation,
+} from "../db/annotations";
+import {
+  createWorkspace as dbCreateWorkspace,
+  getWorkspace as dbGetWorkspace,
+  updateWorkspaceCamera as dbUpdateWorkspaceCamera,
+  updateWorkspaceSettings as dbUpdateWorkspaceSettings,
+  updateWorkspaceTiles as dbUpdateWorkspaceTiles,
+} from "../db/workspaces";
+
+type Sql = ReturnType<typeof postgres>;
 
 export interface RouteDeps {
-  paths: PrixmaPaths;
-  store: DiagramStore;
-  annotations: AnnotationStore;
-  workspace: WorkspaceStore;
-  schedulePersistWorkspace: () => void;
+  sql: Sql;
   kroki: KrokiClient;
   hub: WsHub;
+}
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "diagram";
+}
+
+function dbDiagramToDomain(d: DbDiagram): Diagram {
+  return {
+    id: d.id,
+    name: d.name,
+    engine: d.engine,
+    kind: d.kind,
+    ir: d.ir ?? undefined,
+    dsl: d.dsl ?? undefined,
+    meta: (d.meta as unknown as Diagram["meta"]) ?? emptyMeta(),
+  };
 }
 
 export async function handleApi(
@@ -31,61 +66,158 @@ export async function handleApi(
 ): Promise<Response | undefined> {
   const p = url.pathname;
 
+  // ─── Pre-auth routes ─────────────────────────────────────
   if (p === "/api/health") return Response.json({ ok: true });
 
-  if (p === "/api/library" && req.method === "GET") {
-    const entries = await listPvizEntries(deps.paths.diagramsDir);
-    return Response.json({ entries });
+  if (p === "/api/workspaces" && req.method === "POST") {
+    const body = await req.json().catch(() => ({})) as { name?: string };
+    const ws = await dbCreateWorkspace(deps.sql, body.name);
+    return Response.json({ id: ws.id });
   }
 
-  const thumbMatch = p.match(/^\/api\/library\/([^/]+)\/thumb$/);
-  if (thumbMatch && req.method === "GET") {
-    const slug = thumbMatch[1]!;
-    const path = `${deps.paths.diagramsDir}/${slug}.svg`;
-    const file = Bun.file(path);
-    if (await file.exists()) {
-      return new Response(file, { headers: { "Content-Type": "image/svg+xml" } });
-    }
-    return new Response("not found", { status: 404 });
+  // ─── Public diagram views (no auth) ───────────────────────
+  // /p/:id.svg — raw SVG, iframe-friendly
+  const pubSvgMatch = p.match(/^\/p\/([a-z0-9_-]+)\.svg$/i);
+  if (pubSvgMatch && req.method === "GET") {
+    const diagramId = pubSvgMatch[1]!;
+    const { getPublicDiagram } = await import("../db/diagrams");
+    const d = await getPublicDiagram(deps.sql, diagramId);
+    if (!d || !d.svg) return new Response("Not Found", { status: 404 });
+    return new Response(d.svg, {
+      status: 200,
+      headers: {
+        "Content-Type": "image/svg+xml; charset=utf-8",
+        "X-Frame-Options": "ALLOWALL",
+        "Content-Security-Policy": "frame-ancestors *",
+      },
+    });
+  }
+
+  // /p/:id — confirm existence, then fall through to the SPA index.html
+  const pubViewMatch = p.match(/^\/p\/([a-z0-9_-]+)$/i);
+  if (pubViewMatch && req.method === "GET") {
+    const diagramId = pubViewMatch[1]!;
+    const { getPublicDiagram } = await import("../db/diagrams");
+    const d = await getPublicDiagram(deps.sql, diagramId);
+    if (!d) return new Response("Not Found", { status: 404 });
+    // Fall through — let the static handler serve index.html and the SPA
+    // renders /p/<id> client-side via PublicDiagram.
+    return undefined;
+  }
+
+  // JSON API for the SPA — also no auth
+  const pubApiMatch = p.match(/^\/api\/public\/diagrams\/([a-z0-9_-]+)$/i);
+  if (pubApiMatch && req.method === "GET") {
+    const diagramId = pubApiMatch[1]!;
+    const { getPublicDiagram } = await import("../db/diagrams");
+    const d = await getPublicDiagram(deps.sql, diagramId);
+    if (!d) return Response.json({ ok: false, error: "not found" }, { status: 404 });
+    return Response.json({
+      id: d.id, name: d.name, engine: d.engine, kind: d.kind, svg: d.svg, dsl: d.dsl,
+    });
+  }
+
+  if (!p.startsWith("/api/")) return undefined;
+
+  // ─── Auth gate ────────────────────────────────────────────
+  const auth = await authenticate(req, deps.sql);
+  if (!auth.ok) {
+    return Response.json({ ok: false, error: "unauthorized" }, { status: auth.status });
+  }
+  const workspaceId = auth.workspaceId;
+
+  // ─── Diagrams ─────────────────────────────────────────────
+  if (p === "/api/diagrams" && req.method === "GET") {
+    const rows = await dbListDiagrams(deps.sql, workspaceId);
+    return Response.json({
+      diagrams: rows.map((d) => ({
+        id: d.id,
+        slug: d.slug,
+        name: d.name,
+        engine: d.engine,
+        kind: d.kind,
+        updatedAt: d.updatedAt,
+      })),
+    });
   }
 
   if (p === "/api/diagrams" && req.method === "POST") {
     const body = await req.json() as {
-      name: string; engine: Diagram["engine"]; kind?: Diagram["kind"]; initialDsl?: string;
+      name: string; engine: DiagramEngine; kind?: DiagramKind; initialDsl?: string;
     };
-    return await createDiagram(body, deps);
+    return await createDiagramRoute(body, workspaceId, deps);
   }
 
   const patchMatch = p.match(/^\/api\/diagrams\/([^/]+)\/patch$/);
   if (patchMatch && req.method === "POST") {
     const id = patchMatch[1] as DiagramId;
     const body = await req.json() as { ops: PatchOp[] };
-    return await patchDiagram(id, body.ops, deps);
+    return await patchDiagramRoute(id, body.ops, workspaceId, deps);
   }
 
   const loadMatch = p.match(/^\/api\/diagrams\/([^/]+)\/load$/);
   if (loadMatch && req.method === "POST") {
     const slug = loadMatch[1]!;
-    return await loadDiagramBySlug(slug, deps);
+    return await loadDiagramRoute(slug, workspaceId, deps);
   }
 
   const saveMatch = p.match(/^\/api\/diagrams\/([^/]+)\/save$/);
   if (saveMatch && req.method === "POST") {
     const id = saveMatch[1] as DiagramId;
     const body = await req.json().catch(() => ({})) as { name?: string; tags?: string[] };
-    return await saveDiagram(id, body, deps);
+    return await saveDiagramRoute(id, body, workspaceId, deps);
+  }
+
+  const visMatch = p.match(/^\/api\/diagrams\/([^/]+)\/visibility$/);
+  if (visMatch && req.method === "POST") {
+    const diagramId = visMatch[1]!;
+    const body = await req.json() as { public: boolean };
+    const { setDiagramPublic } = await import("../db/diagrams");
+    const existing = await dbGetDiagram(deps.sql, workspaceId, diagramId);
+    if (!existing) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+    await setDiagramPublic(deps.sql, workspaceId, diagramId, body.public);
+    const publicUrl = body.public
+      ? `${process.env.PRIXMAVIZ_PUBLIC_URL ?? ""}/p/${diagramId}`
+      : undefined;
+    return Response.json({ public: body.public, publicUrl });
   }
 
   if (p === "/api/render-dsl" && req.method === "POST") {
-    const body = await req.json() as { engine: Diagram["engine"]; source: string; name?: string };
-    return await renderDsl(body, deps);
+    const body = await req.json() as { engine: DiagramEngine; source: string; name?: string };
+    return await renderDslRoute(body, workspaceId, deps);
   }
 
   if (p === "/api/mcp/call" && req.method === "POST") {
     const body = await req.json() as { tool: string; args: Record<string, unknown> };
     const { dispatchTool } = await import("../mcp/tools");
     try {
-      const result = await dispatchTool(body.tool, body.args, deps as unknown as import("../mcp/tools").ToolCtx);
+      const result = await dispatchTool(body.tool, body.args, {
+        sql: deps.sql,
+        workspaceId,
+        kroki: deps.kroki,
+        hub: deps.hub,
+      });
+      return Response.json(result);
+    } catch (e) {
+      return Response.json(
+        { ok: false, error: e instanceof Error ? e.message : String(e) },
+        { status: 400 },
+      );
+    }
+  }
+
+  const mcpMatch = p.match(/^\/api\/mcp\/([a-z_]+)$/);
+  if (mcpMatch && req.method === "POST") {
+    const toolName = mcpMatch[1]!;
+    const args = await req.json().catch(() => ({}));
+    const { dispatchTool } = await import("../mcp/tools");
+    try {
+      const result = await dispatchTool(toolName, args as Record<string, unknown>, {
+        sql: deps.sql,
+        workspaceId,
+        kroki: deps.kroki,
+        hub: deps.hub,
+      });
       return Response.json(result);
     } catch (e) {
       return Response.json(
@@ -99,7 +231,10 @@ export async function handleApi(
   const annListMatch = p.match(/^\/api\/diagrams\/([^/]+)\/annotations$/);
   if (annListMatch && req.method === "GET") {
     const id = annListMatch[1] as DiagramId;
-    return Response.json({ annotations: deps.annotations.listByDiagram(id) });
+    const d = await dbGetDiagram(deps.sql, workspaceId, id);
+    if (!d) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+    const annotations = await dbListAnnotations(deps.sql, id, { includeResolved: true });
+    return Response.json({ annotations });
   }
 
   if (p === "/api/annotations" && req.method === "POST") {
@@ -110,7 +245,7 @@ export async function handleApi(
       bboxPixel?: { x: number; y: number; w: number; h: number };
       point?: { x: number; y: number };
     };
-    const d = deps.store.get(body.diagramId);
+    const d = await dbGetDiagram(deps.sql, workspaceId, body.diagramId);
     if (!d) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
 
     const ann: Annotation = {
@@ -122,90 +257,94 @@ export async function handleApi(
       createdAt: new Date().toISOString(),
     };
 
-    // hit-test enrichment using last cached SVG
-    const svg = deps.store.getSvg(body.diagramId);
-    if (svg) {
+    if (d.svg) {
       const tester = getHitTester(d.engine);
       if (body.kind === "tag" && body.point) {
-        const hit = tester.byPoint(svg, body.point.x, body.point.y);
+        const hit = tester.byPoint(d.svg, body.point.x, body.point.y);
         ann.targetNodes = hit.nodes;
       } else if (body.kind === "region" && body.bboxPixel) {
-        const hit = tester.byRegion(svg, body.bboxPixel);
+        const hit = tester.byRegion(d.svg, body.bboxPixel);
         ann.targetNodes = hit.nodes;
         ann.bboxData = hit.dataRange;
       } else if (body.kind === "pin" && body.point) {
-        const hit = tester.byPoint(svg, body.point.x, body.point.y);
+        const hit = tester.byPoint(d.svg, body.point.x, body.point.y);
         ann.nearestNode = hit.nodes[0];
       }
     }
 
-    deps.annotations.add(body.diagramId, ann);
-    const wAnn = deps.workspace.get();
-    const owningTileAnn = wAnn.tiles.find(t => t.diagramId === body.diagramId);
-    if (owningTileAnn) deps.workspace.focus(owningTileAnn.id);
-    deps.hub.broadcast({ type: "annotation:created", diagramId: body.diagramId, annotation: ann });
-
-    // Schedule persist (debounced)
-    schedulePersist(deps, body.diagramId);
-    return Response.json({ annotation: ann });
+    const saved = await dbAddAnnotation(deps.sql, body.diagramId, ann);
+    deps.hub.broadcast({ type: "annotation:created", diagramId: body.diagramId, annotation: saved });
+    return Response.json({ annotation: saved });
   }
 
   const annPutMatch = p.match(/^\/api\/annotations\/([^/]+)$/);
   if (annPutMatch && req.method === "PUT") {
     const annId = annPutMatch[1]!;
     const body = (await req.json()) as { diagramId: DiagramId; patch: Partial<Annotation> };
-    try {
-      const updated = deps.annotations.update(body.diagramId, annId, body.patch);
-      const wUpd = deps.workspace.get();
-      const owningTileUpd = wUpd.tiles.find(t => t.diagramId === body.diagramId);
-      if (owningTileUpd) deps.workspace.focus(owningTileUpd.id);
-      deps.hub.broadcast({ type: "annotation:updated", diagramId: body.diagramId, annotation: updated });
-      schedulePersist(deps, body.diagramId);
-      return Response.json({ annotation: updated });
-    } catch (e) {
-      return Response.json({ ok: false, error: String(e) }, { status: 404 });
-    }
+    const d = await dbGetDiagram(deps.sql, workspaceId, body.diagramId);
+    if (!d) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+    const updated = await dbUpdateAnnotation(deps.sql, body.diagramId, annId, body.patch);
+    if (!updated) return Response.json({ ok: false, error: "annotation not found" }, { status: 404 });
+    deps.hub.broadcast({ type: "annotation:updated", diagramId: body.diagramId, annotation: updated });
+    return Response.json({ annotation: updated });
   }
 
   if (annPutMatch && req.method === "DELETE") {
     const annId = annPutMatch[1]!;
     const body = (await req.json().catch(() => ({}))) as { diagramId?: DiagramId };
     if (!body.diagramId) return Response.json({ ok: false, error: "diagramId required" }, { status: 400 });
-    deps.annotations.delete(body.diagramId, annId);
+    const d = await dbGetDiagram(deps.sql, workspaceId, body.diagramId);
+    if (!d) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+    await dbDeleteAnnotation(deps.sql, body.diagramId, annId);
     deps.hub.broadcast({ type: "annotation:deleted", diagramId: body.diagramId, annotationId: annId });
-    schedulePersist(deps, body.diagramId);
     return Response.json({ ok: true });
   }
 
   // ─── Workspace ───────────────────────────────────────────
   if (p === "/api/workspace" && req.method === "GET") {
-    return Response.json(deps.workspace.get());
+    const ws = await dbGetWorkspace(deps.sql, workspaceId);
+    if (!ws) return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
+    return Response.json(ws);
+  }
+
+  if (p === "/api/workspace" && req.method === "DELETE") {
+    const { deleteWorkspace } = await import("../db/workspaces");
+    await deleteWorkspace(deps.sql, workspaceId);
+    return Response.json({ ok: true });
+  }
+
+  if (p === "/api/workspace/name" && req.method === "PUT") {
+    const body = await req.json() as { name: string | null };
+    const { updateWorkspaceName } = await import("../db/workspaces");
+    await updateWorkspaceName(deps.sql, workspaceId, body.name);
+    return Response.json({ name: body.name });
   }
 
   if (p === "/api/workspace/camera" && req.method === "PUT") {
-    const body = await req.json() as { x: number; y: number; zoom: number };
-    deps.workspace.setCamera(body);
-    deps.schedulePersistWorkspace();
-    const w = deps.workspace.get();
-    deps.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
-    return Response.json(w);
+    const body = await req.json() as Camera;
+    await dbUpdateWorkspaceCamera(deps.sql, workspaceId, body);
+    const ws = await dbGetWorkspace(deps.sql, workspaceId);
+    if (!ws) return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
+    deps.hub.broadcast({ type: "workspace", camera: ws.camera, tiles: ws.tiles });
+    return Response.json(ws);
   }
 
   if (p === "/api/tiles" && req.method === "POST") {
     const body = await req.json() as { diagramId: string; diagramSlug: string; x?: number; y?: number; w?: number; h?: number };
-    const { newTileId } = await import("@prixmaviz/shared");
-    const tile = deps.workspace.addTile({
+    const ws = await dbGetWorkspace(deps.sql, workspaceId);
+    if (!ws) return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
+    const tile: Tile = {
       id: newTileId(),
       diagramId: body.diagramId,
       diagramSlug: body.diagramSlug,
       x: body.x ?? 0, y: body.y ?? 0,
       w: body.w ?? 600, h: body.h ?? 400,
       z: 0,
-    });
-    deps.workspace.focus(tile.id);
-    deps.schedulePersistWorkspace();
-    const w = deps.workspace.get();
-    deps.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
+    };
+    const nextTiles = [...ws.tiles, tile];
+    await dbUpdateWorkspaceTiles(deps.sql, workspaceId, nextTiles);
+    const updated = await dbGetWorkspace(deps.sql, workspaceId);
+    if (updated) deps.hub.broadcast({ type: "workspace", camera: updated.camera, tiles: updated.tiles });
     return Response.json({ tile });
   }
 
@@ -213,47 +352,42 @@ export async function handleApi(
   if (tilePatchMatch && req.method === "PATCH") {
     const tileId = tilePatchMatch[1]!;
     const body = await req.json() as Partial<{ x: number; y: number; w: number; h: number; z: number }>;
-    const tile = deps.workspace.updateTile(tileId, body);
-    if (!tile) return Response.json({ ok: false, error: "tile not found" }, { status: 404 });
-    deps.workspace.focus(tileId);
-    deps.schedulePersistWorkspace();
-    const w = deps.workspace.get();
-    deps.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
-    return Response.json({ tile });
+    const ws = await dbGetWorkspace(deps.sql, workspaceId);
+    if (!ws) return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
+    const idx = ws.tiles.findIndex((t) => t.id === tileId);
+    if (idx < 0) return Response.json({ ok: false, error: "tile not found" }, { status: 404 });
+    const nextTiles = [...ws.tiles];
+    nextTiles[idx] = { ...nextTiles[idx]!, ...body, id: tileId };
+    await dbUpdateWorkspaceTiles(deps.sql, workspaceId, nextTiles);
+    const updated = await dbGetWorkspace(deps.sql, workspaceId);
+    if (updated) deps.hub.broadcast({ type: "workspace", camera: updated.camera, tiles: updated.tiles });
+    return Response.json({ tile: nextTiles[idx] });
   }
 
   if (tilePatchMatch && req.method === "DELETE") {
     const tileId = tilePatchMatch[1]!;
-    deps.workspace.removeTile(tileId);
-    deps.schedulePersistWorkspace();
-    const w = deps.workspace.get();
-    deps.hub.broadcast({ type: "workspace", camera: w.camera, tiles: w.tiles });
+    const ws = await dbGetWorkspace(deps.sql, workspaceId);
+    if (!ws) return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
+    const nextTiles = ws.tiles.filter((t) => t.id !== tileId);
+    await dbUpdateWorkspaceTiles(deps.sql, workspaceId, nextTiles);
+    const updated = await dbGetWorkspace(deps.sql, workspaceId);
+    if (updated) deps.hub.broadcast({ type: "workspace", camera: updated.camera, tiles: updated.tiles });
     return Response.json({ ok: true });
-  }
-
-  if (p === "/api/install" && req.method === "POST") {
-    const body = await req.json() as { host: "claude-code"; confirm: boolean };
-    const { dispatchTool } = await import("../mcp/tools");
-    try {
-      const result = await dispatchTool("install_mcp_plugin", body, deps as unknown as import("../mcp/tools").ToolCtx);
-      return Response.json(result);
-    } catch (e) {
-      return Response.json({ ok: false, error: String(e) }, { status: 500 });
-    }
   }
 
   // ─── Settings ────────────────────────────────────────────
   if (p === "/api/settings" && req.method === "GET") {
-    const { readSettings } = await import("../settings/io");
-    const settings = await readSettings(deps.paths.settingsFile);
-    return Response.json(settings);
+    const ws = await dbGetWorkspace(deps.sql, workspaceId);
+    if (!ws) return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
+    return Response.json(ws.settings ?? {});
   }
 
   if (p === "/api/settings" && req.method === "PUT") {
-    const { writeSettings, defaultSettings } = await import("../settings/io");
-    const body = await req.json() as Partial<{ krokiUrl: string }>;
-    const merged = { ...defaultSettings(), ...body };
-    await writeSettings(deps.paths.settingsFile, merged);
+    const body = await req.json() as Record<string, unknown>;
+    const ws = await dbGetWorkspace(deps.sql, workspaceId);
+    if (!ws) return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
+    const merged = { ...(ws.settings ?? {}), ...body };
+    await dbUpdateWorkspaceSettings(deps.sql, workspaceId, merged);
     return Response.json(merged);
   }
 
@@ -272,133 +406,128 @@ export async function handleApi(
   return undefined;
 }
 
-async function createDiagram(
-  body: { name: string; engine: Diagram["engine"]; kind?: Diagram["kind"]; initialDsl?: string },
+// ───────────────────────────────────────────────────────────────────────────
+// Route helpers
+// ───────────────────────────────────────────────────────────────────────────
+
+async function createDiagramRoute(
+  body: { name: string; engine: DiagramEngine; kind?: DiagramKind; initialDsl?: string },
+  workspaceId: string,
   deps: RouteDeps,
 ): Promise<Response> {
-  const kind: Diagram["kind"] = body.kind ?? inferKind(body.engine);
-  const id = newDiagramId();
-  const diagram: Diagram = {
-    id,
+  const kind: DiagramKind = body.kind ?? inferKind(body.engine);
+  const slug = slugify(body.name);
+  const ir: GraphIR | undefined = kind === "graph" ? emptyGraphIR() : undefined;
+  const dsl: string | undefined = kind === "passthrough" ? body.initialDsl ?? "" : undefined;
+  const row = await dbCreateDiagram(deps.sql, {
+    workspaceId,
+    slug,
     name: body.name,
     engine: body.engine,
     kind,
-    ir: kind === "graph" ? emptyGraphIR() : undefined,
-    dsl: kind === "passthrough" ? body.initialDsl ?? "" : undefined,
-    meta: emptyMeta(),
-  };
-  deps.store.put(diagram);
-
+    ir,
+    dsl,
+  });
+  const diagram = dbDiagramToDomain(row);
   const outcome = await renderDiagram(diagram, { kroki: deps.kroki });
   if (!outcome.ok) {
     return Response.json({ ok: false, error: outcome.error }, { status: 502 });
   }
-  deps.store.setSvg(id, outcome.result.svg);
+  await dbUpdateDiagram(deps.sql, workspaceId, row.id, { svg: outcome.result.svg });
   broadcastRender(deps.hub, diagram, outcome.result.svg, outcome.warnings);
   return Response.json({
-    diagramId: id,
+    diagramId: row.id,
+    slug: row.slug,
     render: outcome.result,
     warnings: outcome.warnings,
   });
 }
 
-async function patchDiagram(
+async function patchDiagramRoute(
   id: DiagramId,
   ops: PatchOp[],
+  workspaceId: string,
   deps: RouteDeps,
 ): Promise<Response> {
-  const d = deps.store.get(id);
-  if (!d) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
-  if (d.kind !== "graph" || !d.ir)
+  const row = await dbGetDiagram(deps.sql, workspaceId, id);
+  if (!row) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  if (row.kind !== "graph" || !row.ir)
     return Response.json({ ok: false, error: "patches only valid on graph diagrams" }, { status: 400 });
-  const result = applyPatch(d.ir, ops);
+  const result = applyPatch(row.ir, ops);
   if (!result.ok)
     return Response.json({ ok: false, error: result.error, opIndex: result.opIndex }, { status: 400 });
 
-  d.ir = result.ir;
-  deps.store.touch(id);
-  const outcome = await renderDiagram(d, { kroki: deps.kroki });
+  await dbUpdateDiagram(deps.sql, workspaceId, id, { ir: result.ir });
+  const diagram = dbDiagramToDomain({ ...row, ir: result.ir });
+  const outcome = await renderDiagram(diagram, { kroki: deps.kroki });
   if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
 
-  deps.store.setSvg(id, outcome.result.svg);
-  broadcastRender(deps.hub, d, outcome.result.svg, [...result.warnings, ...outcome.warnings]);
+  await dbUpdateDiagram(deps.sql, workspaceId, id, { svg: outcome.result.svg });
+  const warnings = [...result.warnings, ...outcome.warnings];
+  broadcastRender(deps.hub, diagram, outcome.result.svg, warnings);
   return Response.json({
     diagramId: id,
-    ir: d.ir,
+    ir: result.ir,
     render: outcome.result,
-    warnings: [...result.warnings, ...outcome.warnings],
+    warnings,
   });
 }
 
-async function loadDiagramBySlug(slug: string, deps: RouteDeps): Promise<Response> {
-  const path = `${deps.paths.diagramsDir}/${slug}.pviz`;
-  if (!(await Bun.file(path).exists()))
-    return Response.json({ ok: false, error: "not found" }, { status: 404 });
-  const file = await readPviz(path);
-  const id = file.id;
-  const diagram: Diagram = {
-    id,
-    name: file.name,
-    engine: file.engine,
-    kind: file.kind,
-    ir: file.ir,
-    dsl: file.dsl,
-    meta: file.meta,
-  };
-  deps.store.put(diagram);
-  deps.annotations.loadFromDiagram(id, file.annotations ?? []);
+async function loadDiagramRoute(slug: string, workspaceId: string, deps: RouteDeps): Promise<Response> {
+  const row = await dbGetDiagramBySlug(deps.sql, workspaceId, slug);
+  if (!row) return Response.json({ ok: false, error: "not found" }, { status: 404 });
+  const diagram = dbDiagramToDomain(row);
   const outcome = await renderDiagram(diagram, { kroki: deps.kroki });
   if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
-  deps.store.setSvg(id, outcome.result.svg);
+  await dbUpdateDiagram(deps.sql, workspaceId, row.id, { svg: outcome.result.svg });
   broadcastRender(deps.hub, diagram, outcome.result.svg, outcome.warnings);
   return Response.json({
-    diagramId: id,
+    diagramId: row.id,
     ir: diagram.ir,
     dsl: diagram.dsl,
     render: outcome.result,
   });
 }
 
-async function saveDiagram(
+async function saveDiagramRoute(
   id: DiagramId,
   body: { name?: string; tags?: string[] },
+  workspaceId: string,
   deps: RouteDeps,
 ): Promise<Response> {
-  const d = deps.store.get(id);
-  if (!d) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
-  if (body.name) d.name = body.name;
-  if (body.tags) d.meta.tags = body.tags;
-  d.meta.updatedAt = new Date().toISOString();
-
-  const outcome = await renderDiagram(d, { kroki: deps.kroki });
-  if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
-  deps.store.setSvg(id, outcome.result.svg);
-  const written = await writePviz(deps.paths.diagramsDir, d, outcome.result.svg);
-  return Response.json({ path: written.path, slug: written.slug, meta: d.meta });
+  const row = await dbGetDiagram(deps.sql, workspaceId, id);
+  if (!row) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  const patch: Parameters<typeof dbUpdateDiagram>[3] = {};
+  if (body.name !== undefined) patch.name = body.name;
+  if (body.tags !== undefined) {
+    const meta = { ...(row.meta as Record<string, unknown>), tags: body.tags };
+    patch.meta = meta;
+  }
+  const updated = await dbUpdateDiagram(deps.sql, workspaceId, id, patch);
+  return Response.json({ diagram: updated });
 }
 
-async function renderDsl(
-  body: { engine: Diagram["engine"]; source: string; name?: string },
+async function renderDslRoute(
+  body: { engine: DiagramEngine; source: string; name?: string },
+  workspaceId: string,
   deps: RouteDeps,
 ): Promise<Response> {
-  const id = newDiagramId();
-  const diagram: Diagram = {
-    id,
-    name: body.name ?? "untitled",
+  const name = body.name ?? "untitled";
+  const slug = slugify(name);
+  const row = await dbCreateDiagram(deps.sql, {
+    workspaceId,
+    slug,
+    name,
     engine: body.engine,
     kind: "passthrough",
     dsl: body.source,
-    meta: emptyMeta(),
-  };
-  deps.store.put(diagram);
+  });
+  const diagram = dbDiagramToDomain(row);
   const outcome = await renderDiagram(diagram, { kroki: deps.kroki });
   if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
-  deps.store.setSvg(id, outcome.result.svg);
-  if (body.name) {
-    await writePviz(deps.paths.diagramsDir, diagram, outcome.result.svg);
-  }
+  await dbUpdateDiagram(deps.sql, workspaceId, row.id, { svg: outcome.result.svg });
   broadcastRender(deps.hub, diagram, outcome.result.svg, outcome.warnings);
-  return Response.json({ diagramId: id, render: outcome.result });
+  return Response.json({ diagramId: row.id, slug: row.slug, render: outcome.result });
 }
 
 function broadcastRender(
@@ -416,26 +545,4 @@ function broadcastRender(
     warnings: warnings.length ? warnings : undefined,
   };
   hub.broadcast(msg);
-}
-
-const persistTimers = new Map<DiagramId, ReturnType<typeof setTimeout>>();
-function schedulePersist(deps: RouteDeps, diagramId: DiagramId) {
-  const existing = persistTimers.get(diagramId);
-  if (existing) clearTimeout(existing);
-  const t = setTimeout(async () => {
-    persistTimers.delete(diagramId);
-    const d = deps.store.get(diagramId);
-    if (!d) return;
-    const annotations = deps.annotations.listByDiagram(diagramId);
-    d.annotations = annotations;
-    // best-effort save (existing render path for SVG)
-    try {
-      const outcome = await renderDiagram(d, { kroki: deps.kroki });
-      if (outcome.ok) await writePviz(deps.paths.diagramsDir, d, outcome.result.svg);
-    } catch (e) {
-      console.error(`schedulePersist(${diagramId}) failed:`, e);
-      // annotations remain in memory; will save on next save_diagram MCP call
-    }
-  }, 500);
-  persistTimers.set(diagramId, t);
 }

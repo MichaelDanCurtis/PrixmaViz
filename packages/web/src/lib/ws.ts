@@ -4,8 +4,14 @@ import type { ServerToClient } from "@prixmaviz/shared";
 
 export function useWebSocket(): void {
   const setWsStatus = useAppStore((s) => s.setWsStatus);
+  const workspaceId = useAppStore((s) => s.workspaceId);
 
   useEffect(() => {
+    // Wait for bootstrap. Cycle 4 server doesn't yet enforce WS auth (see TODO
+    // in server/src/index.ts), but the client still includes the workspace ID
+    // as a `?token=` query param so the future auth layer can find it.
+    if (!workspaceId) return;
+
     let ws: WebSocket | null = null;
     let reconnectDelay = 1000;
     let stopped = false;
@@ -14,7 +20,8 @@ export function useWebSocket(): void {
     function connect(): void {
       if (stopped) return;
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${location.host}/ws`);
+      const token = encodeURIComponent(workspaceId!);
+      ws = new WebSocket(`${proto}://${location.host}/ws?token=${token}`);
       setWsStatus("connecting");
       ws.onopen = () => {
         reconnectDelay = 1000;
@@ -42,7 +49,7 @@ export function useWebSocket(): void {
       if (timer) clearTimeout(timer);
       ws?.close();
     };
-  }, [setWsStatus]);
+  }, [setWsStatus, workspaceId]);
 }
 
 function handleMessage(

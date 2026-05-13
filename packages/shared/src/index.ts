@@ -4,3 +4,4 @@ export * from "./engines";
 export * from "./ir";
 export * from "./patches";
 export * from "./protocol";
+export * from "./workspace";

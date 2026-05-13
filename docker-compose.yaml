@@ -1,0 +1,56 @@
+services:
+  prixmaviz:
+    image: prixmaviz:dev
+    build: .
+    ports:
+      - "${HOST_PORT:-5180}:5180"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://prixmaviz:prixmaviz@postgres:5432/prixmaviz}
+      KROKI_URL: ${KROKI_URL:-http://kroki:8000}
+      PRIXMAVIZ_PUBLIC_URL: ${PRIXMAVIZ_PUBLIC_URL:-http://localhost:5180}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kroki:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5180/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: prixmaviz
+      POSTGRES_PASSWORD: prixmaviz
+      POSTGRES_DB: prixmaviz
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prixmaviz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    profiles: ["", "default"]
+
+  kroki:
+    image: yuzutech/kroki:latest
+    environment:
+      KROKI_MERMAID_HOST: kroki-mermaid
+      KROKI_BPMN_HOST: kroki-bpmn
+      KROKI_EXCALIDRAW_HOST: kroki-excalidraw
+
+  kroki-mermaid:
+    image: yuzutech/kroki-mermaid:latest
+
+  # PlantUML is bundled in the main yuzutech/kroki image — no sidecar needed.
+
+  kroki-bpmn:
+    image: yuzutech/kroki-bpmn:latest
+
+  kroki-excalidraw:
+    image: yuzutech/kroki-excalidraw:latest
+
+volumes:
+  postgres-data:

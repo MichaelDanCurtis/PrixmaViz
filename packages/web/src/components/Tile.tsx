@@ -5,6 +5,7 @@ import { useAppStore } from "../store";
 import { api } from "../lib/api";
 import { DiagramView } from "./DiagramView";
 import { AnnotationLayer } from "./AnnotationLayer";
+import { PublicViewToggle } from "./PublicViewToggle";
 
 interface Props { tile: TileT; }
 
@@ -101,6 +102,7 @@ export function Tile({ tile }: Props) {
     >
       <div className="tile-header" onMouseDown={onHeaderDown}>
         <span className="tile-name">{tile.diagramSlug}</span>
+        <PublicViewToggle diagramId={tile.diagramId} />
         <div className="tile-export-wrapper">
           <button
             className="tile-export"

@@ -5,10 +5,55 @@ import { InfiniteCanvas } from "./components/InfiniteCanvas";
 import { useWebSocket } from "./lib/ws";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { UninstallDialog } from "./components/UninstallDialog";
+import { Footer } from "./components/Footer";
+import { WelcomePanel } from "./components/WelcomePanel";
+import { PublicDiagram } from "./pages/PublicDiagram";
+import { ensureWorkspaceId } from "./lib/api";
+import { useAppStore } from "./store";
+
+function getPublicDiagramId(): string | null {
+  const m = /^\/p\/([a-z0-9_-]+)\/?$/i.exec(window.location.pathname);
+  return m ? m[1]! : null;
+}
 
 export function App() {
+  // Public read-only view — completely bypasses workspace bootstrap and auth.
+  const publicDiagramId = getPublicDiagramId();
+  if (publicDiagramId) {
+    return <PublicDiagram diagramId={publicDiagramId} />;
+  }
+  return <WorkspaceApp />;
+}
+
+function WorkspaceApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uninstallOpen, setUninstallOpen] = useState(false);
+  const [bootstrapping, setBootstrapping] = useState(true);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
+  const workspaceId = useAppStore((s) => s.workspaceId);
+  const setWorkspaceId = useAppStore((s) => s.setWorkspaceId);
+  const welcomeSeen = useAppStore((s) => s.welcomeSeen);
+  const setWelcomeSeen = useAppStore((s) => s.setWelcomeSeen);
+
+  // Bootstrap the workspace UUID before mounting anything that hits /api/*.
+  useEffect(() => {
+    let cancelled = false;
+    ensureWorkspaceId()
+      .then((id) => {
+        if (cancelled) return;
+        setWorkspaceId(id);
+        setBootstrapping(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setBootstrapError(e instanceof Error ? e.message : String(e));
+        setBootstrapping(false);
+      });
+    return () => { cancelled = true; };
+  }, [setWorkspaceId]);
+
+  // Hooks must be called unconditionally — useWebSocket gates internally on workspaceId.
   useWebSocket();
 
   useEffect(() => {
@@ -33,6 +78,17 @@ export function App() {
     }
   }, []);
 
+  if (bootstrapping) {
+    return <div className="app-bootstrapping">Loading PrixmaViz…</div>;
+  }
+  if (bootstrapError || !workspaceId) {
+    return (
+      <div className="app-bootstrapping app-bootstrapping-error">
+        Failed to start: {bootstrapError ?? "no workspace"}
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <Topbar onOpenSettings={() => setSettingsOpen(true)} />
@@ -40,6 +96,14 @@ export function App() {
         <Library />
         <InfiniteCanvas />
       </div>
+      <Footer workspaceUrl={window.location.href} />
+      {!welcomeSeen && !welcomeDismissed && (
+        <WelcomePanel
+          workspaceUrl={window.location.href}
+          onDismiss={() => setWelcomeDismissed(true)}
+          onNeverShowAgain={() => setWelcomeSeen(true)}
+        />
+      )}
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
       {uninstallOpen && <UninstallDialog onClose={() => setUninstallOpen(false)} />}
     </div>
