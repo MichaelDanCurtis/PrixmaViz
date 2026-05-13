@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { api } from "../lib/api";
+import { useEffect, useState } from "react";
+import { api, authFetch, jsonOrThrow } from "../lib/api";
 
 interface Props {
   diagramId: string;
@@ -7,12 +7,25 @@ interface Props {
   publicUrl?: string;
 }
 
-export function PublicViewToggle({ diagramId, publicView = false, publicUrl }: Props) {
+export function PublicViewToggle({ diagramId, publicView: initialPublic, publicUrl }: Props) {
   const [open, setOpen] = useState(false);
-  const [isPublic, setIsPublic] = useState(publicView);
+  const [isPublic, setIsPublic] = useState(initialPublic ?? false);
   const [resolvedUrl, setResolvedUrl] = useState(publicUrl);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Hydrate from the server when an initial state wasn't passed in. Without
+  // this we always render the closed-lock icon on mount even for diagrams
+  // that are already public.
+  useEffect(() => {
+    if (initialPublic !== undefined) return;
+    let cancelled = false;
+    authFetch(`/api/diagrams/${encodeURIComponent(diagramId)}`)
+      .then((r) => jsonOrThrow<{ publicView: boolean }>(r))
+      .then((d) => { if (!cancelled) setIsPublic(d.publicView); })
+      .catch(() => { /* leave as private on failure */ });
+    return () => { cancelled = true; };
+  }, [diagramId, initialPublic]);
 
   async function onChange(next: boolean) {
     setBusy(true);

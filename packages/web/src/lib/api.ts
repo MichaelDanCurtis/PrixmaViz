@@ -68,7 +68,7 @@ export async function ensureWorkspaceId(): Promise<string> {
  *
  * Public `/api/public/*` and the bootstrap route are exempt.
  */
-function authFetch(input: string, init?: RequestInit): Promise<Response> {
+export function authFetch(input: string, init?: RequestInit): Promise<Response> {
   const isApi = input.startsWith("/api/");
   const isPublic = input.startsWith("/api/public/");
   const isBootstrap = input === "/api/workspaces" && (init?.method === "POST" || !init?.method);
@@ -81,7 +81,7 @@ function authFetch(input: string, init?: RequestInit): Promise<Response> {
   return fetch(input, { ...init, headers });
 }
 
-async function jsonOrThrow<T>(res: Response): Promise<T> {
+export async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${body.slice(0, 300)}`);

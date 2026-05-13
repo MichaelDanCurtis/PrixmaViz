@@ -215,6 +215,26 @@ export async function handleApi(
     return Response.json({ public: body.public, publicUrl });
   }
 
+  // GET /api/diagrams/:id — single-diagram metadata (no suffix).
+  // Placed AFTER all the /api/diagrams/:id/* suffix routes so it only fires
+  // when no suffix branch matched.
+  const getOneMatch = p.match(/^\/api\/diagrams\/([^/]+)$/);
+  if (getOneMatch && req.method === "GET") {
+    const id = getOneMatch[1] as DiagramId;
+    const d = await dbGetDiagram(deps.sql, workspaceId, id);
+    if (!d) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+    return Response.json({
+      id: d.id,
+      slug: d.slug,
+      name: d.name,
+      engine: d.engine,
+      kind: d.kind,
+      publicView: d.publicView,
+      updatedAt: d.updatedAt,
+      // ir/dsl/svg intentionally omitted — fetch via /load or render.
+    });
+  }
+
   if (p === "/api/render-dsl" && req.method === "POST") {
     const body = await req.json() as { engine: DiagramEngine; source: string; name?: string };
     return await renderDslRoute(body, workspaceId, deps);
