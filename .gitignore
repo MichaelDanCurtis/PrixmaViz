@@ -38,3 +38,5 @@ skills-lock.json
 # HyperFrames render outputs (large MP4s, re-renderable from sources;
 # committed renders live as GitHub Release assets instead).
 docs/marketing/hero-demo/renders/
+# HyperFrames lint/inspect thumbnails (regenerated on every `npm run check`)
+docs/marketing/hero-demo/.thumbnails/
