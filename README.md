@@ -42,7 +42,7 @@ Restart Codex. Your next prompt that mentions diagrams will route through Prixma
 
 ### Both: configuration
 
-The plugin uses `https://prixmaviz.ailuxis.com` by default. To point at your own self-hosted instance, set `PRIXMAVIZ_REMOTE_URL` in the cached `.mcp.json` (`~/.claude/plugins/cache/.../<version>/.mcp.json` or `~/.codex/.tmp/marketplaces/prixmaviz/src-tauri/resources/plugin/.mcp.json`). To run a locally-built binary instead of the released one, set `PRIXMAVIZ_MCP_BIN` to its absolute path.
+The plugin uses `https://prixmaviz.ailuxis.com` by default. To point at your own self-hosted instance, set `PRIXMAVIZ_REMOTE_URL` in the cached `.mcp.json` (`~/.claude/plugins/cache/.../<version>/.mcp.json` or `~/.codex/.tmp/marketplaces/prixmaviz/plugin/.mcp.json`). To run a locally-built binary instead of the released one, set `PRIXMAVIZ_MCP_BIN` to its absolute path.
 
 The AI will now use PrixmaViz whenever you ask for diagrams. Try:
 
@@ -92,8 +92,9 @@ packages/
   server/       # Bun HTTP+WS+MCP server, Postgres repos, hit-testers
   web/          # React webview — InfiniteCanvas, Tile, public view, settings
   shim/         # MCP stdio→HTTP forwarder (compiled to native binary)
-src-tauri/      # Tauri 2 desktop wrapper (optional, for self-hosted installers)
+plugin/         # Claude Code + Codex CLI plugin (.claude-plugin/, .mcp.json, bin/)
 docs/
+  marketing/    # Hero video (HyperFrames source) + GIF/poster
   superpowers/
     specs/      # Cycle design specs
     plans/      # Cycle implementation plans

@@ -7,20 +7,15 @@ bun.lockb
 .env.local
 .superpowers/
 
-# Tauri
-src-tauri/target/
-src-tauri/binaries/prixmaviz-server-*
-src-tauri/Cargo.lock
-src-tauri/gen/
 cdt-screenshots/
 
 # Plugin compiled shim binaries — published via GitHub Releases, downloaded
 # lazily by the launcher (bin/prixmaviz-mcp + bin/prixmaviz-mcp.cmd, both
 # tracked). Allow-list pattern: ignore everything in bin/ that looks like a
 # compiled binary, but keep the launcher scripts.
-src-tauri/resources/plugin/bin/prixmaviz-mcp-*
-src-tauri/resources/plugin/bin/*.exe.partial
-src-tauri/resources/plugin/bin/*.partial
+plugin/bin/prixmaviz-mcp-*
+plugin/bin/*.exe.partial
+plugin/bin/*.partial
 
 # Runtime test project roots
 .prixmaviz-test/

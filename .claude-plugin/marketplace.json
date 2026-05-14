@@ -1,6 +1,6 @@
 {
   "name": "prixmaviz",
-  "description": "Root-level marketplace manifest for the PrixmaViz plugin. Points at the plugin source at src-tauri/resources/plugin/. Used by Codex CLI and the simpler Claude Code install path (no subpath ref required).",
+  "description": "Root-level marketplace manifest for the PrixmaViz plugin. Points at the plugin source at plugin/. Used by Codex CLI and the simpler Claude Code install path (no subpath ref required).",
   "owner": {
     "name": "Michael Curtis",
     "email": "michaeldancurtis@gmail.com"
@@ -10,7 +10,7 @@
       "name": "prixmaviz",
       "description": "AI-native diagram tool — 28+ engines, annotations, infinite canvas. Renders to a browser tab via the hosted service or your own self-hosted PrixmaViz server.",
       "version": "0.5.0",
-      "source": "./src-tauri/resources/plugin"
+      "source": "./plugin"
     }
   ]
 }
