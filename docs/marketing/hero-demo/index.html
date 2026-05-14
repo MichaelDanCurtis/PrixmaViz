@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>PrixmaViz — Hero Demo</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=block"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #0a0a0e;
+        font-family: "Inter", sans-serif;
+        color: #f0f6fc;
+      }
+      .scene {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+
+    <script>
+      window.__tailwindReady = new Promise(function (resolve) {
+        var loaded = document.readyState === "complete";
+        var resolved = false;
+        var observer;
+        function readTailwindCss() {
+          var styles = document.querySelectorAll("style");
+          for (var i = styles.length - 1; i >= 0; i--) {
+            var text = styles[i].textContent || "";
+            if (text.indexOf("tailwindcss v") !== -1) return text;
+          }
+          return "";
+        }
+        function finish() {
+          if (resolved || !loaded || !readTailwindCss()) return;
+          resolved = true;
+          if (observer) observer.disconnect();
+          resolve(true);
+        }
+        observer = new MutationObserver(finish);
+        observer.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+        });
+        if (loaded) {
+          finish();
+        } else {
+          window.addEventListener(
+            "load",
+            function () {
+              loaded = true;
+              finish();
+            },
+            { once: true },
+          );
+        }
+      });
+    </script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"
+      integrity="sha384-v5YF9xS+gLRWdvrQ0u/WRbCkjSIH0NjHIPe8tBL1ZRrmI7PiSH6LLdzs0aAIMCuh"
+      crossorigin="anonymous"
+    ></script>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="30"
+      data-width="1920"
+      data-height="1080"
+    >
+      <!-- Scene 1: HOOK (0.0 → 2.5s) -->
+      <div
+        id="scene-1"
+        class="scene clip"
+        data-composition-id="scene1-hook"
+        data-composition-src="compositions/scene1-hook.html"
+        data-start="0"
+        data-duration="2.5"
+        data-track-index="1"
+        data-width="1920"
+        data-height="1080"
+      ></div>
+
+      <!-- Scene 2: DEMO 1 — terminal → render (2.5 → 10.0s) -->
+      <div
+        id="scene-2"
+        class="scene clip"
+        data-composition-id="scene2-demo1"
+        data-composition-src="compositions/scene2-demo1.html"
+        data-start="2.5"
+        data-duration="7.5"
+        data-track-index="1"
+        data-width="1920"
+        data-height="1080"
+      ></div>
+
+      <!-- Scene 3: DEMO 2 — annotation loop (10.0 → 17.5s) -->
+      <div
+        id="scene-3"
+        class="scene clip"
+        data-composition-id="scene3-demo2"
+        data-composition-src="compositions/scene3-demo2.html"
+        data-start="10"
+        data-duration="7.5"
+        data-track-index="1"
+        data-width="1920"
+        data-height="1080"
+      ></div>
+
+      <!-- Scene 4: DEMO 3 — variety montage (17.5 → 25.0s) -->
+      <div
+        id="scene-4"
+        class="scene clip"
+        data-composition-id="scene4-demo3"
+        data-composition-src="compositions/scene4-demo3.html"
+        data-start="17.5"
+        data-duration="7.5"
+        data-track-index="1"
+        data-width="1920"
+        data-height="1080"
+      ></div>
+
+      <!-- Scene 5: OUTRO / CTA (25.0 → 30.0s) -->
+      <div
+        id="scene-5"
+        class="scene clip"
+        data-composition-id="scene5-outro"
+        data-composition-src="compositions/scene5-outro.html"
+        data-start="25"
+        data-duration="5"
+        data-track-index="1"
+        data-width="1920"
+        data-height="1080"
+      ></div>
+    </div>
+
+    <script>
+      // Root timeline: scene transitions are handled by the scenes' own entrance
+      // animations (every scene fades and lifts its own content in). The root
+      // timeline is empty but registered so the runtime has a handle on it.
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = gsap.timeline({ paused: true });
+    </script>
+  </body>
+</html>

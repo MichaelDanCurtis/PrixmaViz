@@ -1,0 +1,619 @@
+<template id="scene3-demo2-template">
+  <div
+    data-composition-id="scene3-demo2"
+    data-width="1920"
+    data-height="1080"
+    data-duration="7.5"
+  >
+    <div class="d2-canvas">
+      <!-- Backdrop -->
+      <div class="d2-bloom"></div>
+      <svg class="d2-grid" viewBox="0 0 1920 1080" preserveAspectRatio="none">
+        <defs>
+          <pattern id="d2-grid-pattern" width="80" height="80" patternUnits="userSpaceOnUse">
+            <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#1a1a26" stroke-width="1" />
+          </pattern>
+        </defs>
+        <rect width="1920" height="1080" fill="url(#d2-grid-pattern)" />
+      </svg>
+
+      <!-- Workspace toolbar (left edge) -->
+      <div class="d2-toolbar">
+        <div class="tb-item tb-item-active">
+          <span class="tb-glyph">▭</span>
+        </div>
+        <div class="tb-item">
+          <span class="tb-glyph">⌖</span>
+        </div>
+        <div class="tb-item">
+          <span class="tb-glyph">#</span>
+        </div>
+        <div class="tb-sep"></div>
+        <div class="tb-item">
+          <span class="tb-glyph">⤺</span>
+        </div>
+      </div>
+
+      <!-- Big tile, now centered — represents the persisted browser tab -->
+      <div class="d2-tile">
+        <div class="d2-tile-chrome">
+          <span class="tile-label">oauth-2.1-pkce-flow</span>
+          <span class="tile-meta">
+            <span class="tile-meta-pill">annotating</span>
+            <span class="tile-meta-pill tile-meta-pill-dim">region</span>
+          </span>
+        </div>
+
+        <div class="d2-tile-body">
+          <svg class="d2-diagram" viewBox="0 0 1200 560" preserveAspectRatio="xMidYMid meet">
+            <!-- Lifelines -->
+            <g stroke="#3a3a48" stroke-dasharray="4 6" stroke-width="1.5">
+              <line x1="140" y1="86" x2="140" y2="510" />
+              <line x1="430" y1="86" x2="430" y2="510" />
+              <line x1="720" y1="86" x2="720" y2="510" />
+              <line x1="1040" y1="86" x2="1040" y2="510" />
+            </g>
+
+            <!-- Actor labels -->
+            <g font-family="Inter, sans-serif" font-size="20" font-weight="600">
+              <g>
+                <rect x="76" y="40" width="128" height="48" rx="6" fill="#13131a" stroke="#2a2a35" stroke-width="1.5" />
+                <text x="140" y="71" text-anchor="middle" fill="#f0f6fc">User</text>
+              </g>
+              <g>
+                <rect x="354" y="40" width="152" height="48" rx="6" fill="#13131a" stroke="#2a2a35" stroke-width="1.5" />
+                <text x="430" y="71" text-anchor="middle" fill="#f0f6fc">Browser</text>
+              </g>
+              <g class="actor-authserver">
+                <rect x="640" y="40" width="160" height="48" rx="6" fill="#13131a" stroke="#2a2a35" stroke-width="1.5" />
+                <text x="720" y="71" text-anchor="middle" fill="#f0f6fc">AuthServer</text>
+              </g>
+              <g>
+                <rect x="968" y="40" width="144" height="48" rx="6" fill="#13131a" stroke="#2a2a35" stroke-width="1.5" />
+                <text x="1040" y="71" text-anchor="middle" fill="#f0f6fc">Client</text>
+              </g>
+            </g>
+
+            <defs>
+              <marker id="d2-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#60a5fa" />
+              </marker>
+              <marker id="d2-arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24" />
+              </marker>
+              <marker id="d2-arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#86efac" />
+              </marker>
+            </defs>
+
+            <g font-family="ui-monospace, 'JetBrains Mono', Menlo, monospace" font-size="15">
+              <g>
+                <line x1="140" y1="142" x2="420" y2="142" stroke="#60a5fa" stroke-width="2" marker-end="url(#d2-arrow)" />
+                <text x="280" y="134" text-anchor="middle" fill="#8b949e">tap "Sign in"</text>
+              </g>
+              <g>
+                <line x1="430" y1="202" x2="1030" y2="202" stroke="#60a5fa" stroke-width="2" marker-end="url(#d2-arrow)" />
+                <text x="730" y="194" text-anchor="middle" fill="#8b949e">generate verifier + challenge</text>
+              </g>
+              <g>
+                <line x1="1040" y1="262" x2="730" y2="262" stroke="#fbbf24" stroke-width="2" marker-end="url(#d2-arrow-amber)" />
+                <foreignObject x="756" y="234" width="258" height="22" requiredExtensions="http://www.w3.org/1999/xhtml">
+                  <div class="msg-label msg-label-amber" xmlns="http://www.w3.org/1999/xhtml">authorize(code_challenge)</div>
+                </foreignObject>
+              </g>
+              <g>
+                <line x1="720" y1="322" x2="150" y2="322" stroke="#60a5fa" stroke-width="2" marker-end="url(#d2-arrow)" />
+                <text x="430" y="314" text-anchor="middle" fill="#8b949e">consent screen</text>
+              </g>
+              <g>
+                <line x1="140" y1="382" x2="710" y2="382" stroke="#60a5fa" stroke-width="2" marker-end="url(#d2-arrow)" />
+                <text x="425" y="374" text-anchor="middle" fill="#8b949e">approve</text>
+              </g>
+              <g>
+                <line x1="720" y1="442" x2="1030" y2="442" stroke="#86efac" stroke-width="2" marker-end="url(#d2-arrow-green)" />
+                <foreignObject x="760" y="414" width="240" height="22" requiredExtensions="http://www.w3.org/1999/xhtml">
+                  <div class="msg-label msg-label-green" xmlns="http://www.w3.org/1999/xhtml">code → token(verifier)</div>
+                </foreignObject>
+              </g>
+            </g>
+
+            <!-- Region annotation: amber rectangle drawn by user -->
+            <g class="d2-region">
+              <rect
+                class="d2-region-rect"
+                x="630"
+                y="20"
+                width="180"
+                height="490"
+                rx="6"
+                fill="rgba(251, 191, 36, 0.08)"
+                stroke="#fbbf24"
+                stroke-width="2.5"
+                stroke-dasharray="8 4"
+              />
+              <g class="d2-region-handles">
+                <rect x="624" y="14" width="12" height="12" rx="2" fill="#fbbf24" stroke="#0a0a0e" stroke-width="1" />
+                <rect x="804" y="14" width="12" height="12" rx="2" fill="#fbbf24" stroke="#0a0a0e" stroke-width="1" />
+                <rect x="624" y="504" width="12" height="12" rx="2" fill="#fbbf24" stroke="#0a0a0e" stroke-width="1" />
+                <rect x="804" y="504" width="12" height="12" rx="2" fill="#fbbf24" stroke="#0a0a0e" stroke-width="1" />
+              </g>
+              <g class="d2-region-tag">
+                <rect x="630" y="0" width="118" height="28" rx="4" fill="#fbbf24" />
+                <text x="640" y="19" font-family="ui-monospace, Menlo, monospace" font-size="14" font-weight="700" fill="#0a0a0e">REGION · 1</text>
+              </g>
+            </g>
+          </svg>
+        </div>
+      </div>
+
+      <!-- AI response bubble -->
+      <div class="d2-bubble">
+        <div class="d2-bubble-head">
+          <span class="d2-bubble-avatar"></span>
+          <span class="d2-bubble-name">claude</span>
+          <span class="d2-bubble-meta">replying to region · 1</span>
+        </div>
+        <div class="d2-bubble-body">
+          PKCE prevents code-interception attacks. The
+          <span class="bubble-em">code_challenge</span>
+          on this leg is bound to a verifier the client never transmits, so a stolen code is
+          useless.
+        </div>
+        <div class="d2-bubble-tail"></div>
+      </div>
+
+      <!-- Cursor (no label — the diagram makes the actor obvious) -->
+      <div class="d2-cursor">
+        <svg width="28" height="28" viewBox="0 0 24 24">
+          <path d="M 0 0 L 18 16 L 9 16 L 6 23 L 6 16 L 0 16 Z" fill="#f0f6fc" stroke="#0a0a0e" stroke-width="1.2" />
+        </svg>
+      </div>
+
+      <!-- Tagline bottom -->
+      <div class="d2-tagline">
+        <span class="d2-tagline-em">you point.</span>
+        <span class="d2-tagline-text">the AI responds.</span>
+      </div>
+    </div>
+
+    <style>
+      .d2-canvas {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #0a0a0e;
+        color: #f0f6fc;
+        font-family: "Inter", sans-serif;
+        overflow: hidden;
+      }
+
+      .d2-canvas .d2-grid {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0.4;
+      }
+
+      .d2-canvas .d2-bloom {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 1700px;
+        height: 1000px;
+        margin-left: -850px;
+        margin-top: -500px;
+        background: radial-gradient(
+          circle at 60% 40%,
+          rgba(251, 191, 36, 0.12) 0%,
+          rgba(251, 191, 36, 0) 55%
+        );
+        pointer-events: none;
+      }
+
+      /* Toolbar */
+      .d2-canvas .d2-toolbar {
+        position: absolute;
+        left: 56px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 64px;
+        padding: 14px 0;
+        background: #13131a;
+        border: 1px solid #2a2a35;
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+      }
+
+      .d2-canvas .tb-item {
+        width: 44px;
+        height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        color: #8b949e;
+        font-size: 22px;
+        font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+      }
+
+      .d2-canvas .tb-item-active {
+        background: rgba(96, 165, 250, 0.15);
+        color: #60a5fa;
+        border: 1px solid rgba(96, 165, 250, 0.4);
+      }
+
+      .d2-canvas .tb-sep {
+        width: 36px;
+        height: 1px;
+        background: #2a2a35;
+        margin: 6px 0;
+      }
+
+      /* Tile */
+      .d2-canvas .d2-tile {
+        position: absolute;
+        left: 180px;
+        top: 110px;
+        width: 1280px;
+        height: 720px;
+        background: #13131a;
+        border: 1px solid #2a2a35;
+        border-radius: 14px;
+        box-shadow: 0 36px 90px rgba(0, 0, 0, 0.6);
+        overflow: hidden;
+      }
+
+      .d2-canvas .d2-tile-chrome {
+        height: 64px;
+        background: #0f0f15;
+        border-bottom: 1px solid #2a2a35;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 28px;
+      }
+
+      .d2-canvas .tile-label {
+        font-family: ui-monospace, "JetBrains Mono", "Fira Code", Menlo, monospace;
+        font-size: 22px;
+        color: #f0f6fc;
+        font-weight: 600;
+      }
+
+      .d2-canvas .tile-meta {
+        display: flex;
+        gap: 10px;
+      }
+
+      .d2-canvas .tile-meta-pill {
+        font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+        font-size: 16px;
+        color: #fbbf24;
+        background: rgba(251, 191, 36, 0.12);
+        border: 1px solid rgba(251, 191, 36, 0.4);
+        padding: 5px 12px;
+        border-radius: 999px;
+        font-weight: 600;
+      }
+
+      .d2-canvas .tile-meta-pill.tile-meta-pill-dim {
+        color: #8b949e;
+        background: rgba(139, 148, 158, 0.08);
+        border-color: rgba(139, 148, 158, 0.25);
+      }
+
+      .d2-canvas .d2-tile-body {
+        padding: 26px 36px 32px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: calc(100% - 64px);
+      }
+
+      .d2-canvas .d2-diagram {
+        width: 100%;
+        height: 100%;
+      }
+
+      /* Halo every label inside the diagram with a dark stroke so it
+         reads cleanly even when rendered over a colored arrow. */
+      .d2-canvas .d2-diagram text {
+        paint-order: stroke fill;
+        stroke: #13131a;
+        stroke-width: 4;
+        stroke-linejoin: round;
+      }
+      .d2-canvas .d2-region-tag text {
+        stroke: none;
+      }
+
+      .d2-canvas .msg-label {
+        display: inline-block;
+        font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+        font-size: 15px;
+        font-weight: 600;
+        text-align: center;
+        line-height: 22px;
+        padding: 0 8px;
+        border-radius: 3px;
+        background: #13131a;
+        white-space: nowrap;
+      }
+      .d2-canvas .msg-label-amber {
+        color: #fbbf24;
+      }
+      .d2-canvas .msg-label-green {
+        color: #86efac;
+      }
+
+      /* Region annotation — animated reveal */
+      .d2-canvas .d2-region {
+        opacity: 0;
+      }
+      .d2-canvas .d2-region-rect {
+        transform-box: fill-box;
+        transform-origin: top left;
+        transform: scaleY(0);
+      }
+      .d2-canvas .d2-region-handles {
+        opacity: 0;
+      }
+      .d2-canvas .d2-region-tag {
+        opacity: 0;
+      }
+
+      /* Cursor */
+      .d2-canvas .d2-cursor {
+        position: absolute;
+        left: 0;
+        top: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        z-index: 50;
+        pointer-events: none;
+        will-change: transform;
+        filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.6));
+      }
+
+      .d2-canvas .d2-cursor-label {
+        margin-top: -2px;
+        margin-left: 12px;
+        padding: 4px 10px;
+        font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #0a0a0e;
+        background: #f0f6fc;
+        border-radius: 0 4px 4px 4px;
+      }
+
+      /* Speech bubble — top right area */
+      .d2-canvas .d2-bubble {
+        position: absolute;
+        right: 80px;
+        top: 200px;
+        width: 480px;
+        background: #1a1a23;
+        border: 1px solid #2a2a35;
+        border-radius: 14px;
+        padding: 22px 26px;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.7);
+        opacity: 0;
+        z-index: 40;
+      }
+
+      .d2-canvas .d2-bubble-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .d2-canvas .d2-bubble-avatar {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #60a5fa;
+        box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.18);
+        flex-shrink: 0;
+        margin-right: 4px;
+      }
+
+      .d2-canvas .d2-bubble-name {
+        font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+        font-size: 16px;
+        font-weight: 700;
+        color: #f0f6fc;
+      }
+
+      .d2-canvas .d2-bubble-meta {
+        margin-left: auto;
+        font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+        font-size: 13px;
+        color: #8b949e;
+        letter-spacing: 0.02em;
+      }
+
+      .d2-canvas .d2-bubble-body {
+        font-family: "Inter", sans-serif;
+        font-size: 22px;
+        line-height: 1.45;
+        color: #f0f6fc;
+      }
+
+      .d2-canvas .bubble-em {
+        color: #fbbf24;
+        font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+        font-size: 20px;
+        background: rgba(251, 191, 36, 0.1);
+        padding: 1px 6px;
+        border-radius: 4px;
+      }
+
+      /* tail of the bubble pointing toward the region */
+      .d2-canvas .d2-bubble-tail {
+        position: absolute;
+        left: -10px;
+        top: 60px;
+        width: 0;
+        height: 0;
+        border-top: 10px solid transparent;
+        border-bottom: 10px solid transparent;
+        border-right: 12px solid #1a1a23;
+        filter: drop-shadow(-1px 0 0 #2a2a35);
+      }
+
+      /* Tagline at bottom */
+      .d2-canvas .d2-tagline {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 80px;
+        text-align: center;
+        font-family: "Inter", sans-serif;
+        font-size: 56px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        opacity: 0;
+      }
+
+      .d2-canvas .d2-tagline-em {
+        color: #fbbf24;
+        margin-right: 18px;
+      }
+
+      .d2-canvas .d2-tagline-text {
+        color: #f0f6fc;
+      }
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script>
+      (function () {
+        const tl = gsap.timeline({ paused: true });
+        const S = ".d2-canvas ";
+
+        // Backdrop
+        tl.fromTo(
+          S + ".d2-grid",
+          { opacity: 0 },
+          { opacity: 0.4, duration: 0.5, ease: "power2.out" },
+          0,
+        );
+        tl.fromTo(
+          S + ".d2-bloom",
+          { opacity: 0, scale: 0.92 },
+          { opacity: 1, scale: 1, duration: 0.8, ease: "sine.out" },
+          0,
+        );
+
+        // Tile already feels persistent — fades in fast and tight
+        tl.fromTo(
+          S + ".d2-tile",
+          { opacity: 0, scale: 0.97 },
+          { opacity: 1, scale: 1, duration: 0.45, ease: "expo.out" },
+          0.1,
+        );
+
+        // Toolbar appears
+        tl.fromTo(
+          S + ".d2-toolbar",
+          { opacity: 0, x: -40 },
+          { opacity: 1, x: 0, duration: 0.45, ease: "expo.out" },
+          0.3,
+        );
+
+        // Cursor enters from bottom-right, glides toward the region
+        // d2-cursor starts offscreen (set inside the timeline so it's deterministic)
+        tl.set(S + ".d2-cursor", { x: 1700, y: 980 }, 0);
+
+        tl.to(
+          S + ".d2-cursor",
+          { x: 880, y: 240, duration: 0.95, ease: "power3.inOut" },
+          0.85,
+        );
+
+        // Region annotation appears — start drag
+        tl.to(S + ".d2-region", { opacity: 1, duration: 0.1 }, 1.85);
+        tl.fromTo(
+          S + ".d2-region-rect",
+          { scaleY: 0 },
+          { scaleY: 1, duration: 0.7, ease: "power3.inOut" },
+          1.85,
+        );
+
+        // Cursor drags down-right while the region scales
+        tl.to(
+          S + ".d2-cursor",
+          { x: 1140, y: 700, duration: 0.7, ease: "power3.inOut" },
+          1.85,
+        );
+
+        // Handles pop in
+        tl.fromTo(
+          S + ".d2-region-handles",
+          { opacity: 0, scale: 0.6 },
+          { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(1.6)" },
+          2.55,
+        );
+
+        // Region tag pops
+        tl.fromTo(
+          S + ".d2-region-tag",
+          { opacity: 0, y: 6 },
+          { opacity: 1, y: 0, duration: 0.3, ease: "back.out(1.4)" },
+          2.7,
+        );
+
+        // Cursor pulls back a touch — like releasing the drag
+        tl.to(
+          S + ".d2-cursor",
+          { x: 1180, y: 660, duration: 0.3, ease: "power2.out" },
+          2.75,
+        );
+
+        // Bubble slides in from the right side
+        tl.fromTo(
+          S + ".d2-bubble",
+          { opacity: 0, x: 40, y: 10 },
+          { opacity: 1, x: 0, y: 0, duration: 0.55, ease: "expo.out" },
+          3.2,
+        );
+
+        // Cursor drifts toward bubble while it stays for reading
+        tl.to(
+          S + ".d2-cursor",
+          { x: 1500, y: 380, duration: 0.6, ease: "power2.inOut" },
+          3.4,
+        );
+
+        // Bubble holds, then a subtle breathe
+        tl.to(
+          S + ".d2-bubble",
+          { y: -4, duration: 1.6, ease: "sine.inOut", yoyo: true, repeat: 1 },
+          4.0,
+        );
+
+        // Tagline appears toward end of scene
+        tl.fromTo(
+          S + ".d2-tagline",
+          { opacity: 0, y: 20 },
+          { opacity: 1, y: 0, duration: 0.5, ease: "expo.out" },
+          5.6,
+        );
+
+        window.__timelines = window.__timelines || {};
+        window.__timelines["scene3-demo2"] = tl;
+      })();
+    </script>
+  </div>
+</template>

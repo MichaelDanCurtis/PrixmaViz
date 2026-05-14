@@ -1,0 +1,329 @@
+<template id="scene1-hook-template">
+  <div
+    data-composition-id="scene1-hook"
+    data-width="1920"
+    data-height="1080"
+    data-duration="2.5"
+  >
+    <div class="hook-canvas">
+      <!-- Faint grid backdrop -->
+      <svg class="hook-grid" viewBox="0 0 1920 1080" preserveAspectRatio="none">
+        <defs>
+          <pattern id="hook-grid-pattern" width="80" height="80" patternUnits="userSpaceOnUse">
+            <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#1a1a26" stroke-width="1" />
+          </pattern>
+        </defs>
+        <rect width="1920" height="1080" fill="url(#hook-grid-pattern)" />
+      </svg>
+
+      <!-- Radial bloom -->
+      <div class="hook-bloom"></div>
+
+      <!-- Text stack -->
+      <div class="hook-stack">
+        <div class="hook-eyebrow">
+          <span class="hook-dot"></span>
+          <span class="hook-eyebrow-text">PrixmaViz</span>
+        </div>
+
+        <div class="hook-line line-a">
+          <span class="hook-prefix">$</span>
+          <span class="hook-prompt">the AI can describe it.</span>
+        </div>
+
+        <div class="hook-line line-b">
+          <span class="hook-prefix">$</span>
+          <span class="hook-prompt">but it can't draw it.</span>
+          <span class="hook-cursor">_</span>
+        </div>
+
+        <!-- Wordmark assembled from kerning spread -->
+        <div class="hook-wordmark">
+          <span class="wm-letter wm-l-0">p</span>
+          <span class="wm-letter wm-l-1">r</span>
+          <span class="wm-letter wm-l-2">i</span>
+          <span class="wm-letter wm-l-3">x</span>
+          <span class="wm-letter wm-l-4">m</span>
+          <span class="wm-letter wm-l-5">a</span>
+          <span class="wm-letter wm-l-6">v</span>
+          <span class="wm-letter wm-l-7">i</span>
+          <span class="wm-letter wm-l-8">z</span>
+        </div>
+      </div>
+
+      <!-- Frame registration ticks -->
+      <div class="hook-tick tick-tl"></div>
+      <div class="hook-tick tick-tr"></div>
+      <div class="hook-tick tick-bl"></div>
+      <div class="hook-tick tick-br"></div>
+    </div>
+
+    <style>
+      .hook-canvas {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #0a0a0e;
+        color: #f0f6fc;
+        font-family: "Inter", sans-serif;
+        overflow: hidden;
+      }
+
+      .hook-canvas .hook-grid {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0.55;
+      }
+
+      .hook-canvas .hook-bloom {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 1600px;
+        height: 1000px;
+        margin-left: -800px;
+        margin-top: -500px;
+        background: radial-gradient(
+          circle at center,
+          rgba(96, 165, 250, 0.18) 0%,
+          rgba(96, 165, 250, 0) 60%
+        );
+        pointer-events: none;
+      }
+
+      .hook-canvas .hook-stack {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 22px;
+      }
+
+      .hook-canvas .hook-eyebrow {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-family: ui-monospace, "JetBrains Mono", "Fira Code", Menlo, monospace;
+        font-size: 22px;
+        font-weight: 500;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #6b7280;
+        margin-bottom: 18px;
+      }
+
+      .hook-canvas .hook-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #60a5fa;
+        box-shadow: 0 0 18px rgba(96, 165, 250, 0.8);
+      }
+
+      .hook-canvas .hook-eyebrow-text {
+        color: #8b949e;
+      }
+
+      .hook-canvas .hook-line {
+        font-family: ui-monospace, "JetBrains Mono", "Fira Code", Menlo, monospace;
+        font-size: 78px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        line-height: 1.06;
+        white-space: nowrap;
+      }
+
+      .hook-canvas .hook-prefix {
+        color: #60a5fa;
+        margin-right: 28px;
+      }
+
+      .hook-canvas .hook-line.line-a .hook-prompt {
+        color: #8b949e;
+      }
+
+      .hook-canvas .hook-line.line-b .hook-prompt {
+        color: #f0f6fc;
+      }
+
+      .hook-canvas .hook-cursor {
+        display: inline-block;
+        margin-left: 6px;
+        color: #60a5fa;
+        font-weight: 700;
+      }
+
+      .hook-canvas .hook-wordmark {
+        display: flex;
+        gap: 4px;
+        margin-top: 28px;
+        font-family: "Inter", sans-serif;
+        font-size: 92px;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+        color: #f0f6fc;
+        line-height: 1;
+      }
+
+      .hook-canvas .wm-letter {
+        display: inline-block;
+        transform-origin: center bottom;
+      }
+
+      .hook-canvas .hook-tick {
+        position: absolute;
+        width: 36px;
+        height: 36px;
+        border: 1.5px solid #2a2a35;
+      }
+
+      .hook-canvas .tick-tl {
+        top: 64px;
+        left: 64px;
+        border-right: none;
+        border-bottom: none;
+      }
+      .hook-canvas .tick-tr {
+        top: 64px;
+        right: 64px;
+        border-left: none;
+        border-bottom: none;
+      }
+      .hook-canvas .tick-bl {
+        bottom: 64px;
+        left: 64px;
+        border-right: none;
+        border-top: none;
+      }
+      .hook-canvas .tick-br {
+        bottom: 64px;
+        right: 64px;
+        border-left: none;
+        border-top: none;
+      }
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script>
+      (function () {
+        const tl = gsap.timeline({ paused: true });
+
+        const $ = (sel) => ".hook-canvas " + sel;
+
+        // Frame ticks fade in first — gives the scene a real frame
+        tl.fromTo(
+          $(".hook-tick"),
+          { opacity: 0, scale: 0.6 },
+          { opacity: 1, scale: 1, duration: 0.45, ease: "power3.out", stagger: 0.04 },
+          0.05,
+        );
+
+        // Grid washes in
+        tl.fromTo(
+          $(".hook-grid"),
+          { opacity: 0 },
+          { opacity: 0.55, duration: 0.5, ease: "power2.out" },
+          0.0,
+        );
+
+        // Bloom breathes
+        tl.fromTo(
+          $(".hook-bloom"),
+          { opacity: 0, scale: 0.85 },
+          { opacity: 1, scale: 1, duration: 1.0, ease: "sine.out" },
+          0.1,
+        );
+
+        // Eyebrow
+        tl.fromTo(
+          $(".hook-eyebrow"),
+          { opacity: 0, y: -8 },
+          { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" },
+          0.15,
+        );
+
+        // Hook dot pulse
+        tl.fromTo(
+          $(".hook-dot"),
+          { scale: 1 },
+          { scale: 1.35, duration: 0.5, ease: "sine.inOut", yoyo: true, repeat: 3 },
+          0.15,
+        );
+
+        // Line A: "the AI can describe it." — slides in from left with mask reveal
+        tl.fromTo(
+          $(".hook-line.line-a"),
+          { opacity: 0, x: -40, clipPath: "inset(0 100% 0 0)" },
+          {
+            opacity: 1,
+            x: 0,
+            clipPath: "inset(0 0% 0 0)",
+            duration: 0.55,
+            ease: "expo.out",
+          },
+          0.3,
+        );
+
+        // Line B: "but it can't draw it." — slams in slightly later with a stronger ease
+        tl.fromTo(
+          $(".hook-line.line-b"),
+          { opacity: 0, x: -30, clipPath: "inset(0 100% 0 0)" },
+          {
+            opacity: 1,
+            x: 0,
+            clipPath: "inset(0 0% 0 0)",
+            duration: 0.5,
+            ease: "expo.out",
+          },
+          0.85,
+        );
+
+        // Cursor blink — finite repeats only
+        tl.fromTo(
+          $(".hook-cursor"),
+          { opacity: 1 },
+          { opacity: 0.05, duration: 0.32, ease: "steps(1)", yoyo: true, repeat: 4 },
+          0.95,
+        );
+
+        // Letters of wordmark start far apart, snap together
+        const letterSel = $(".wm-letter");
+        tl.set(letterSel, { opacity: 0, x: 0, y: 14 }, 0);
+
+        const fanOffsets = [-260, -190, -130, -70, 0, 70, 130, 190, 260];
+        fanOffsets.forEach((offset, i) => {
+          tl.fromTo(
+            ".hook-canvas .wm-l-" + i,
+            { opacity: 0, x: offset, y: 24, filter: "blur(8px)" },
+            {
+              opacity: 1,
+              x: 0,
+              y: 0,
+              filter: "blur(0px)",
+              duration: 0.55,
+              ease: "expo.out",
+            },
+            1.55 + i * 0.025,
+          );
+        });
+
+        // Small breath on bloom to keep it alive during the wordmark hold
+        tl.to(
+          $(".hook-bloom"),
+          { scale: 1.08, duration: 1.4, ease: "sine.inOut" },
+          1.0,
+        );
+
+        window.__timelines = window.__timelines || {};
+        window.__timelines["scene1-hook"] = tl;
+      })();
+    </script>
+  </div>
+</template>

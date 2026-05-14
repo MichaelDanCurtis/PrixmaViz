@@ -1,0 +1,657 @@
+<template id="scene2-demo1-template">
+  <div
+    data-composition-id="scene2-demo1"
+    data-width="1920"
+    data-height="1080"
+    data-duration="7.5"
+  >
+    <div class="d1-canvas">
+      <!-- Backdrop -->
+      <div class="d1-bloom"></div>
+      <svg class="d1-grid" viewBox="0 0 1920 1080" preserveAspectRatio="none">
+        <defs>
+          <pattern id="d1-grid-pattern" width="80" height="80" patternUnits="userSpaceOnUse">
+            <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#1a1a26" stroke-width="1" />
+          </pattern>
+        </defs>
+        <rect width="1920" height="1080" fill="url(#d1-grid-pattern)" />
+      </svg>
+
+      <!-- LEFT: Terminal card -->
+      <div class="d1-terminal">
+        <div class="d1-terminal-chrome">
+          <span class="chrome-dot dot-r"></span>
+          <span class="chrome-dot dot-y"></span>
+          <span class="chrome-dot dot-g"></span>
+          <span class="chrome-title">claude — prixmaviz</span>
+        </div>
+        <div class="d1-terminal-body">
+          <div class="t-line t-line-1">
+            <span class="t-sigil">›</span>
+            <span class="t-cmd">claude</span>
+            <span class="t-arg">draw the OAuth 2.1 PKCE flow as a sequence diagram</span>
+          </div>
+
+          <div class="t-line t-status">
+            <span class="t-status-dot"></span>
+            <span class="t-status-text">prixmaviz · rendering via Kroki / Mermaid</span>
+          </div>
+
+          <div class="t-line t-tool">
+            <span class="t-tool-tag">MCP</span>
+            <span class="t-tool-text">create_diagram → engine=mermaid</span>
+          </div>
+
+          <div class="t-line t-result">
+            <span class="t-check">✓</span>
+            <span class="t-result-text">opened in workspace tab</span>
+          </div>
+
+          <div class="t-line t-input">
+            <span class="t-prompt">›</span>
+            <span class="t-input-text"></span>
+            <span class="t-caret">▍</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Tile card with rendered Mermaid sequence -->
+      <div class="d1-tile">
+        <div class="d1-tile-chrome">
+          <span class="tile-label">oauth-2.1-pkce-flow</span>
+          <span class="tile-meta">
+            <span class="tile-meta-pill">mermaid</span>
+            <span class="tile-meta-pill tile-meta-pill-dim">sequence</span>
+          </span>
+        </div>
+
+        <div class="d1-tile-body">
+          <svg class="d1-diagram" viewBox="0 0 920 560" preserveAspectRatio="xMidYMid meet">
+            <!-- Lifelines (dashed verticals) -->
+            <g class="diagram-lifelines" stroke="#3a3a48" stroke-dasharray="4 6" stroke-width="1.5">
+              <line class="lifeline lifeline-1" x1="110" y1="80" x2="110" y2="500" />
+              <line class="lifeline lifeline-2" x1="330" y1="80" x2="330" y2="500" />
+              <line class="lifeline lifeline-3" x1="560" y1="80" x2="560" y2="500" />
+              <line class="lifeline lifeline-4" x1="800" y1="80" x2="800" y2="500" />
+            </g>
+
+            <!-- Actor labels -->
+            <g class="diagram-actors" font-family="Inter, sans-serif" font-size="18" font-weight="600">
+              <g class="actor actor-1">
+                <rect x="50" y="40" width="120" height="46" rx="6" fill="#13131a" stroke="#2a2a35" stroke-width="1.5" />
+                <text x="110" y="69" text-anchor="middle" fill="#f0f6fc">User</text>
+              </g>
+              <g class="actor actor-2">
+                <rect x="262" y="40" width="136" height="46" rx="6" fill="#13131a" stroke="#2a2a35" stroke-width="1.5" />
+                <text x="330" y="69" text-anchor="middle" fill="#f0f6fc">Browser</text>
+              </g>
+              <g class="actor actor-3">
+                <rect x="488" y="40" width="144" height="46" rx="6" fill="#13131a" stroke="#2a2a35" stroke-width="1.5" />
+                <text x="560" y="69" text-anchor="middle" fill="#f0f6fc">AuthServer</text>
+              </g>
+              <g class="actor actor-4">
+                <rect x="734" y="40" width="132" height="46" rx="6" fill="#13131a" stroke="#2a2a35" stroke-width="1.5" />
+                <text x="800" y="69" text-anchor="middle" fill="#f0f6fc">Client</text>
+              </g>
+            </g>
+
+            <!-- Arrow defs -->
+            <defs>
+              <marker id="d1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#60a5fa" />
+              </marker>
+              <marker id="d1-arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24" />
+              </marker>
+              <marker id="d1-arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#86efac" />
+              </marker>
+            </defs>
+
+            <!-- Messages -->
+            <g class="diagram-messages" font-family="ui-monospace, 'JetBrains Mono', Menlo, monospace" font-size="14">
+              <!-- Msg 1: User -> Browser: tap "Sign in" -->
+              <g class="msg msg-1">
+                <line x1="110" y1="140" x2="320" y2="140" stroke="#60a5fa" stroke-width="2" marker-end="url(#d1-arrow)" />
+                <text x="215" y="132" text-anchor="middle" fill="#8b949e">tap "Sign in"</text>
+              </g>
+
+              <!-- Msg 2: Browser -> Client: generate verifier + challenge -->
+              <g class="msg msg-2">
+                <line x1="330" y1="200" x2="790" y2="200" stroke="#60a5fa" stroke-width="2" marker-end="url(#d1-arrow)" />
+                <text x="560" y="192" text-anchor="middle" fill="#8b949e">generate verifier + challenge</text>
+              </g>
+
+              <!-- Msg 3: Client -> AuthServer: authorize(code_challenge) -->
+              <g class="msg msg-3">
+                <line x1="800" y1="260" x2="570" y2="260" stroke="#fbbf24" stroke-width="2" marker-end="url(#d1-arrow-amber)" />
+                <foreignObject x="556" y="232" width="258" height="22" requiredExtensions="http://www.w3.org/1999/xhtml">
+                  <div class="msg-label msg-label-amber" xmlns="http://www.w3.org/1999/xhtml">authorize(code_challenge)</div>
+                </foreignObject>
+              </g>
+
+              <!-- Msg 4: AuthServer -> User: consent screen -->
+              <g class="msg msg-4">
+                <line x1="560" y1="320" x2="120" y2="320" stroke="#60a5fa" stroke-width="2" marker-end="url(#d1-arrow)" />
+                <text x="340" y="312" text-anchor="middle" fill="#8b949e">consent screen</text>
+              </g>
+
+              <!-- Msg 5: User -> AuthServer: approve -->
+              <g class="msg msg-5">
+                <line x1="110" y1="380" x2="550" y2="380" stroke="#60a5fa" stroke-width="2" marker-end="url(#d1-arrow)" />
+                <text x="330" y="372" text-anchor="middle" fill="#8b949e">approve</text>
+              </g>
+
+              <!-- Msg 6: AuthServer -> Client: code + token(verifier) -->
+              <g class="msg msg-6">
+                <line x1="560" y1="440" x2="790" y2="440" stroke="#86efac" stroke-width="2" marker-end="url(#d1-arrow-green)" />
+                <foreignObject x="556" y="412" width="238" height="22" requiredExtensions="http://www.w3.org/1999/xhtml">
+                  <div class="msg-label msg-label-green" xmlns="http://www.w3.org/1999/xhtml">code → token(verifier)</div>
+                </foreignObject>
+              </g>
+            </g>
+          </svg>
+        </div>
+
+        <!-- Caption ribbon under tile -->
+        <div class="d1-caption">
+          <span class="d1-caption-arrow">→</span>
+          <span class="d1-caption-text">SVG. annotatable. round-trips to your agent.</span>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      .d1-canvas {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #0a0a0e;
+        color: #f0f6fc;
+        font-family: "Inter", sans-serif;
+        overflow: hidden;
+      }
+
+      .d1-canvas .d1-grid {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0.4;
+      }
+
+      .d1-canvas .d1-bloom {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 1700px;
+        height: 1000px;
+        margin-left: -850px;
+        margin-top: -500px;
+        background: radial-gradient(
+          circle at 35% 50%,
+          rgba(96, 165, 250, 0.16) 0%,
+          rgba(96, 165, 250, 0) 55%
+        );
+        pointer-events: none;
+      }
+
+      /* TERMINAL — left side, 40% of frame */
+      .d1-canvas .d1-terminal {
+        position: absolute;
+        left: 100px;
+        top: 180px;
+        width: 700px;
+        height: 720px;
+        background: #13131a;
+        border: 1px solid #2a2a35;
+        border-radius: 14px;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+        overflow: hidden;
+      }
+
+      .d1-canvas .d1-terminal-chrome {
+        height: 56px;
+        background: #0f0f15;
+        border-bottom: 1px solid #2a2a35;
+        display: flex;
+        align-items: center;
+        padding: 0 24px;
+        gap: 12px;
+      }
+
+      .d1-canvas .chrome-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .d1-canvas .chrome-dot.dot-r {
+        background: #ff5f57;
+      }
+      .d1-canvas .chrome-dot.dot-y {
+        background: #febc2e;
+      }
+      .d1-canvas .chrome-dot.dot-g {
+        background: #28c840;
+      }
+
+      .d1-canvas .chrome-title {
+        margin-left: auto;
+        margin-right: auto;
+        font-family: ui-monospace, "JetBrains Mono", "Fira Code", Menlo, monospace;
+        font-size: 18px;
+        color: #8b949e;
+        letter-spacing: 0.04em;
+      }
+
+      .d1-canvas .d1-terminal-body {
+        padding: 36px 30px;
+        font-family: ui-monospace, "JetBrains Mono", "Fira Code", Menlo, monospace;
+        font-size: 26px;
+        line-height: 1.55;
+        color: #f0f6fc;
+      }
+
+      .d1-canvas .t-line {
+        display: block;
+        margin-bottom: 22px;
+        opacity: 0;
+      }
+
+      .d1-canvas .t-sigil,
+      .d1-canvas .t-prompt {
+        color: #60a5fa;
+        margin-right: 14px;
+        font-weight: 700;
+      }
+
+      .d1-canvas .t-cmd {
+        color: #a78bfa;
+        font-weight: 600;
+        margin-right: 12px;
+      }
+
+      .d1-canvas .t-arg {
+        color: #f0f6fc;
+      }
+
+      .d1-canvas .t-status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 22px;
+        color: #8b949e;
+      }
+
+      .d1-canvas .t-status-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #fbbf24;
+        box-shadow: 0 0 14px rgba(251, 191, 36, 0.7);
+      }
+
+      .d1-canvas .t-tool {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 22px;
+      }
+
+      .d1-canvas .t-tool-tag {
+        background: rgba(167, 139, 250, 0.18);
+        color: #a78bfa;
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .d1-canvas .t-tool-text {
+        color: #f0f6fc;
+      }
+
+      .d1-canvas .t-result {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 22px;
+      }
+
+      .d1-canvas .t-check {
+        color: #86efac;
+        font-weight: 700;
+        font-size: 24px;
+      }
+
+      .d1-canvas .t-result-text {
+        color: #8b949e;
+      }
+
+      .d1-canvas .t-input {
+        display: flex;
+        align-items: center;
+        margin-top: 8px;
+      }
+
+      .d1-canvas .t-input-text {
+        color: #f0f6fc;
+        margin-right: 4px;
+        white-space: pre;
+      }
+
+      .d1-canvas .t-caret {
+        display: inline-block;
+        color: #60a5fa;
+        font-weight: 700;
+        opacity: 1;
+      }
+
+      /* TILE / DIAGRAM PANEL — right side, 60% */
+      .d1-canvas .d1-tile {
+        position: absolute;
+        left: 860px;
+        top: 130px;
+        width: 980px;
+        height: 820px;
+        background: #13131a;
+        border: 1px solid #2a2a35;
+        border-radius: 14px;
+        box-shadow: 0 36px 90px rgba(0, 0, 0, 0.55);
+        overflow: hidden;
+      }
+
+      .d1-canvas .d1-tile-chrome {
+        height: 64px;
+        background: #0f0f15;
+        border-bottom: 1px solid #2a2a35;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 28px;
+      }
+
+      .d1-canvas .tile-label {
+        font-family: ui-monospace, "JetBrains Mono", "Fira Code", Menlo, monospace;
+        font-size: 22px;
+        color: #f0f6fc;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .d1-canvas .tile-meta {
+        display: flex;
+        gap: 10px;
+      }
+
+      .d1-canvas .tile-meta-pill {
+        font-family: ui-monospace, "JetBrains Mono", "Fira Code", Menlo, monospace;
+        font-size: 16px;
+        color: #60a5fa;
+        background: rgba(96, 165, 250, 0.12);
+        border: 1px solid rgba(96, 165, 250, 0.3);
+        padding: 5px 12px;
+        border-radius: 999px;
+        font-weight: 600;
+      }
+
+      .d1-canvas .tile-meta-pill.tile-meta-pill-dim {
+        color: #8b949e;
+        background: rgba(139, 148, 158, 0.08);
+        border-color: rgba(139, 148, 158, 0.25);
+      }
+
+      .d1-canvas .d1-tile-body {
+        padding: 30px 40px 40px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: calc(100% - 64px - 70px);
+      }
+
+      .d1-canvas .d1-diagram {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+      }
+
+      .d1-canvas .d1-diagram text {
+        paint-order: stroke fill;
+        stroke: #13131a;
+        stroke-width: 4;
+        stroke-linejoin: round;
+      }
+      .d1-canvas .d1-diagram .actor text {
+        stroke: none;
+      }
+
+      .d1-canvas .msg-label {
+        display: inline-block;
+        font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+        font-size: 14px;
+        font-weight: 600;
+        text-align: center;
+        line-height: 22px;
+        padding: 0 8px;
+        border-radius: 3px;
+        background: #13131a;
+        white-space: nowrap;
+      }
+      .d1-canvas .msg-label-amber {
+        color: #fbbf24;
+      }
+      .d1-canvas .msg-label-green {
+        color: #86efac;
+      }
+
+      .d1-canvas .d1-diagram .lifeline {
+        opacity: 0;
+      }
+
+      .d1-canvas .d1-diagram .actor {
+        opacity: 0;
+      }
+
+      .d1-canvas .d1-diagram .msg {
+        opacity: 0;
+      }
+
+      .d1-canvas .d1-diagram .msg line {
+        stroke-dasharray: 1000;
+        stroke-dashoffset: 1000;
+      }
+
+      .d1-canvas .d1-caption {
+        position: absolute;
+        left: 28px;
+        right: 28px;
+        bottom: 22px;
+        height: 44px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-family: ui-monospace, "JetBrains Mono", "Fira Code", Menlo, monospace;
+        font-size: 18px;
+        color: #8b949e;
+        opacity: 0;
+      }
+
+      .d1-canvas .d1-caption-arrow {
+        color: #60a5fa;
+        font-weight: 700;
+      }
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script>
+      (function () {
+        const tl = gsap.timeline({ paused: true });
+        const S = ".d1-canvas ";
+
+        // Backdrop in
+        tl.fromTo(
+          S + ".d1-grid",
+          { opacity: 0 },
+          { opacity: 0.4, duration: 0.5, ease: "power2.out" },
+          0,
+        );
+        tl.fromTo(
+          S + ".d1-bloom",
+          { opacity: 0, scale: 0.9 },
+          { opacity: 1, scale: 1, duration: 0.8, ease: "sine.out" },
+          0,
+        );
+
+        // Terminal card slides up from below, scaled slightly
+        tl.fromTo(
+          S + ".d1-terminal",
+          { opacity: 0, y: 80, scale: 0.94 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "expo.out" },
+          0.1,
+        );
+
+        // Terminal lines stagger in
+        tl.fromTo(
+          S + ".t-line-1",
+          { opacity: 0, x: -12 },
+          { opacity: 1, x: 0, duration: 0.35, ease: "power2.out" },
+          0.6,
+        );
+
+        tl.fromTo(
+          S + ".t-status",
+          { opacity: 0, x: -10 },
+          { opacity: 1, x: 0, duration: 0.3, ease: "power2.out" },
+          1.05,
+        );
+
+        // Spinner-like pulse on status dot
+        tl.to(
+          S + ".t-status-dot",
+          { scale: 1.4, duration: 0.6, ease: "sine.inOut", yoyo: true, repeat: 3 },
+          1.05,
+        );
+
+        tl.fromTo(
+          S + ".t-tool",
+          { opacity: 0, x: -10 },
+          { opacity: 1, x: 0, duration: 0.3, ease: "power2.out" },
+          1.4,
+        );
+
+        tl.fromTo(
+          S + ".t-result",
+          { opacity: 0, x: -10 },
+          { opacity: 1, x: 0, duration: 0.3, ease: "power2.out" },
+          1.85,
+        );
+
+        // RIGHT: Tile arrives slightly after the result line — feels causal
+        tl.fromTo(
+          S + ".d1-tile",
+          { opacity: 0, x: 60, scale: 0.96 },
+          { opacity: 1, x: 0, scale: 1, duration: 0.55, ease: "expo.out" },
+          1.95,
+        );
+
+        // Lifelines extend top-to-bottom (drawSVG-style with stroke-dashoffset)
+        tl.fromTo(
+          S + ".lifeline",
+          { opacity: 0, scaleY: 0, transformOrigin: "top" },
+          {
+            opacity: 1,
+            scaleY: 1,
+            duration: 0.5,
+            ease: "power2.out",
+            stagger: 0.06,
+          },
+          2.35,
+        );
+
+        // Actor boxes fade + drop
+        tl.fromTo(
+          S + ".actor",
+          { opacity: 0, y: -16 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 0.45,
+            ease: "back.out(1.4)",
+            stagger: 0.07,
+          },
+          2.65,
+        );
+
+        // Messages draw in (stroke-dashoffset goes 1000 → 0)
+        const msgStart = 3.1;
+        const msgGap = 0.45;
+        const msgs = [".msg-1", ".msg-2", ".msg-3", ".msg-4", ".msg-5", ".msg-6"];
+
+        msgs.forEach((sel, i) => {
+          const t = msgStart + i * msgGap;
+          tl.fromTo(
+            S + sel,
+            { opacity: 0 },
+            { opacity: 1, duration: 0.2, ease: "power2.out" },
+            t,
+          );
+          tl.fromTo(
+            S + sel + " line",
+            { strokeDashoffset: 1000 },
+            { strokeDashoffset: 0, duration: 0.4, ease: "power2.out" },
+            t,
+          );
+        });
+
+        // Typing in terminal input line during the right-side animation
+        tl.fromTo(
+          S + ".t-input",
+          { opacity: 0 },
+          { opacity: 1, duration: 0.3, ease: "power2.out" },
+          2.4,
+        );
+
+        // Caret blink (finite repeats)
+        tl.to(
+          S + ".t-caret",
+          { opacity: 0.05, duration: 0.36, ease: "steps(1)", yoyo: true, repeat: 9 },
+          2.4,
+        );
+
+        // Typewriter
+        const inputText = "annotate the consent step";
+        const typeProxy = { val: 0 };
+        tl.to(
+          typeProxy,
+          {
+            val: inputText.length,
+            duration: 1.4,
+            ease: "none",
+            onUpdate: function () {
+              const el = document.querySelector(S + ".t-input-text");
+              if (el) {
+                el.textContent = inputText.substring(0, Math.ceil(typeProxy.val));
+              }
+            },
+          },
+          5.5,
+        );
+
+        // Caption ribbon at the bottom of tile
+        tl.fromTo(
+          S + ".d1-caption",
+          { opacity: 0, y: 10 },
+          { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" },
+          5.9,
+        );
+
+        window.__timelines = window.__timelines || {};
+        window.__timelines["scene2-demo1"] = tl;
+      })();
+    </script>
+  </div>
+</template>

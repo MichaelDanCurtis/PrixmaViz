@@ -1,0 +1,461 @@
+<template id="scene5-outro-template">
+  <div
+    data-composition-id="scene5-outro"
+    data-width="1920"
+    data-height="1080"
+    data-duration="5"
+  >
+    <div class="d5-canvas">
+      <!-- Backdrop -->
+      <div class="d5-bloom"></div>
+      <svg class="d5-grid" viewBox="0 0 1920 1080" preserveAspectRatio="none">
+        <defs>
+          <pattern id="d5-grid-pattern" width="80" height="80" patternUnits="userSpaceOnUse">
+            <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#1a1a26" stroke-width="1" />
+          </pattern>
+        </defs>
+        <rect width="1920" height="1080" fill="url(#d5-grid-pattern)" />
+      </svg>
+
+      <!-- Center stack -->
+      <div class="d5-stack">
+        <!-- Logo mark -->
+        <div class="d5-mark">
+          <svg viewBox="0 0 220 220" width="180" height="180">
+            <defs>
+              <linearGradient id="d5-mark-grad" x1="0" x2="1" y1="0" y2="1">
+                <stop offset="0" stop-color="#60a5fa" />
+                <stop offset="1" stop-color="#a78bfa" />
+              </linearGradient>
+            </defs>
+            <!-- prism-style stacked diamonds -->
+            <g stroke="url(#d5-mark-grad)" stroke-width="3" fill="none">
+              <path class="m-shape m-1" d="M 110 28 L 192 110 L 110 192 L 28 110 Z" />
+              <path class="m-shape m-2" d="M 110 60 L 160 110 L 110 160 L 60 110 Z" />
+              <path class="m-shape m-3" d="M 110 90 L 130 110 L 110 130 L 90 110 Z" />
+            </g>
+            <!-- center dot -->
+            <circle class="m-dot" cx="110" cy="110" r="6" fill="#60a5fa" />
+          </svg>
+        </div>
+
+        <!-- Wordmark -->
+        <div class="d5-wordmark">PrixmaViz</div>
+
+        <!-- Tagline -->
+        <div class="d5-tagline">AI-native diagrams for AI coding agents.</div>
+
+        <!-- Install command card -->
+        <div class="d5-install">
+          <div class="install-header">
+            <span class="install-dot install-dot-r"></span>
+            <span class="install-dot install-dot-y"></span>
+            <span class="install-dot install-dot-g"></span>
+            <span class="install-label">install</span>
+          </div>
+          <div class="install-row">
+            <span class="install-prefix">$</span>
+            <span class="install-cmd">claude plugins marketplace add</span>
+            <span class="install-url">github.com/MichaelDanCurtis/PrixmaViz</span>
+          </div>
+          <div class="install-row install-row-2">
+            <span class="install-prefix">$</span>
+            <span class="install-cmd">claude plugins install</span>
+            <span class="install-arg">prixmaviz@prixmaviz-local</span>
+            <span class="install-ok">
+              <span class="install-check">✓</span>
+              <span class="install-ok-text">ready</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- URL + repo line -->
+        <div class="d5-meta">
+          <div class="d5-meta-url">
+            <span class="meta-prefix">↗</span>
+            <span class="meta-url-text">prixmaviz.ailuxis.com</span>
+          </div>
+          <div class="d5-meta-sep"></div>
+          <div class="d5-meta-repo">
+            <span class="meta-repo-icon">⌥</span>
+            <span class="meta-repo-text">GitHub · MichaelDanCurtis/PrixmaViz</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Frame ticks -->
+      <div class="d5-tick d5-tick-tl"></div>
+      <div class="d5-tick d5-tick-tr"></div>
+      <div class="d5-tick d5-tick-bl"></div>
+      <div class="d5-tick d5-tick-br"></div>
+    </div>
+
+    <style>
+      .d5-canvas {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #0a0a0e;
+        color: #f0f6fc;
+        font-family: "Inter", sans-serif;
+        overflow: hidden;
+      }
+
+      .d5-canvas .d5-grid {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0.45;
+      }
+
+      .d5-canvas .d5-bloom {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 1600px;
+        height: 900px;
+        margin-left: -800px;
+        margin-top: -450px;
+        background: radial-gradient(
+          circle at center,
+          rgba(96, 165, 250, 0.22) 0%,
+          rgba(167, 139, 250, 0.12) 30%,
+          rgba(96, 165, 250, 0) 60%
+        );
+        pointer-events: none;
+      }
+
+      .d5-canvas .d5-stack {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 22px;
+        padding: 0 80px;
+      }
+
+      .d5-canvas .d5-mark {
+        width: 180px;
+        height: 180px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .d5-canvas .m-shape {
+        transform-box: fill-box;
+        transform-origin: center;
+      }
+
+      .d5-canvas .d5-wordmark {
+        font-family: "Inter", sans-serif;
+        font-size: 108px;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+        color: #f0f6fc;
+        line-height: 1;
+      }
+
+      .d5-canvas .d5-tagline {
+        font-family: "Inter", sans-serif;
+        font-size: 28px;
+        font-weight: 500;
+        color: #8b949e;
+        letter-spacing: -0.005em;
+        margin-bottom: 22px;
+      }
+
+      /* Install card */
+      .d5-canvas .d5-install {
+        background: #13131a;
+        border: 1px solid #2a2a35;
+        border-radius: 12px;
+        padding: 18px 22px;
+        min-width: 980px;
+        font-family: ui-monospace, "JetBrains Mono", "Fira Code", Menlo, monospace;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+      }
+
+      .d5-canvas .install-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #2a2a35;
+      }
+
+      .d5-canvas .install-dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .d5-canvas .install-dot-r {
+        background: #ff5f57;
+      }
+      .d5-canvas .install-dot-y {
+        background: #febc2e;
+      }
+      .d5-canvas .install-dot-g {
+        background: #28c840;
+      }
+
+      .d5-canvas .install-label {
+        margin-left: 8px;
+        font-size: 16px;
+        color: #8b949e;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+
+      .d5-canvas .install-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 22px;
+        line-height: 1.55;
+        flex-wrap: nowrap;
+      }
+
+      .d5-canvas .install-row-2 {
+        margin-top: 8px;
+      }
+
+      .d5-canvas .install-prefix {
+        color: #60a5fa;
+        font-weight: 700;
+      }
+
+      .d5-canvas .install-cmd {
+        color: #a78bfa;
+        font-weight: 600;
+      }
+
+      .d5-canvas .install-url {
+        color: #f0f6fc;
+      }
+
+      .d5-canvas .install-arg {
+        color: #f0f6fc;
+      }
+
+      .d5-canvas .install-ok {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        opacity: 0;
+        color: #86efac;
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .d5-canvas .install-check {
+        font-size: 22px;
+      }
+
+      /* Meta row */
+      .d5-canvas .d5-meta {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        margin-top: 22px;
+        font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+        font-size: 22px;
+        color: #f0f6fc;
+      }
+
+      .d5-canvas .d5-meta-url {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .d5-canvas .meta-prefix {
+        color: #60a5fa;
+        font-weight: 700;
+      }
+
+      .d5-canvas .meta-url-text {
+        color: #60a5fa;
+        font-weight: 600;
+      }
+
+      .d5-canvas .d5-meta-sep {
+        width: 1px;
+        height: 22px;
+        background: #2a2a35;
+      }
+
+      .d5-canvas .d5-meta-repo {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: #8b949e;
+      }
+
+      .d5-canvas .meta-repo-icon {
+        color: #8b949e;
+      }
+
+      .d5-canvas .meta-repo-text {
+        color: #8b949e;
+      }
+
+      /* Frame ticks */
+      .d5-canvas .d5-tick {
+        position: absolute;
+        width: 36px;
+        height: 36px;
+        border: 1.5px solid #2a2a35;
+      }
+
+      .d5-canvas .d5-tick-tl {
+        top: 64px;
+        left: 64px;
+        border-right: none;
+        border-bottom: none;
+      }
+      .d5-canvas .d5-tick-tr {
+        top: 64px;
+        right: 64px;
+        border-left: none;
+        border-bottom: none;
+      }
+      .d5-canvas .d5-tick-bl {
+        bottom: 64px;
+        left: 64px;
+        border-right: none;
+        border-top: none;
+      }
+      .d5-canvas .d5-tick-br {
+        bottom: 64px;
+        right: 64px;
+        border-left: none;
+        border-top: none;
+      }
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script>
+      (function () {
+        const tl = gsap.timeline({ paused: true });
+        const S = ".d5-canvas ";
+
+        // Backdrop
+        tl.fromTo(
+          S + ".d5-grid",
+          { opacity: 0 },
+          { opacity: 0.45, duration: 0.5, ease: "power2.out" },
+          0,
+        );
+        tl.fromTo(
+          S + ".d5-bloom",
+          { opacity: 0, scale: 0.88 },
+          { opacity: 1, scale: 1, duration: 1.0, ease: "sine.out" },
+          0,
+        );
+
+        // Frame ticks
+        tl.fromTo(
+          S + ".d5-tick",
+          { opacity: 0, scale: 0.6 },
+          { opacity: 1, scale: 1, duration: 0.4, ease: "power3.out", stagger: 0.04 },
+          0.05,
+        );
+
+        // Logo mark — three concentric shapes scale in
+        tl.fromTo(
+          S + ".m-1",
+          { opacity: 0, scale: 0.6, rotation: 8 },
+          { opacity: 1, scale: 1, rotation: 0, duration: 0.6, ease: "back.out(1.4)" },
+          0.15,
+        );
+        tl.fromTo(
+          S + ".m-2",
+          { opacity: 0, scale: 0.6, rotation: -8 },
+          { opacity: 1, scale: 1, rotation: 0, duration: 0.5, ease: "back.out(1.4)" },
+          0.3,
+        );
+        tl.fromTo(
+          S + ".m-3",
+          { opacity: 0, scale: 0.6 },
+          { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(1.6)" },
+          0.45,
+        );
+        tl.fromTo(
+          S + ".m-dot",
+          { opacity: 0, scale: 0 },
+          { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)" },
+          0.55,
+        );
+
+        // Subtle perpetual breathe on the mark
+        tl.to(
+          S + ".m-1",
+          { scale: 1.04, duration: 1.6, ease: "sine.inOut", yoyo: true, repeat: 1 },
+          1.0,
+        );
+
+        // Wordmark
+        tl.fromTo(
+          S + ".d5-wordmark",
+          { opacity: 0, y: 20, filter: "blur(8px)" },
+          { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.55, ease: "expo.out" },
+          0.7,
+        );
+
+        // Tagline
+        tl.fromTo(
+          S + ".d5-tagline",
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" },
+          1.0,
+        );
+
+        // Install card slides up
+        tl.fromTo(
+          S + ".d5-install",
+          { opacity: 0, y: 40, scale: 0.97 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "expo.out" },
+          1.25,
+        );
+
+        // Check / ready badge — appears after a beat to feel like a real install
+        tl.fromTo(
+          S + ".install-ok",
+          { opacity: 0, x: 14 },
+          { opacity: 1, x: 0, duration: 0.4, ease: "back.out(1.6)" },
+          2.4,
+        );
+
+        // Meta row
+        tl.fromTo(
+          S + ".d5-meta",
+          { opacity: 0, y: 14 },
+          { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" },
+          1.95,
+        );
+
+        // Hold for last 1.5s — nothing animates between 3.5s and 5.0s
+        // except a final gentle bloom drift for atmosphere
+        tl.to(
+          S + ".d5-bloom",
+          { scale: 1.05, duration: 2.0, ease: "sine.inOut" },
+          2.5,
+        );
+
+        window.__timelines = window.__timelines || {};
+        window.__timelines["scene5-outro"] = tl;
+      })();
+    </script>
+  </div>
+</template>
