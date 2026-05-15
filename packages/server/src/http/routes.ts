@@ -626,7 +626,9 @@ async function exportVsdxRoute(
   } else if (row.kind === "graph" && row.ir && canStructuredVsdx(row.engine)) {
     const { writeVsdxFromIr } = await import("../renderers/vsdx-writer");
     const ir = await maybeExtractLayout(row.engine, row.ir, row.dsl);
-    bytes = await writeVsdxFromIr(ir);
+    const result = await writeVsdxFromIr(ir);
+    bytes = result.bytes;
+    if (result.warnings.length) console.warn("[vsdx-export]", id, result.warnings);
   } else {
     if (!row.svg) return Response.json({ ok: false, error: "no rendered SVG to embed" }, { status: 400 });
     const { writeVsdxFromSvg } = await import("../renderers/vsdx-writer-fallback");

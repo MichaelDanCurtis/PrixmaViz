@@ -6,13 +6,22 @@ import { getMasterPartXml, getInlineGeometryXml } from "../vsdx/master-geometry"
 
 type NodeWithPos = Node & { _x?: number; _y?: number };
 
+export interface WriteVsdxResult {
+  bytes: Uint8Array;
+  warnings: string[];
+}
+
 /**
  * Write a complete .vsdx (OPC ZIP) byte stream from a GraphIR with optional
- * per-node `_x`/`_y` coordinates. Returns a Uint8Array suitable for stuffing
- * into Postgres or sending as a response body.
+ * per-node `_x`/`_y` coordinates. Returns the byte buffer alongside any
+ * warnings accumulated during writing — e.g. dropped edges that reference
+ * missing nodes, or nodes whose shape didn't map to a known master so we
+ * fell back to "Process". Callers should surface these to the user or at
+ * least log them; silently incomplete diagrams are the worst failure mode.
  */
-export async function writeVsdxFromIr(ir: GraphIR): Promise<Uint8Array> {
+export async function writeVsdxFromIr(ir: GraphIR): Promise<WriteVsdxResult> {
   const zip = new JSZip();
+  const warnings: string[] = [];
 
   // Assign sequential numeric IDs to nodes and edges (Visio shape IDs).
   const nodeIds = new Map<string, string>();
@@ -26,6 +35,9 @@ export async function writeVsdxFromIr(ir: GraphIR): Promise<Uint8Array> {
   const shapeXmls: string[] = [];
   for (const [k, n] of nodeEntries) {
     const mapping = mapShapeToMaster(n.shape);
+    if (mapping.fallback) {
+      warnings.push(`node '${k}' has unknown shape '${n.shape ?? "(none)"}', falling back to Process`);
+    }
     const masterId = String(ALL_MASTERS.indexOf(mapping.master) + 1);
     const w = 1.0;
     const h = 0.75;
@@ -47,7 +59,14 @@ export async function writeVsdxFromIr(ir: GraphIR): Promise<Uint8Array> {
   for (const e of Object.values(ir.edges) as Edge[]) {
     const fromId = nodeIds.get(e.from);
     const toId = nodeIds.get(e.to);
-    if (!fromId || !toId) continue;
+    if (!fromId) {
+      warnings.push(`dropped edge ${e.id}: from node '${e.from}' not found`);
+      continue;
+    }
+    if (!toId) {
+      warnings.push(`dropped edge ${e.id}: to node '${e.to}' not found`);
+      continue;
+    }
     connectorXmls.push(buildConnectorXml({
       id: String(nextShapeId++),
       from: fromId,
@@ -79,7 +98,7 @@ export async function writeVsdxFromIr(ir: GraphIR): Promise<Uint8Array> {
   }
 
   const buf = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
-  return buf;
+  return { bytes: buf, warnings };
 }
 
 function contentTypesXml(): string {
