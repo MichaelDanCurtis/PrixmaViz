@@ -1,6 +1,7 @@
 import type { Diagram, GraphIR, RenderResult } from "@prixmaviz/shared";
 import { KrokiClient, KrokiError } from "./kroki/client";
 import { getIrRenderer } from "./renderers/registry";
+import { renderVsdxBytes, VsdxRenderError } from "./renderers/vsdx-render";
 
 export interface RenderEngineDeps {
   kroki: KrokiClient;
@@ -23,10 +24,19 @@ export async function renderDiagram(
   diagram: Diagram,
   deps: RenderEngineDeps,
 ): Promise<RenderOutcome> {
-  // ─── Binary branch (vsdx) — stub until Task 8 ───────────
+  // ─── Binary branch (vsdx) ───────────
   if (diagram.kind === "binary") {
     if (!diagram.bytes) return { ok: false, error: "binary diagram missing bytes" };
-    return { ok: false, error: "binary rendering not implemented" };
+    if (diagram.engine !== "vsdx") {
+      return { ok: false, error: `unsupported binary engine: ${diagram.engine}` };
+    }
+    try {
+      const svg = await renderVsdxBytes(diagram.bytes);
+      return { ok: true, result: { svg, dsl: "" }, warnings: [] };
+    } catch (e) {
+      if (e instanceof VsdxRenderError) return { ok: false, error: e.message };
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   }
 
   let dsl: string;
