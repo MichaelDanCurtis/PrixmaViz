@@ -1,5 +1,10 @@
 import type { Edge, GraphIR, Node, NodeShape } from "@prixmaviz/shared";
 
+// Hard cap on how long `dot` may run before we kill it. Pathological DOT input
+// (e.g. a degenerate graph from a malicious or buggy upstream extractor) can
+// otherwise hang the request indefinitely.
+const DOT_TIMEOUT_MS = Number(process.env.PRIXMAVIZ_DOT_TIMEOUT_MS) || 10_000;
+
 /**
  * Run `dot -Tjson` on the input DOT string and translate the layout
  * into a GraphIR with positions attached on each node as `_x`/`_y`.
@@ -13,18 +18,36 @@ export async function extractGraphFromDot(dot: string): Promise<
     nodes: Record<string, Node & { _x: number; _y: number }>;
   }
 > {
+  const signal = AbortSignal.timeout(DOT_TIMEOUT_MS);
   const proc = Bun.spawn(["dot", "-Tjson"], {
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
+    signal,
   });
-  proc.stdin.write(dot);
-  await proc.stdin.end();
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  const exitCode = await proc.exited;
+  let stdout: string;
+  let stderr: string;
+  let exitCode: number;
+  try {
+    proc.stdin.write(dot);
+    await proc.stdin.end();
+    [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    exitCode = await proc.exited;
+  } catch (e) {
+    if (signal.aborted) {
+      throw new Error(`dot timed out after ${DOT_TIMEOUT_MS}ms`);
+    }
+    if (e instanceof Error && (e.name === "AbortError" || /aborted|timed out/i.test(e.message))) {
+      throw new Error(`dot timed out after ${DOT_TIMEOUT_MS}ms`);
+    }
+    throw e;
+  }
+  if (signal.aborted) {
+    throw new Error(`dot timed out after ${DOT_TIMEOUT_MS}ms`);
+  }
   if (exitCode !== 0) {
     throw new Error(`dot failed (${exitCode}): ${stderr.slice(0, 200)}`);
   }
