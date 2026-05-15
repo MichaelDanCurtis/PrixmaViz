@@ -1,7 +1,7 @@
 # PrixmaViz — VSDX as First-Class Engine
 
 **Date:** 2026-05-14
-**Status:** Design approved; pending implementation plan
+**Status:** Implemented; see [implementation plan](../plans/2026-05-14-prixmaviz-vsdx-engine.md)
 **Predecessor:** [Cycle 4 — Service-First Architecture](2026-05-11-prixmaviz-cycle-4-design.md)
 
 ## Goal
