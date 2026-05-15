@@ -41,7 +41,7 @@ export class VsdxRenderer {
       const res = await this.fetchImpl(`${this.baseUrl}/convert/svg`, {
         method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
-        body: bytes,
+        body: bytes as unknown as BodyInit,
         signal: ctrl.signal,
       });
       if (!res.ok) {
