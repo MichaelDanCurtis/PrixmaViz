@@ -212,3 +212,35 @@ export function getInlineGeometryXml(masterName: string, _w: number, _h: number)
   const fn = GEOMETRY[masterName] ?? rect;
   return fn();
 }
+
+export function getConnectorMasterPartXml(): string {
+  // A connector is a 1D shape: just a straight line from (0,0) to (1,1) in
+  // normalized space. Visio scales it via BeginX/BeginY/EndX/EndY when
+  // instantiated on a page.
+  const geom = `<Section N="Geometry" IX="0"><Cell N="NoFill" V="1"/><Cell N="NoLine" V="0"/><Cell N="NoShow" V="0"/><Cell N="NoSnap" V="0"/><Cell N="NoQuickDrag" V="0"/><Row T="RelMoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row><Row T="RelLineTo" IX="2"><Cell N="X" V="1"/><Cell N="Y" V="1"/></Row></Section>`;
+  return [
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`,
+    `<MasterContents xmlns="http://schemas.microsoft.com/office/visio/2012/main" xml:space="preserve">`,
+    `<Shapes>`,
+    `<Shape ID="100" Type="Shape" LineStyle="3" FillStyle="3" TextStyle="3">`,
+    `<Cell N="PinX" V="0.5"/>`,
+    `<Cell N="PinY" V="0.5"/>`,
+    `<Cell N="Width" V="1"/>`,
+    `<Cell N="Height" V="1"/>`,
+    `<Cell N="LocPinX" V="0.5" F="Width*0.5"/>`,
+    `<Cell N="LocPinY" V="0.5" F="Height*0.5"/>`,
+    `<Cell N="BeginX" V="0"/>`,
+    `<Cell N="BeginY" V="0"/>`,
+    `<Cell N="EndX" V="1"/>`,
+    `<Cell N="EndY" V="1"/>`,
+    `<Cell N="ObjType" V="2"/>`,        // ObjType=2 means "1D shape" (connector)
+    `<Cell N="Angle" V="0"/>`,
+    `<Cell N="FlipX" V="0"/>`,
+    `<Cell N="FlipY" V="0"/>`,
+    `<Cell N="ResizeMode" V="0"/>`,
+    geom,
+    `</Shape>`,
+    `</Shapes>`,
+    `</MasterContents>`,
+  ].join("");
+}

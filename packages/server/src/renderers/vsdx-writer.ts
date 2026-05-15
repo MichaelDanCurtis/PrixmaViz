@@ -2,7 +2,7 @@ import JSZip from "jszip";
 import type { GraphIR, Node, Edge } from "@prixmaviz/shared";
 import { mapShapeToMaster, ALL_MASTERS } from "../vsdx/stencils";
 import { buildShapeXml, buildConnectorXml, buildPageXml, xmlEscape } from "../vsdx/xml-builder";
-import { getMasterPartXml, getInlineGeometryXml } from "../vsdx/master-geometry";
+import { getMasterPartXml, getInlineGeometryXml, getConnectorMasterPartXml } from "../vsdx/master-geometry";
 
 type NodeWithPos = Node & { _x?: number; _y?: number };
 
@@ -96,6 +96,8 @@ export async function writeVsdxFromIr(ir: GraphIR): Promise<WriteVsdxResult> {
   for (let i = 0; i < ALL_MASTERS.length; i++) {
     zip.file(`visio/masters/master${i + 1}.xml`, getMasterPartXml(ALL_MASTERS[i]!));
   }
+  // Master 100 = the Dynamic Connector geometry (a simple line shape)
+  zip.file("visio/masters/master100.xml", getConnectorMasterPartXml());
 
   const buf = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
   return { bytes: buf, warnings };
@@ -114,6 +116,7 @@ function contentTypesXml(): string {
   <Override PartName="/visio/pages/page1.xml" ContentType="application/vnd.ms-visio.page+xml"/>
   <Override PartName="/visio/masters/masters.xml" ContentType="application/vnd.ms-visio.masters+xml"/>
 ${masterOverrides}
+  <Override PartName="/visio/masters/master100.xml" ContentType="application/vnd.ms-visio.master+xml"/>
   <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
   <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
 </Types>`;
@@ -219,6 +222,15 @@ function mastersIndexXml(): string {
       `</Master>`
     );
   }
+  // Dynamic Connector — used by every edge in our writer.
+  // The reference vsdx exposes this as a separate master with ID=100.
+  const connectorRelId = `rId${ALL_MASTERS.length + 1}`;
+  lines.push(
+    `<Master ID="100" NameU="Dynamic connector" Name="Dynamic connector" Hidden="0">` +
+    `<PageSheet><Cell N="PageWidth" V="1"/><Cell N="PageHeight" V="1"/></PageSheet>` +
+    `<Rel r:id="${connectorRelId}"/>` +
+    `</Master>`
+  );
   lines.push(`</Masters>`);
   return lines.join("");
 }
@@ -227,8 +239,9 @@ function mastersRelsXml(): string {
   const rels = ALL_MASTERS.map((_, i) =>
     `<Relationship Id="rId${i + 1}" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master${i + 1}.xml"/>`
   ).join("");
+  const connectorRel = `<Relationship Id="rId${ALL_MASTERS.length + 1}" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master100.xml"/>`;
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}</Relationships>`;
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}${connectorRel}</Relationships>`;
 }
 
 function corePropsXml(): string {

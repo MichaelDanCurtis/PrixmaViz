@@ -41,6 +41,24 @@ describe("writeVsdxFromIr", () => {
     expect(page.connectors[0]!.text).toBe("go");
   });
 
+  it("emits master100.xml for the Dynamic Connector reference", async () => {
+    const { bytes } = await writeVsdxFromIr(sampleIr());
+    const JSZip = (await import("jszip")).default;
+    const zip = await JSZip.loadAsync(bytes);
+    const master100 = zip.file("visio/masters/master100.xml");
+    expect(master100).not.toBeNull();
+    const content = await master100!.async("string");
+    expect(content).toContain("ObjType");
+    // mastersIndexXml() exposes ID=100 as "Dynamic connector" — the masters
+    // index references this part, so the part itself just needs to be valid
+    // MasterContents XML. We also check that masters.xml declares ID=100.
+    const masters = zip.file("visio/masters/masters.xml");
+    expect(masters).not.toBeNull();
+    const mastersContent = await masters!.async("string");
+    expect(mastersContent).toContain(`ID="100"`);
+    expect(mastersContent).toContain("Dynamic connector");
+  });
+
   it("warns on edges referencing missing nodes", async () => {
     const ir: GraphIR = {
       layout: { direction: "TB" },
