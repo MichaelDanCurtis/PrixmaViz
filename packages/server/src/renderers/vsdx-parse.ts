@@ -54,12 +54,43 @@ export async function parseVsdx(bytes: Uint8Array): Promise<VsdxDocument> {
   const pagesNode = (pagesDoc.Pages as Record<string, unknown>)?.Page;
   const pageList = Array.isArray(pagesNode) ? pagesNode : pagesNode ? [pagesNode] : [];
 
+  // Load page-level relationships (rId → target path, relative to visio/pages/).
+  // Real Visio files reference each <Page>'s content part via a <Rel r:id="rIdN"/>
+  // child plus visio/pages/_rels/pages.xml.rels. Falling back to positional
+  // page${i+1}.xml only works for canonical output.
+  const pageRels = new Map<string, string>();
+  const pagesRelsEntry = zip.file("visio/pages/_rels/pages.xml.rels");
+  if (pagesRelsEntry) {
+    const relsXml = await pagesRelsEntry.async("string");
+    const relsDoc = xmlParser.parse(relsXml) as Record<string, unknown>;
+    const relList = (relsDoc.Relationships as Record<string, unknown> | undefined)?.Relationship;
+    const rels = Array.isArray(relList) ? relList : relList ? [relList] : [];
+    for (const r of rels) {
+      const rObj = r as Record<string, unknown>;
+      const id = String(rObj["@_Id"] ?? "");
+      const target = String(rObj["@_Target"] ?? "");
+      if (id && target) pageRels.set(id, target);
+    }
+  }
+
   const pages: VsdxPage[] = [];
   for (let i = 0; i < pageList.length; i++) {
     const pNode = pageList[i] as Record<string, unknown>;
     const name = (pNode["@_Name"] as string | undefined) ?? `Page-${i + 1}`;
-    const pageNum = i + 1;
-    const pageXmlEntry = zip.file(`visio/pages/page${pageNum}.xml`);
+
+    // Prefer rels-driven page-part lookup; fall back to positional
+    // page${i+1}.xml so non-canonical fixtures without page-level rels keep working.
+    let pageFile: string | null = null;
+    const relChild = pNode.Rel as Record<string, unknown> | undefined;
+    if (relChild) {
+      const relRid = String(relChild["@_r:id"] ?? relChild["@_id"] ?? relChild["@_Id"] ?? "");
+      const target = pageRels.get(relRid);
+      if (target) pageFile = `visio/pages/${target}`;
+    }
+    if (!pageFile) {
+      pageFile = `visio/pages/page${i + 1}.xml`;
+    }
+    const pageXmlEntry = zip.file(pageFile);
     if (!pageXmlEntry) continue;
     const pageXml = await pageXmlEntry.async("string");
     const page = parsePage(name, pageXml);
