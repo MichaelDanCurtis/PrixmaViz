@@ -3,6 +3,16 @@ import type { GraphIR, Node, Edge } from "@prixmaviz/shared";
 import { mapShapeToMaster, ALL_MASTERS } from "../vsdx/stencils";
 import { buildShapeXml, buildConnectorXml, buildPageXml, xmlEscape } from "../vsdx/xml-builder";
 import { getMasterPartXml, getInlineGeometryXml, getConnectorMasterPartXml } from "../vsdx/master-geometry";
+import {
+  contentTypesXml,
+  rootRelsXml,
+  documentXml,
+  documentRelsXml,
+  pagesIndexXml,
+  pagesRelsXml,
+  corePropsXml,
+  appPropsXml,
+} from "../vsdx/opc-templates";
 
 export interface WriteVsdxResult {
   bytes: Uint8Array;
@@ -74,10 +84,21 @@ export async function writeVsdxFromIr(ir: GraphIR): Promise<WriteVsdxResult> {
   }
 
   // OPC parts (minimal skeleton, mirrors the parser's expected structure).
-  zip.file("[Content_Types].xml", contentTypesXml());
+  // [Content_Types].xml needs Override entries for every master part plus the
+  // masters index. Order matches the existing emitted output: masters.xml,
+  // then master1..masterN (the standard stencils), then master100 (the
+  // Dynamic Connector).
+  const masterOverrides: string[] = [
+    `<Override PartName="/visio/masters/masters.xml" ContentType="application/vnd.ms-visio.masters+xml"/>`,
+    ...ALL_MASTERS.map((_, i) =>
+      `<Override PartName="/visio/masters/master${i + 1}.xml" ContentType="application/vnd.ms-visio.master+xml"/>`
+    ),
+    `<Override PartName="/visio/masters/master100.xml" ContentType="application/vnd.ms-visio.master+xml"/>`,
+  ];
+  zip.file("[Content_Types].xml", contentTypesXml({ overrides: masterOverrides }));
   zip.file("_rels/.rels", rootRelsXml());
   zip.file("visio/document.xml", documentXml());
-  zip.file("visio/_rels/document.xml.rels", documentRelsXml());
+  zip.file("visio/_rels/document.xml.rels", documentRelsXml({ withMasters: true }));
   zip.file("visio/pages/pages.xml", pagesIndexXml());
   zip.file("visio/pages/_rels/pages.xml.rels", pagesRelsXml());
   zip.file("visio/pages/page1.xml", buildPageXml(shapeXmls, connectorXmls));
@@ -99,98 +120,6 @@ export async function writeVsdxFromIr(ir: GraphIR): Promise<WriteVsdxResult> {
 
   const buf = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
   return { bytes: buf, warnings };
-}
-
-function contentTypesXml(): string {
-  const masterOverrides = ALL_MASTERS.map((_, i) =>
-    `  <Override PartName="/visio/masters/master${i + 1}.xml" ContentType="application/vnd.ms-visio.master+xml"/>`
-  ).join("\n");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/visio/document.xml" ContentType="application/vnd.ms-visio.drawing.main+xml"/>
-  <Override PartName="/visio/pages/pages.xml" ContentType="application/vnd.ms-visio.pages+xml"/>
-  <Override PartName="/visio/pages/page1.xml" ContentType="application/vnd.ms-visio.page+xml"/>
-  <Override PartName="/visio/masters/masters.xml" ContentType="application/vnd.ms-visio.masters+xml"/>
-${masterOverrides}
-  <Override PartName="/visio/masters/master100.xml" ContentType="application/vnd.ms-visio.master+xml"/>
-  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
-  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
-</Types>`;
-}
-
-function rootRelsXml(): string {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/document" Target="visio/document.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
-  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
-</Relationships>`;
-}
-
-function documentXml(): string {
-  // DocumentSettings with default style refs is required — LibreOffice's
-  // vsdx import filter resolves shape `LineStyle="3"` etc. against these.
-  // Empty <DocumentSettings/> means LibreOffice falls back to "invisible"
-  // styles and renders nothing.
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VisioDocument xmlns="http://schemas.microsoft.com/office/visio/2012/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xml:space="preserve">
-  <DocumentSettings TopPage="0" DefaultTextStyle="3" DefaultLineStyle="3" DefaultFillStyle="3" DefaultGuideStyle="4">
-    <GlueSettings>9</GlueSettings>
-    <SnapSettings>65847</SnapSettings>
-    <SnapExtensions>34</SnapExtensions>
-    <SnapAngles/>
-    <DynamicGridEnabled>1</DynamicGridEnabled>
-    <ProtectStyles>0</ProtectStyles>
-    <ProtectShapes>0</ProtectShapes>
-    <ProtectMasters>0</ProtectMasters>
-    <ProtectBkgnds>0</ProtectBkgnds>
-  </DocumentSettings>
-</VisioDocument>`;
-}
-
-function documentRelsXml(): string {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/pages" Target="pages/pages.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.microsoft.com/visio/2010/relationships/masters" Target="masters/masters.xml"/>
-</Relationships>`;
-}
-
-function pagesIndexXml(): string {
-  // Fully-populated PageSheet (PageWidth, PageHeight, all the standard cells)
-  // is required for LibreOffice to render shapes on the page. Empty
-  // <PageSheet/> = no page extents = nothing drawn.
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Pages xmlns="http://schemas.microsoft.com/office/visio/2012/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xml:space="preserve">
-  <Page ID="0" NameU="Page-1" Name="Page-1" ViewScale="1" ViewCenterX="4.25" ViewCenterY="5.5">
-    <PageSheet LineStyle="0" FillStyle="0" TextStyle="0">
-      <Cell N="PageWidth" V="8.5"/>
-      <Cell N="PageHeight" V="11"/>
-      <Cell N="ShdwOffsetX" V="0.125"/>
-      <Cell N="ShdwOffsetY" V="-0.125"/>
-      <Cell N="PageScale" V="1"/>
-      <Cell N="DrawingScale" V="1"/>
-      <Cell N="DrawingSizeType" V="0"/>
-      <Cell N="DrawingScaleType" V="0"/>
-      <Cell N="InhibitSnap" V="0"/>
-      <Cell N="UIVisibility" V="0"/>
-      <Cell N="ShdwType" V="0"/>
-      <Cell N="ShdwObliqueAngle" V="0"/>
-      <Cell N="ShdwScaleFactor" V="1"/>
-      <Cell N="DrawingResizeType" V="1"/>
-    </PageSheet>
-    <Rel r:id="rId1"/>
-  </Page>
-</Pages>`;
-}
-
-function pagesRelsXml(): string {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/page" Target="page1.xml"/>
-</Relationships>`;
 }
 
 function page1RelsXml(): string {
@@ -240,24 +169,4 @@ function mastersRelsXml(): string {
   const connectorRel = `<Relationship Id="rId${ALL_MASTERS.length + 1}" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master100.xml"/>`;
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}${connectorRel}</Relationships>`;
-}
-
-function corePropsXml(): string {
-  const now = new Date().toISOString();
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
-                   xmlns:dc="http://purl.org/dc/elements/1.1/"
-                   xmlns:dcterms="http://purl.org/dc/terms/"
-                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <dc:creator>PrixmaViz</dc:creator>
-  <dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created>
-  <dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified>
-</cp:coreProperties>`;
-}
-
-function appPropsXml(): string {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">
-  <Application>PrixmaViz</Application>
-</Properties>`;
 }

@@ -1,4 +1,12 @@
 import JSZip from "jszip";
+import {
+  contentTypesXml,
+  rootRelsXml,
+  documentXml,
+  documentRelsXml,
+  pagesIndexXml,
+  pagesRelsXml,
+} from "../vsdx/opc-templates";
 
 // Hard cap on how long `rsvg-convert` may run before we kill it. Image
 // rasterization is generally slower than DOT layout, but a pathological SVG
@@ -13,12 +21,14 @@ export async function writeVsdxFromSvg(svg: string): Promise<Uint8Array> {
   const pngBytes = await rasterizeSvgToPng(svg);
 
   const zip = new JSZip();
-  zip.file("[Content_Types].xml", contentTypes());
-  zip.file("_rels/.rels", rootRels());
+  zip.file("[Content_Types].xml", contentTypesXml({
+    defaultExtensions: [{ ext: "png", type: "image/png" }],
+  }));
+  zip.file("_rels/.rels", rootRelsXml());
   zip.file("visio/document.xml", documentXml());
-  zip.file("visio/_rels/document.xml.rels", documentRels());
-  zip.file("visio/pages/pages.xml", pagesIndex());
-  zip.file("visio/pages/_rels/pages.xml.rels", pagesRels());
+  zip.file("visio/_rels/document.xml.rels", documentRelsXml());
+  zip.file("visio/pages/pages.xml", pagesIndexXml());
+  zip.file("visio/pages/_rels/pages.xml.rels", pagesRelsXml());
   zip.file("visio/pages/page1.xml", pageWithImageXml());
   zip.file("visio/media/image1.png", pngBytes);
   zip.file("visio/pages/_rels/page1.xml.rels", pageRels());
@@ -59,51 +69,6 @@ async function rasterizeSvgToPng(svg: string): Promise<Uint8Array> {
   }
   if (exit !== 0) throw new Error(`rsvg-convert failed: ${stderr.slice(0, 200)}`);
   return new Uint8Array(stdout);
-}
-
-function contentTypes(): string {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Default Extension="png" ContentType="image/png"/>
-  <Override PartName="/visio/document.xml" ContentType="application/vnd.ms-visio.drawing.main+xml"/>
-  <Override PartName="/visio/pages/pages.xml" ContentType="application/vnd.ms-visio.pages+xml"/>
-  <Override PartName="/visio/pages/page1.xml" ContentType="application/vnd.ms-visio.page+xml"/>
-</Types>`;
-}
-
-function rootRels(): string {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/document" Target="visio/document.xml"/>
-</Relationships>`;
-}
-
-function documentXml(): string {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VisioDocument xmlns="http://schemas.microsoft.com/office/visio/2012/main" xml:space="preserve"><DocumentSettings/></VisioDocument>`;
-}
-
-function documentRels(): string {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/pages" Target="pages/pages.xml"/>
-</Relationships>`;
-}
-
-function pagesIndex(): string {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Pages xmlns="http://schemas.microsoft.com/office/visio/2012/main" xml:space="preserve">
-  <Page ID="0" Name="Page-1"><PageSheet/></Page>
-</Pages>`;
-}
-
-function pagesRels(): string {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/page" Target="page1.xml"/>
-</Relationships>`;
 }
 
 function pageRels(): string {
