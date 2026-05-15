@@ -39,7 +39,7 @@ function cell(n: string, v: number | string, f?: string): string {
 
 export function buildShapeXml(s: ShapeXmlInput): string {
   return [
-    `<Shape ID="${xmlEscape(s.id)}" Type="Shape" Master="${xmlEscape(s.masterId)}">`,
+    `<Shape ID="${xmlEscape(s.id)}" Type="Shape" Master="${xmlEscape(s.masterId)}" NameU="${xmlEscape(s.master)}">`,
     cell("PinX", s.x),
     cell("PinY", s.y),
     cell("Width", s.w),
