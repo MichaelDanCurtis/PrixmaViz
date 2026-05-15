@@ -55,6 +55,7 @@ function dbDiagramToDomain(d: DbDiagram): Diagram {
     kind: d.kind,
     ir: d.ir ?? undefined,
     dsl: d.dsl ?? undefined,
+    bytes: d.bytes ?? undefined,
     meta: (d.meta as unknown as Diagram["meta"]) ?? emptyMeta(),
   };
 }
@@ -218,6 +219,10 @@ export async function handleApi(
   const exportVsdxMatch = p.match(/^\/api\/diagrams\/([^/]+)\/export\.vsdx$/);
   if (exportVsdxMatch && req.method === "GET") {
     return await exportVsdxRoute(exportVsdxMatch[1]!, workspaceId, deps);
+  }
+
+  if (p === "/api/import" && req.method === "POST") {
+    return await importVsdxRoute(req, workspaceId, deps);
   }
 
   // GET /api/diagrams/:id — single-diagram metadata (no suffix).
@@ -659,6 +664,74 @@ async function maybeExtractLayout(
     return await extractGraphFromD2(dsl);
   }
   return ir;
+}
+
+const VSDX_MAGIC = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+
+async function importVsdxRoute(
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const maxBytes = Number(process.env.VSDX_MAX_BYTES ?? "5242880");
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return Response.json({ ok: false, error: "expected multipart/form-data" }, { status: 400 });
+  }
+  const file = formData.get("file");
+  if (!(file instanceof Blob)) {
+    return Response.json({ ok: false, error: "file part required" }, { status: 400 });
+  }
+  if (file.size > maxBytes) {
+    return Response.json(
+      { ok: false, error: `file exceeds VSDX_MAX_BYTES (${maxBytes})` },
+      { status: 413 },
+    );
+  }
+  const buf = new Uint8Array(await file.arrayBuffer());
+  if (buf.length < 4 || !VSDX_MAGIC.every((b, i) => buf[i] === b)) {
+    return Response.json(
+      { ok: false, error: "not a valid .vsdx file (missing ZIP magic)" },
+      { status: 400 },
+    );
+  }
+  const name = (formData.get("name") as string | null) ?? "imported";
+  const slug = slugify(name);
+
+  const row = await dbCreateDiagram(deps.sql, {
+    workspaceId,
+    slug,
+    name,
+    engine: "vsdx",
+    kind: "binary",
+    bytes: buf,
+  });
+  const diagram: Diagram = {
+    id: row.id,
+    name: row.name,
+    engine: row.engine,
+    kind: row.kind,
+    bytes: row.bytes ?? undefined,
+    meta: (row.meta as unknown as Diagram["meta"]) ?? emptyMeta(),
+  };
+  const outcome = await renderDiagram(diagram, { kroki: deps.kroki });
+  if (!outcome.ok) {
+    const { deleteDiagram } = await import("../db/diagrams");
+    await deleteDiagram(deps.sql, workspaceId, row.id);
+    return Response.json(
+      { ok: false, error: `render failed: ${outcome.error}` },
+      { status: 502 },
+    );
+  }
+  await dbUpdateDiagram(deps.sql, workspaceId, row.id, { svg: outcome.result.svg });
+  broadcastRender(deps.hub, workspaceId, diagram, outcome.result.svg, outcome.warnings);
+  return Response.json({
+    diagramId: row.id,
+    slug: row.slug,
+    render: outcome.result,
+  });
 }
 
 function irToDot(ir: GraphIR): string {
