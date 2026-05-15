@@ -17,19 +17,16 @@ export function Tile({ tile }: Props) {
   const [svg, setSvg] = useState<string>("");
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
-  async function onExport(format: "svg" | "png" | "jpeg") {
+  async function onExport(format: "svg" | "png" | "jpeg" | "vsdx") {
     setExportMenuOpen(false);
-    if (!svg) return;
-    const { svgToBlob, getExportFilename } = await import("../lib/export");
-    const blob = await svgToBlob(svg, format);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = getExportFilename(tile.diagramSlug, format);
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (format !== "vsdx" && !svg) return;
+    const { downloadDiagramAs } = await import("../lib/export");
+    try {
+      await downloadDiagramAs(tile.diagramId, tile.diagramSlug, format, svg);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`${format.toUpperCase()} export failed: ${msg}`);
+    }
   }
 
   // Fetch the tile's SVG (load by slug). v1: use library/thumb endpoint
@@ -122,6 +119,7 @@ export function Tile({ tile }: Props) {
               <button onClick={() => onExport("svg")}>Download as SVG</button>
               <button onClick={() => onExport("png")}>Download as PNG</button>
               <button onClick={() => onExport("jpeg")}>Download as JPEG</button>
+              <button onClick={() => onExport("vsdx")}>Download as VSDX</button>
             </div>
           )}
         </div>

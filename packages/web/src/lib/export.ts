@@ -1,8 +1,13 @@
-export type ExportFormat = "svg" | "png" | "jpeg";
+import { authFetch } from "./api";
+
+export type ExportFormat = "svg" | "png" | "jpeg" | "vsdx";
 
 export async function svgToBlob(svgString: string, format: ExportFormat): Promise<Blob> {
   if (format === "svg") {
     return new Blob([svgString], { type: "image/svg+xml" });
+  }
+  if (format === "vsdx") {
+    throw new Error("svgToBlob does not support vsdx; use downloadDiagramAs instead");
   }
   const blob = new Blob([svgString], { type: "image/svg+xml" });
   const url = URL.createObjectURL(blob);
@@ -40,6 +45,41 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 export function getExportFilename(slug: string, format: ExportFormat): string {
+  if (format === "vsdx") return `${slug}.vsdx`;
   const ext = format === "jpeg" ? "jpg" : format;
   return `${slug}.${ext}`;
+}
+
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Download a diagram in the requested format. For svg/png/jpeg, converts in
+ * the browser from the rendered SVG. For vsdx, fetches the server endpoint
+ * which assembles the .vsdx file from the diagram's IR/bytes/SVG depending
+ * on the engine kind.
+ */
+export async function downloadDiagramAs(
+  diagramId: string,
+  slug: string,
+  format: ExportFormat,
+  svgString: string,
+): Promise<void> {
+  let blob: Blob;
+  if (format === "vsdx") {
+    const res = await authFetch(`/api/diagrams/${diagramId}/export.vsdx`);
+    if (!res.ok) throw new Error("vsdx export failed");
+    blob = await res.blob();
+  } else {
+    blob = await svgToBlob(svgString, format);
+  }
+  triggerDownload(blob, getExportFilename(slug, format));
 }

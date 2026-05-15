@@ -14,4 +14,8 @@ describe("export utilities", () => {
     expect(getExportFilename("system-architecture", "svg")).toBe("system-architecture.svg");
     expect(getExportFilename("untitled", "jpeg")).toBe("untitled.jpg");
   });
+
+  it("getExportFilename handles vsdx", () => {
+    expect(getExportFilename("flow", "vsdx")).toBe("flow.vsdx");
+  });
 });
