@@ -10,11 +10,16 @@ services:
       PRIXMAVIZ_PUBLIC_URL: ${PRIXMAVIZ_PUBLIC_URL:-http://localhost:5180}
       PRIXMAVIZ_WORKSPACE_TTL_MINUTES: ${PRIXMAVIZ_WORKSPACE_TTL_MINUTES:-60}
       PRIXMAVIZ_REAP_INTERVAL_MINUTES: ${PRIXMAVIZ_REAP_INTERVAL_MINUTES:-5}
+      VSDX_RENDERER_URL: ${VSDX_RENDERER_URL:-http://prixmaviz-vsdx:2003}
+      VSDX_RENDERER_TIMEOUT_MS: ${VSDX_RENDERER_TIMEOUT_MS:-10000}
+      VSDX_MAX_BYTES: ${VSDX_MAX_BYTES:-5242880}
     depends_on:
       postgres:
         condition: service_healthy
       kroki:
         condition: service_started
+      prixmaviz-vsdx:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5180/api/health"]
       interval: 10s
@@ -53,6 +58,15 @@ services:
 
   kroki-excalidraw:
     image: yuzutech/kroki-excalidraw:latest
+
+  prixmaviz-vsdx:
+    image: prixmaviz-vsdx:dev
+    build: ./docker/vsdx
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2003/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
 volumes:
   postgres-data:
