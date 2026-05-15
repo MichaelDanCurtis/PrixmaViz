@@ -23,6 +23,12 @@ export async function renderDiagram(
   diagram: Diagram,
   deps: RenderEngineDeps,
 ): Promise<RenderOutcome> {
+  // ─── Binary branch (vsdx) — stub until Task 8 ───────────
+  if (diagram.kind === "binary") {
+    if (!diagram.bytes) return { ok: false, error: "binary diagram missing bytes" };
+    return { ok: false, error: "binary rendering not implemented" };
+  }
+
   let dsl: string;
   let warnings: string[] = [];
 
