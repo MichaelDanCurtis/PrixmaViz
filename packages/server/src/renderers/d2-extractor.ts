@@ -1,4 +1,4 @@
-import type { GraphIR, Node } from "@prixmaviz/shared";
+import type { GraphIR } from "@prixmaviz/shared";
 import { extractGraphFromDot } from "./graphviz-extractor";
 
 /**
@@ -11,11 +11,7 @@ import { extractGraphFromDot } from "./graphviz-extractor";
  * "id -> id: label" edge lines. Containers, classes, and shapes are out of
  * scope for v1.
  */
-export async function extractGraphFromD2(source: string): Promise<
-  GraphIR & {
-    nodes: Record<string, Node & { _x: number; _y: number }>;
-  }
-> {
+export async function extractGraphFromD2(source: string): Promise<GraphIR> {
   // Strip /* ... */ block comments first.
   const sanitized = source.replace(/\/\*[\s\S]*?\*\//g, "");
   const lines = sanitized.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);

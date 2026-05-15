@@ -20,7 +20,7 @@ describe("extractGraphFromDot", () => {
     expect(edge.from).toBe("a");
     expect(edge.to).toBe("b");
     expect(edge.label).toBe("go");
-    expect(typeof (ir.nodes.a as unknown as { _x: number })._x).toBe("number");
+    expect(typeof ir.nodes.a!._x).toBe("number");
   });
 
   it("throws on invalid DOT", async () => {

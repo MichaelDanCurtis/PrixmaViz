@@ -1,4 +1,4 @@
-import type { Edge, GraphIR, Node, NodeShape } from "@prixmaviz/shared";
+import type { Edge, GraphIR, NodeShape } from "@prixmaviz/shared";
 
 // Hard cap on how long `dot` may run before we kill it. Pathological DOT input
 // (e.g. a degenerate graph from a malicious or buggy upstream extractor) can
@@ -13,11 +13,7 @@ const DOT_TIMEOUT_MS = Number(process.env.PRIXMAVIZ_DOT_TIMEOUT_MS) || 10_000;
  *   - D2 extractor (D2 → DOT → here)
  *   - vsdx writer (uses `_x` / `_y` to place Visio shapes)
  */
-export async function extractGraphFromDot(dot: string): Promise<
-  GraphIR & {
-    nodes: Record<string, Node & { _x: number; _y: number }>;
-  }
-> {
+export async function extractGraphFromDot(dot: string): Promise<GraphIR> {
   const signal = AbortSignal.timeout(DOT_TIMEOUT_MS);
   const proc = Bun.spawn(["dot", "-Tjson"], {
     stdin: "pipe",
@@ -58,9 +54,7 @@ export async function extractGraphFromDot(dot: string): Promise<
     throw new Error(`dot produced non-JSON output: ${stdout.slice(0, 200)}`);
   }
 
-  const ir: GraphIR & {
-    nodes: Record<string, Node & { _x: number; _y: number }>;
-  } = {
+  const ir: GraphIR = {
     nodes: {},
     edges: {},
     groups: {},

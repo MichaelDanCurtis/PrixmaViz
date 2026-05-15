@@ -4,8 +4,6 @@ import { mapShapeToMaster, ALL_MASTERS } from "../vsdx/stencils";
 import { buildShapeXml, buildConnectorXml, buildPageXml, xmlEscape } from "../vsdx/xml-builder";
 import { getMasterPartXml, getInlineGeometryXml, getConnectorMasterPartXml } from "../vsdx/master-geometry";
 
-type NodeWithPos = Node & { _x?: number; _y?: number };
-
 export interface WriteVsdxResult {
   bytes: Uint8Array;
   warnings: string[];
@@ -26,7 +24,7 @@ export async function writeVsdxFromIr(ir: GraphIR): Promise<WriteVsdxResult> {
   // Assign sequential numeric IDs to nodes and edges (Visio shape IDs).
   const nodeIds = new Map<string, string>();
   let nextShapeId = 1;
-  const nodeEntries = Object.entries(ir.nodes) as Array<[string, NodeWithPos]>;
+  const nodeEntries = Object.entries(ir.nodes) as Array<[string, Node]>;
   for (const [k] of nodeEntries) nodeIds.set(k, String(nextShapeId++));
 
   // Build shape XML fragments. Each shape includes both:

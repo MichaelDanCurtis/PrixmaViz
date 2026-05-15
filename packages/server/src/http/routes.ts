@@ -675,11 +675,11 @@ async function maybeExtractLayout(
 function mergeLayoutBack(original: GraphIR, laidOut: GraphIR): GraphIR {
   const nodes: GraphIR["nodes"] = {};
   for (const [id, n] of Object.entries(original.nodes) as Array<[string, Node]>) {
-    const laidNode = laidOut.nodes[id] as (Node & { _x?: number; _y?: number }) | undefined;
+    const laidNode = laidOut.nodes[id];
     nodes[id] = {
       ...n,
       ...(laidNode ? { _x: laidNode._x, _y: laidNode._y } : {}),
-    } as Node;
+    };
   }
   return { ...original, nodes };
 }

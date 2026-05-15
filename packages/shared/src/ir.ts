@@ -21,6 +21,13 @@ export interface Node {
   shape?: NodeShape;
   attrs?: Record<string, unknown>;
   groupId?: GroupId;
+  /**
+   * Optional layout coordinates in inches (page coords, bottom-left origin).
+   * Populated by graphviz/D2 layout extractors and consumed by the vsdx
+   * writer. Not persisted to the database — purely a layout pass-through.
+   */
+  _x?: number;
+  _y?: number;
 }
 
 export interface Edge {
