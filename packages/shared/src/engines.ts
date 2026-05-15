@@ -1,3 +1,5 @@
+import type { DiagramKind } from "./ir";
+
 export type DiagramEngine =
   | "actdiag" | "blockdiag" | "bpmn" | "bytefield"
   | "c4plantuml" | "d2" | "dbml" | "diagramsnet"
@@ -59,6 +61,7 @@ export const KROKI_PATH: Record<Exclude<DiagramEngine, "vsdx">, string> = {
 
 export const ALL_ENGINES = Object.keys(ENGINE_FAMILY) as DiagramEngine[];
 
-export function inferKind(engine: DiagramEngine): "graph" | "passthrough" {
+export function inferKind(engine: DiagramEngine): DiagramKind {
+  if (engine === "vsdx") return "binary";
   return ENGINE_FAMILY[engine] === "graph" ? "graph" : "passthrough";
 }

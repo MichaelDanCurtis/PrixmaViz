@@ -52,7 +52,7 @@ export interface GraphIR {
   layout: Layout;
 }
 
-export type DiagramKind = "graph" | "passthrough";
+export type DiagramKind = "graph" | "passthrough" | "binary";
 
 export interface DiagramMeta {
   createdAt: string;
@@ -68,6 +68,7 @@ export interface Diagram {
   kind: DiagramKind;
   ir?: GraphIR;
   dsl?: string;
+  bytes?: Uint8Array;
   meta: DiagramMeta;
   annotations?: import("./annotations").Annotation[];   // NEW
 }

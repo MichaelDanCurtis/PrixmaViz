@@ -13,3 +13,9 @@ describe("vsdx engine identity", () => {
     expect(KROKI_PATH.vsdx).toBeUndefined();
   });
 });
+
+describe("inferKind for vsdx", () => {
+  it("returns 'binary' for vsdx engine", () => {
+    expect(inferKind("vsdx")).toBe("binary");
+  });
+});
