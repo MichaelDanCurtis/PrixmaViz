@@ -15,21 +15,34 @@ export function InfiniteCanvas() {
   const mode = useAppStore((s) => s.mode);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; camX: number; camY: number } | null>(null);
+  const dragCounter = useRef(0);
   const [vsdxDragOver, setVsdxDragOver] = useState(false);
+
+  function handleVsdxDragEnter(e: React.DragEvent) {
+    if (Array.from(e.dataTransfer.items).some((it) => it.kind === "file")) {
+      e.preventDefault();
+      dragCounter.current++;
+      if (dragCounter.current === 1) setVsdxDragOver(true);
+    }
+  }
 
   function handleVsdxDragOver(e: React.DragEvent) {
     if (Array.from(e.dataTransfer.items).some((it) => it.kind === "file")) {
       e.preventDefault();
-      setVsdxDragOver(true);
     }
   }
 
   function handleVsdxDragLeave() {
-    setVsdxDragOver(false);
+    dragCounter.current--;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setVsdxDragOver(false);
+    }
   }
 
   async function handleVsdxDrop(e: React.DragEvent) {
     e.preventDefault();
+    dragCounter.current = 0;
     setVsdxDragOver(false);
     const files = Array.from(e.dataTransfer.files);
     const vsdx = files.find((f) => f.name.toLowerCase().endsWith(".vsdx"));
@@ -45,7 +58,27 @@ export function InfiniteCanvas() {
         alert(`Visio import failed: ${(err as { error?: string }).error ?? "unknown error"}`);
         return;
       }
-      // Server broadcasts the new diagram via WS — the canvas picks it up.
+      const data = await res.json() as { diagramId: string; slug: string };
+
+      // Create a tile so the new diagram becomes visible on the canvas.
+      // (The /api/import endpoint only persists+renders; tile creation is the
+      // client's responsibility, matching how create_diagram → tile creation
+      // flows in the rest of the app.)
+      const tileRes = await authFetch("/api/tiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          diagramId: data.diagramId,
+          diagramSlug: data.slug,
+          x: 50,
+          y: 50,
+          w: 600,
+          h: 400,
+        }),
+      });
+      if (!tileRes.ok) {
+        alert("Visio import succeeded but tile creation failed");
+      }
     } catch (err) {
       alert(`Visio import failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -104,6 +137,7 @@ export function InfiniteCanvas() {
       onMouseUp={onMouseUp}
       onMouseLeave={() => { dragRef.current = null; }}
       onWheel={onWheel}
+      onDragEnter={handleVsdxDragEnter}
       onDragOver={handleVsdxDragOver}
       onDragLeave={handleVsdxDragLeave}
       onDrop={handleVsdxDrop}
