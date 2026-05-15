@@ -9,14 +9,17 @@ RUN apt-get update && \
       python3 \
       python3-pip \
       python3-venv \
+      python3-uno \
       ca-certificates \
       wget \
       tini \
     && rm -rf /var/lib/apt/lists/*
 
-# Install unoserver in a venv (Ubuntu 24.04 requires --break-system-packages
-# or a venv for pip installs).
-RUN python3 -m venv /opt/unoserver-venv && \
+# Install unoserver in a venv that inherits system site-packages.
+# Required: the `uno` module ships with LibreOffice's python3-uno apt package
+# and lives in /usr/lib/python3/dist-packages. A clean venv (no inheritance)
+# can't import it, so unoserver crashes on startup with "No module named 'uno'".
+RUN python3 -m venv --system-site-packages /opt/unoserver-venv && \
     /opt/unoserver-venv/bin/pip install --no-cache-dir unoserver==3.2
 
 ENV PATH="/opt/unoserver-venv/bin:${PATH}"

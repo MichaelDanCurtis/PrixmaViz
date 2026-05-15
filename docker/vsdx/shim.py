@@ -17,13 +17,26 @@ UNOSERVER = subprocess.Popen(
     stdout=sys.stdout,
     stderr=sys.stderr,
 )
-# Give unoserver time to bind.
-time.sleep(2)
+# Give unoserver time to bind, then verify it actually started.
+# (If unoserver crashes immediately — e.g. missing `uno` module — we must
+# fail the container so docker restarts it, not silently serve a healthy
+# HTTP endpoint that 504s on every conversion.)
+time.sleep(4)
+if UNOSERVER.poll() is not None:
+    sys.stderr.write(f"unoserver exited at startup (code={UNOSERVER.returncode}); failing fast\n")
+    sys.exit(1)
+
+
+def _unoserver_alive() -> bool:
+    return UNOSERVER.poll() is None
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
+            if not _unoserver_alive():
+                self.send_error(503, "unoserver not running")
+                return
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -47,9 +60,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             r = subprocess.run(
                 ["/opt/unoserver-venv/bin/unoconvert", "--port", str(UNOSERVER_PORT),
-                 "--convert-to", "svg", in_path, out_path],
+                 "--convert-to", "svg",
+                 # `--convert-to svg` alone makes unoconvert pick
+                 # `svg_Scalable_Vector_Graphics_Draw`, which doesn't exist in
+                 # the LibreOffice we ship. Force the real filter name.
+                 "--output-filter", "draw_svg_Export",
+                 in_path, out_path],
                 capture_output=True,
-                timeout=20,
+                timeout=60,
             )
             if r.returncode != 0:
                 msg = (r.stderr.decode(errors="replace") or "unoconvert failed")[:300]
