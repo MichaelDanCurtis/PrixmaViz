@@ -112,6 +112,16 @@ To change the policy, set in your `.env`:
 
 See `docs/superpowers/specs/2026-05-11-prixmaviz-cycle-4-design.md` for the design rationale.
 
+## Visio (`.vsdx`) support
+
+PrixmaViz natively renders, imports, and exports Microsoft Visio diagrams:
+
+- **Drag-drop** a `.vsdx` onto the canvas to render it (server-side via the `prixmaviz-vsdx` sidecar, which runs `unoserver`/LibreOffice).
+- **AI translation** — ask Claude/GPT/etc. "convert this Visio diagram to Mermaid" and the AI calls `analyze_vsdx` to get structured shape data, then generates DSL with `create_diagram`. No server-side LLM is used.
+- **Export** any graph diagram as `.vsdx` via the tile menu. Mermaid/D2/Graphviz emit Visio-editable shapes from a ~35-shape stencil. Other engines produce an image-embed `.vsdx`.
+
+Self-host requires the `prixmaviz-vsdx` sidecar from `docker-compose.yaml`. Default upload cap is 5MB (`VSDX_MAX_BYTES`).
+
 ## Project structure
 
 ```

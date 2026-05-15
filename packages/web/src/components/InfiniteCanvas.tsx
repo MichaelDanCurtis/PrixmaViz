@@ -1,8 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "../store";
 import { Tile } from "./Tile";
 import { EmptyStateCards } from "./EmptyStateCards";
-import { api } from "../lib/api";
+import { api, authFetch } from "../lib/api";
+import { toastError } from "../lib/toast";
 import { clampCamera } from "@prixmaviz/shared";
 
 const DEFAULT_PROMO_CARDS: Array<{ name: string; href: string; tagline: string }> = [];
@@ -15,6 +16,74 @@ export function InfiniteCanvas() {
   const mode = useAppStore((s) => s.mode);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; camX: number; camY: number } | null>(null);
+  const dragCounter = useRef(0);
+  const [vsdxDragOver, setVsdxDragOver] = useState(false);
+
+  function handleVsdxDragEnter(e: React.DragEvent) {
+    if (Array.from(e.dataTransfer.items).some((it) => it.kind === "file")) {
+      e.preventDefault();
+      dragCounter.current++;
+      if (dragCounter.current === 1) setVsdxDragOver(true);
+    }
+  }
+
+  function handleVsdxDragOver(e: React.DragEvent) {
+    if (Array.from(e.dataTransfer.items).some((it) => it.kind === "file")) {
+      e.preventDefault();
+    }
+  }
+
+  function handleVsdxDragLeave() {
+    dragCounter.current--;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setVsdxDragOver(false);
+    }
+  }
+
+  async function handleVsdxDrop(e: React.DragEvent) {
+    e.preventDefault();
+    dragCounter.current = 0;
+    setVsdxDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    const vsdx = files.find((f) => f.name.toLowerCase().endsWith(".vsdx"));
+    if (!vsdx) return;
+
+    const fd = new FormData();
+    fd.set("file", vsdx);
+    fd.set("name", vsdx.name.replace(/\.vsdx$/i, ""));
+    try {
+      const res = await authFetch("/api/import", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "import failed" }));
+        toastError(`Visio import failed: ${(err as { error?: string }).error ?? "unknown error"}`);
+        return;
+      }
+      const data = await res.json() as { diagramId: string; slug: string };
+
+      // Create a tile so the new diagram becomes visible on the canvas.
+      // (The /api/import endpoint only persists+renders; tile creation is the
+      // client's responsibility, matching how create_diagram → tile creation
+      // flows in the rest of the app.)
+      const tileRes = await authFetch("/api/tiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          diagramId: data.diagramId,
+          diagramSlug: data.slug,
+          x: 50,
+          y: 50,
+          w: 600,
+          h: 400,
+        }),
+      });
+      if (!tileRes.ok) {
+        toastError("Visio import succeeded but tile creation failed");
+      }
+    } catch (err) {
+      toastError(`Visio import failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   // Load workspace on mount
   useEffect(() => {
@@ -63,14 +132,21 @@ export function InfiniteCanvas() {
   return (
     <div
       ref={containerRef}
-      className="infinite-canvas"
+      className={`infinite-canvas${vsdxDragOver ? " drag-over" : ""}`}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
       onMouseLeave={() => { dragRef.current = null; }}
       onWheel={onWheel}
+      onDragEnter={handleVsdxDragEnter}
+      onDragOver={handleVsdxDragOver}
+      onDragLeave={handleVsdxDragLeave}
+      onDrop={handleVsdxDrop}
     >
       <div className="infinite-canvas-bg" />
+      {vsdxDragOver && (
+        <div className="drop-overlay">Drop .vsdx to import</div>
+      )}
       {tiles.length === 0 && (
         <div className="infinite-canvas-empty">
           <div className="infinite-canvas-empty-headline">

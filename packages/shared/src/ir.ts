@@ -6,7 +6,9 @@ export type GroupId = string;
 export type DiagramId = string;
 
 export type NodeShape =
-  | "rect" | "round" | "circle" | "diamond" | "hex" | "cyl";
+  | "rect" | "round" | "circle" | "diamond" | "hex" | "cyl"
+  | "ellipse" | "parallelogram" | "cylinder" | "triangle"
+  | "hexagon" | "octagon" | "star";
 
 export type EdgeKind = "solid" | "dashed" | "dotted" | "thick";
 export type EdgeArrow = "normal" | "open" | "none";
@@ -19,6 +21,13 @@ export interface Node {
   shape?: NodeShape;
   attrs?: Record<string, unknown>;
   groupId?: GroupId;
+  /**
+   * Optional layout coordinates in inches (page coords, bottom-left origin).
+   * Populated by graphviz/D2 layout extractors and consumed by the vsdx
+   * writer. Not persisted to the database — purely a layout pass-through.
+   */
+  _x?: number;
+  _y?: number;
 }
 
 export interface Edge {
@@ -52,7 +61,7 @@ export interface GraphIR {
   layout: Layout;
 }
 
-export type DiagramKind = "graph" | "passthrough";
+export type DiagramKind = "graph" | "passthrough" | "binary";
 
 export interface DiagramMeta {
   createdAt: string;
@@ -68,6 +77,7 @@ export interface Diagram {
   kind: DiagramKind;
   ir?: GraphIR;
   dsl?: string;
+  bytes?: Uint8Array;
   meta: DiagramMeta;
   annotations?: import("./annotations").Annotation[];   // NEW
 }

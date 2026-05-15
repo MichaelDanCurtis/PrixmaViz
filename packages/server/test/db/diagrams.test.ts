@@ -109,4 +109,25 @@ describe("diagrams repo", () => {
     await deleteDiagram(sql, ws.id, d.id);
     expect(await getDiagram(sql, ws.id, d.id)).toBeNull();
   });
+
+  it("createDiagram persists and reads back bytes for a binary diagram", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const sample = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xaa, 0xbb]);
+    const d = await createDiagram(sql, {
+      workspaceId: ws.id,
+      slug: "v",
+      name: "V",
+      engine: "vsdx",
+      kind: "binary",
+      bytes: sample,
+    });
+    expect(d.bytes).toBeInstanceOf(Uint8Array);
+    expect(d.bytes!.length).toBe(6);
+    expect(d.bytes![0]).toBe(0x50);
+
+    const fetched = await getDiagram(sql, ws.id, d.id);
+    expect(fetched!.bytes!.length).toBe(6);
+    expect(fetched!.bytes![3]).toBe(0x04);
+  });
 });

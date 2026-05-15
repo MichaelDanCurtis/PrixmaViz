@@ -6,6 +6,7 @@ import { useWebSocket } from "./lib/ws";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { Footer } from "./components/Footer";
 import { WelcomePanel } from "./components/WelcomePanel";
+import { Toasts } from "./components/Toasts";
 import { PublicDiagram } from "./pages/PublicDiagram";
 import { ensureWorkspaceId } from "./lib/api";
 import { useAppStore } from "./store";
@@ -18,10 +19,12 @@ function getPublicDiagramId(): string | null {
 export function App() {
   // Public read-only view — completely bypasses workspace bootstrap and auth.
   const publicDiagramId = getPublicDiagramId();
-  if (publicDiagramId) {
-    return <PublicDiagram diagramId={publicDiagramId} />;
-  }
-  return <WorkspaceApp />;
+  return (
+    <>
+      {publicDiagramId ? <PublicDiagram diagramId={publicDiagramId} /> : <WorkspaceApp />}
+      <Toasts />
+    </>
+  );
 }
 
 function WorkspaceApp() {

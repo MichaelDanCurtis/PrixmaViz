@@ -27,10 +27,15 @@ describe("runMigrations", () => {
       "annotations", "diagrams", "schema_migrations", "workspaces",
     ]);
 
+    // Capture migration count after first apply
+    const before = await verifySql`SELECT COUNT(*)::int as n FROM schema_migrations`;
+    const initialCount = before[0].n;
+    expect(initialCount).toBeGreaterThan(0);
+
     // Run again — should be idempotent
     await runMigrations(TEST_DB_URL, migrationsDir);
     const counts = await verifySql`SELECT COUNT(*)::int as n FROM schema_migrations`;
-    expect(counts[0].n).toBe(1);  // still just 0001_init.sql
+    expect(counts[0].n).toBe(initialCount);  // no new rows added on re-apply
 
     await verifySql.end();
   });

@@ -8,9 +8,12 @@ import { applyPatch } from "../ir/engine";
 import { arrange } from "../canvas/arrange";
 import type { KrokiClient } from "../kroki/client";
 import { renderDiagram } from "../render";
+import { parseVsdx } from "../renderers/vsdx-parse";
+import { canStructuredVsdx, maybeExtractLayout } from "../vsdx/export-helpers";
 import type { WsHub } from "../ws/broadcast";
 import {
   createDiagram as dbCreateDiagram,
+  createDiagramWithUniqueSlug as dbCreateDiagramWithUniqueSlug,
   getDiagram as dbGetDiagram,
   getDiagramBySlug as dbGetDiagramBySlug,
   listDiagrams as dbListDiagrams,
@@ -186,6 +189,43 @@ export const TOOLS: ToolDef[] = [
     inputSchema: { type: "object", properties: {} },
     run: getViewUrlImpl,
   },
+  {
+    name: "import_vsdx",
+    description: "Import a Microsoft Visio (.vsdx) file into the workspace. Renders natively via the server-side converter. Returns the new diagram ID.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        base64Source: { type: "string", description: "Base64-encoded .vsdx file bytes" },
+      },
+      required: ["name", "base64Source"],
+    },
+    run: importVsdxImpl,
+  },
+  {
+    name: "analyze_vsdx",
+    description: "Parse a previously-imported vsdx diagram into structured JSON (shapes, connectors, labels, layout). Use this as the input to your own translation step if the user asks to convert a Visio diagram to Mermaid/D2/BPMN.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+      },
+      required: ["diagramId"],
+    },
+    run: analyzeVsdxImpl,
+  },
+  {
+    name: "export_vsdx",
+    description: "Export a diagram as a Microsoft Visio (.vsdx) file. Returns base64-encoded bytes. For graph diagrams (Mermaid/D2/Graphviz), produces a Visio-editable file with real shapes. For other engines, produces an image-embed vsdx. ALWAYS call this after building a graph diagram when the user asks for Visio/vsdx output — then save the bytes to a local .vsdx file path the user can open.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+      },
+      required: ["diagramId"],
+    },
+    run: exportVsdxImpl,
+  },
 ];
 
 export async function dispatchTool(
@@ -218,6 +258,7 @@ function dbDiagramToDomain(d: DbDiagram): Diagram {
     kind: d.kind,
     ir: d.ir ?? undefined,
     dsl: d.dsl ?? undefined,
+    bytes: d.bytes ?? undefined,
     meta: (d.meta as unknown as Diagram["meta"]) ?? emptyMeta(),
   };
 }
@@ -478,6 +519,91 @@ async function getViewUrlImpl(_args: Record<string, unknown>, ctx: ToolCtx) {
   return {
     url,
     note: "Open this URL in any browser to see the rendered diagrams and annotate them.",
+  };
+}
+
+const VSDX_MAGIC = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+
+async function importVsdxImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const base64Source = args.base64Source as string;
+  if (!base64Source) throw new Error("base64Source is required");
+  const bytes = new Uint8Array(Buffer.from(base64Source, "base64"));
+  if (bytes.length < 4 || !VSDX_MAGIC.every((b, i) => bytes[i] === b)) {
+    throw new Error("not a valid .vsdx file (missing ZIP magic)");
+  }
+  const maxBytes = Number(process.env.VSDX_MAX_BYTES ?? "5242880");
+  if (bytes.length > maxBytes) {
+    throw new Error(`file exceeds VSDX_MAX_BYTES (${maxBytes})`);
+  }
+  let name = (args.name as string | undefined) ?? "";
+  if (!name) {
+    name = `imported-${Math.random().toString(36).slice(2, 8)}`;
+  }
+  const slug = slugify(name);
+
+  const row = await dbCreateDiagramWithUniqueSlug(ctx.sql, {
+    workspaceId: ctx.workspaceId,
+    slug,
+    name,
+    engine: "vsdx",
+    kind: "binary",
+    bytes,
+  });
+  const diagram = dbDiagramToDomain(row);
+  const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
+  if (!outcome.ok) {
+    const { deleteDiagram } = await import("../db/diagrams");
+    await deleteDiagram(ctx.sql, ctx.workspaceId, row.id);
+    throw new Error(`render failed: ${outcome.error}`);
+  }
+  await dbUpdateDiagram(ctx.sql, ctx.workspaceId, row.id, { svg: outcome.result.svg });
+  broadcast(ctx.hub, ctx.workspaceId, diagram, outcome.result.svg, outcome.warnings);
+  return { diagramId: row.id, slug: row.slug, render: outcome.result };
+}
+
+async function analyzeVsdxImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const diagramId = args.diagramId as string;
+  const row = await dbGetDiagram(ctx.sql, ctx.workspaceId, diagramId);
+  if (!row) throw new Error("diagram not found");
+  if (row.engine !== "vsdx" || row.kind !== "binary" || !row.bytes) {
+    throw new Error("diagram is not a vsdx import");
+  }
+  const doc = await parseVsdx(row.bytes);
+  return doc;
+}
+
+async function exportVsdxImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const diagramId = args.diagramId as string;
+  if (!diagramId) throw new Error("diagramId is required");
+  const row = await dbGetDiagram(ctx.sql, ctx.workspaceId, diagramId);
+  if (!row) throw new Error("diagram not found");
+
+  let bytes: Uint8Array;
+  let strategy: "verbatim" | "structured" | "image-embed";
+  if (row.engine === "vsdx" && row.kind === "binary" && row.bytes) {
+    bytes = row.bytes;
+    strategy = "verbatim";
+  } else if (row.kind === "graph" && row.ir && canStructuredVsdx(row.engine)) {
+    const { writeVsdxFromIr } = await import("../renderers/vsdx-writer");
+    const ir = await maybeExtractLayout(row.engine, row.ir, row.dsl);
+    const result = await writeVsdxFromIr(ir);
+    bytes = result.bytes;
+    if (result.warnings.length) {
+      console.warn("[vsdx-export-mcp]", diagramId, result.warnings);
+    }
+    strategy = "structured";
+  } else {
+    if (!row.svg) throw new Error("no rendered SVG to embed");
+    const { writeVsdxFromSvg } = await import("../renderers/vsdx-writer-fallback");
+    bytes = await writeVsdxFromSvg(row.svg);
+    strategy = "image-embed";
+  }
+
+  return {
+    base64Source: Buffer.from(bytes).toString("base64"),
+    byteCount: bytes.length,
+    suggestedFilename: `${row.slug}.vsdx`,
+    strategy,
   };
 }
 

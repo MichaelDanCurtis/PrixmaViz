@@ -33,6 +33,10 @@ RUN cd packages/server && bun run build:bin
 # ── Stage 3: runtime ───────────────────────────────────────────────
 FROM oven/bun:1.3-alpine AS runtime
 WORKDIR /app
+# graphviz (`dot`) is required by the vsdx writer's layout extractor for
+# Mermaid/D2/Graphviz → vsdx exports. d2 is not in alpine repos as of bun:1.3;
+# add via wget if/when needed.
+RUN apk add --no-cache graphviz librsvg
 COPY --from=server-build /app/dist/prixmaviz /app/prixmaviz
 COPY --from=server-build /app/packages/server/migrations /app/migrations
 COPY --from=web-build /app/packages/web/dist /app/web-dist

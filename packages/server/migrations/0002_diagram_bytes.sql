@@ -1,0 +1,1 @@
+ALTER TABLE diagrams ADD COLUMN bytes BYTEA;

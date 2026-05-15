@@ -125,4 +125,41 @@ export const TOOLS: Tool[] = [
       properties: {},
     },
   },
+  {
+    name: "import_vsdx",
+    description:
+      "Import a Microsoft Visio (.vsdx) file into the workspace. Pass the file bytes as base64. Server renders natively. Use when the user asks to bring an existing .vsdx into PrixmaViz.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        base64Source: { type: "string", description: "Base64-encoded .vsdx file bytes" },
+      },
+      required: ["name", "base64Source"],
+    },
+  },
+  {
+    name: "analyze_vsdx",
+    description:
+      "Parse a previously-imported vsdx diagram into structured JSON (shapes, connectors, labels, layout). Use as input when translating a Visio diagram to Mermaid/D2/BPMN — host-side AI does the language translation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+      },
+      required: ["diagramId"],
+    },
+  },
+  {
+    name: "export_vsdx",
+    description:
+      "Export a diagram as a Microsoft Visio (.vsdx) file. Returns base64-encoded bytes. For graph diagrams (Mermaid/D2/Graphviz), produces a Visio-editable file with real shapes. For other engines, produces an image-embed vsdx. ALWAYS call this after building a graph diagram when the user asks for Visio/vsdx output — then save the bytes to a local .vsdx file path the user can open.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+      },
+      required: ["diagramId"],
+    },
+  },
 ];
