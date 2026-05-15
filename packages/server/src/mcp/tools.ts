@@ -8,6 +8,7 @@ import { applyPatch } from "../ir/engine";
 import { arrange } from "../canvas/arrange";
 import type { KrokiClient } from "../kroki/client";
 import { renderDiagram } from "../render";
+import { parseVsdx } from "../renderers/vsdx-parse";
 import type { WsHub } from "../ws/broadcast";
 import {
   createDiagram as dbCreateDiagram,
@@ -198,6 +199,18 @@ export const TOOLS: ToolDef[] = [
       required: ["name", "base64Source"],
     },
     run: importVsdxImpl,
+  },
+  {
+    name: "analyze_vsdx",
+    description: "Parse a previously-imported vsdx diagram into structured JSON (shapes, connectors, labels, layout). Use this as the input to your own translation step if the user asks to convert a Visio diagram to Mermaid/D2/BPMN.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+      },
+      required: ["diagramId"],
+    },
+    run: analyzeVsdxImpl,
   },
 ];
 
@@ -529,5 +542,16 @@ async function importVsdxImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   await dbUpdateDiagram(ctx.sql, ctx.workspaceId, row.id, { svg: outcome.result.svg });
   broadcast(ctx.hub, ctx.workspaceId, diagram, outcome.result.svg, outcome.warnings);
   return { diagramId: row.id, slug: row.slug, render: outcome.result };
+}
+
+async function analyzeVsdxImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const diagramId = args.diagramId as string;
+  const row = await dbGetDiagram(ctx.sql, ctx.workspaceId, diagramId);
+  if (!row) throw new Error("diagram not found");
+  if (row.engine !== "vsdx" || row.kind !== "binary" || !row.bytes) {
+    throw new Error("diagram is not a vsdx import");
+  }
+  const doc = await parseVsdx(row.bytes);
+  return doc;
 }
 
