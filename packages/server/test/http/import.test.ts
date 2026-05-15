@@ -90,4 +90,28 @@ describe("POST /api/import", () => {
     expect(res!.status).toBe(413);
     delete process.env.VSDX_MAX_BYTES;
   });
+
+  it("handles repeated uploads with omitted name by suffixing the slug", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    // Helper: build a tiny upload form without 'name'
+    const upload = async () => {
+      const body = new FormData();
+      body.set("file", new Blob([VSDX_MAGIC, new Uint8Array(100)]), "test.vsdx");
+      // intentionally omit name
+      const req = new Request("http://x/api/import", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${ws.id}` },
+        body,
+      });
+      return handleApi(req, new URL(req.url), { sql, kroki: fakeKroki, hub: fakeHub });
+    };
+    const r1 = await upload();
+    expect(r1!.status).toBe(200);
+    const r2 = await upload();
+    expect(r2!.status).toBe(200); // should NOT 500
+    const j1 = await r1!.json() as { slug: string };
+    const j2 = await r2!.json() as { slug: string };
+    expect(j1.slug).not.toBe(j2.slug); // both succeeded with different slugs
+  });
 });

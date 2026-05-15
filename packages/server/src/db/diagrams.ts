@@ -78,6 +78,40 @@ export async function createDiagram(sql: Sql, input: {
   return rowToDiagram(rows[0]!);
 }
 
+/**
+ * Create a diagram, retrying with a random suffix on the slug if a
+ * UNIQUE (workspace_id, slug) constraint violation occurs. Useful when the
+ * caller cannot guarantee slug uniqueness up-front (e.g. nameless imports
+ * that derive a slug from a filename).
+ *
+ * Up to 5 attempts: first uses the provided slug as-is, subsequent attempts
+ * append a short random suffix. Any non-23505 error is re-thrown immediately.
+ */
+export async function createDiagramWithUniqueSlug(sql: Sql, input: {
+  workspaceId: string;
+  slug: string;
+  name: string;
+  engine: DiagramEngine;
+  kind: DiagramKind;
+  ir?: GraphIR;
+  dsl?: string;
+  bytes?: Uint8Array;
+}): Promise<DbDiagram> {
+  const baseSlug = input.slug;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const slug = attempt === 0
+      ? baseSlug
+      : `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`;
+    try {
+      return await createDiagram(sql, { ...input, slug });
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (code !== "23505") throw e; // not a unique violation — bubble up
+    }
+  }
+  throw new Error("could not generate a unique slug after 5 attempts");
+}
+
 export async function getDiagram(sql: Sql, workspaceId: string, id: string): Promise<DbDiagram | null> {
   const rows = await sql`
     SELECT * FROM diagrams WHERE id = ${id} AND workspace_id = ${workspaceId}

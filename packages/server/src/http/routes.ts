@@ -11,6 +11,7 @@ import { getHitTester } from "../hit-test";
 import { authenticate } from "../auth/bearer";
 import {
   createDiagram as dbCreateDiagram,
+  createDiagramWithUniqueSlug as dbCreateDiagramWithUniqueSlug,
   getDiagram as dbGetDiagram,
   getDiagramBySlug as dbGetDiagramBySlug,
   listDiagrams as dbListDiagrams,
@@ -712,10 +713,16 @@ async function importVsdxRoute(
       { status: 400 },
     );
   }
-  const name = (formData.get("name") as string | null) ?? "imported";
+  let name = (formData.get("name") as string | null) ?? "";
+  if (!name && file instanceof File && file.name) {
+    name = file.name.replace(/\.vsdx$/i, "").trim();
+  }
+  if (!name) {
+    name = `imported-${Math.random().toString(36).slice(2, 8)}`;
+  }
   const slug = slugify(name);
 
-  const row = await dbCreateDiagram(deps.sql, {
+  const row = await dbCreateDiagramWithUniqueSlug(deps.sql, {
     workspaceId,
     slug,
     name,

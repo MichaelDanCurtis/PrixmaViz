@@ -12,6 +12,7 @@ import { parseVsdx } from "../renderers/vsdx-parse";
 import type { WsHub } from "../ws/broadcast";
 import {
   createDiagram as dbCreateDiagram,
+  createDiagramWithUniqueSlug as dbCreateDiagramWithUniqueSlug,
   getDiagram as dbGetDiagram,
   getDiagramBySlug as dbGetDiagramBySlug,
   listDiagrams as dbListDiagrams,
@@ -511,9 +512,8 @@ async function getViewUrlImpl(_args: Record<string, unknown>, ctx: ToolCtx) {
 const VSDX_MAGIC = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
 
 async function importVsdxImpl(args: Record<string, unknown>, ctx: ToolCtx) {
-  const name = args.name as string;
   const base64Source = args.base64Source as string;
-  if (!name || !base64Source) throw new Error("name and base64Source are required");
+  if (!base64Source) throw new Error("base64Source is required");
   const bytes = new Uint8Array(Buffer.from(base64Source, "base64"));
   if (bytes.length < 4 || !VSDX_MAGIC.every((b, i) => bytes[i] === b)) {
     throw new Error("not a valid .vsdx file (missing ZIP magic)");
@@ -522,9 +522,13 @@ async function importVsdxImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   if (bytes.length > maxBytes) {
     throw new Error(`file exceeds VSDX_MAX_BYTES (${maxBytes})`);
   }
+  let name = (args.name as string | undefined) ?? "";
+  if (!name) {
+    name = `imported-${Math.random().toString(36).slice(2, 8)}`;
+  }
   const slug = slugify(name);
 
-  const row = await dbCreateDiagram(ctx.sql, {
+  const row = await dbCreateDiagramWithUniqueSlug(ctx.sql, {
     workspaceId: ctx.workspaceId,
     slug,
     name,
