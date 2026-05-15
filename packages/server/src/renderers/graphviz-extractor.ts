@@ -90,10 +90,14 @@ interface DotJson {
   }>;
 }
 
+// Graphviz `pos` is "x,y" in POINTS (1/72 inch). Visio uses inches.
+// Convert here so consumers (vsdx writer in particular) get sensible values.
+const POINTS_PER_INCH = 72;
+
 function parsePos(pos?: string): [number, number] {
   if (!pos) return [0, 0];
   const [x, y] = pos.split(",").map(Number);
-  return [x ?? 0, y ?? 0];
+  return [(x ?? 0) / POINTS_PER_INCH, (y ?? 0) / POINTS_PER_INCH];
 }
 
 function mapDotShapeToIr(dotShape: string): NodeShape {

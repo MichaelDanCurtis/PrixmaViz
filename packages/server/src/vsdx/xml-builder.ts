@@ -12,6 +12,13 @@ export interface ShapeXmlInput {
   y: number;            // PinY
   w: number;            // Width
   h: number;            // Height
+  /**
+   * Inline geometry rows (MoveTo/LineTo/EllipticalArcTo) in shape-local coords.
+   * Visio normally resolves Master="N" to the master's geometry, but
+   * LibreOffice's Visio import filter often fails to honor that. Emitting
+   * geometry inline on the page shape guarantees it draws.
+   */
+  geometry?: string;
 }
 
 export interface ConnectorXmlInput {
@@ -46,6 +53,10 @@ export function buildShapeXml(s: ShapeXmlInput): string {
     cell("Height", s.h),
     cell("LocPinX", s.w / 2),
     cell("LocPinY", s.h / 2),
+    cell("LineColor", "#000000" as string),
+    cell("LineWeight", 0.01),
+    cell("FillForegnd", "#FFFFFF" as string),
+    s.geometry ?? "",
     `<Text>${xmlEscape(s.text)}</Text>`,
     `</Shape>`,
   ].join("");

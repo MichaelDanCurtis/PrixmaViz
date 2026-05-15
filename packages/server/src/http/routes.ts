@@ -650,10 +650,13 @@ async function maybeExtractLayout(
   ir: GraphIR,
   dsl: string | null,
 ): Promise<GraphIR> {
+  // For mermaid: original IR has the semantic shapes/labels. Use graphviz
+  // ONLY for layout — then merge `_x`/`_y` back into the original IR so we
+  // don't lose stencil hints across the round-trip.
   if (engine === "mermaid") {
     const { extractGraphFromDot } = await import("../renderers/graphviz-extractor");
-    const dot = irToDot(ir);
-    return await extractGraphFromDot(dot);
+    const laidOut = await extractGraphFromDot(irToDot(ir));
+    return mergeLayoutBack(ir, laidOut);
   }
   if (engine === "graphviz" && dsl) {
     const { extractGraphFromDot } = await import("../renderers/graphviz-extractor");
@@ -664,6 +667,18 @@ async function maybeExtractLayout(
     return await extractGraphFromD2(dsl);
   }
   return ir;
+}
+
+function mergeLayoutBack(original: GraphIR, laidOut: GraphIR): GraphIR {
+  const nodes: GraphIR["nodes"] = {};
+  for (const [id, n] of Object.entries(original.nodes) as Array<[string, Node]>) {
+    const laidNode = laidOut.nodes[id] as (Node & { _x?: number; _y?: number }) | undefined;
+    nodes[id] = {
+      ...n,
+      ...(laidNode ? { _x: laidNode._x, _y: laidNode._y } : {}),
+    } as Node;
+  }
+  return { ...original, nodes };
 }
 
 const VSDX_MAGIC = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);

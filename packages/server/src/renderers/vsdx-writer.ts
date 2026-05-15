@@ -2,6 +2,7 @@ import JSZip from "jszip";
 import type { GraphIR, Node, Edge } from "@prixmaviz/shared";
 import { mapShapeToMaster, ALL_MASTERS } from "../vsdx/stencils";
 import { buildShapeXml, buildConnectorXml, buildPageXml, xmlEscape } from "../vsdx/xml-builder";
+import { getMasterPartXml, getInlineGeometryXml } from "../vsdx/master-geometry";
 
 type NodeWithPos = Node & { _x?: number; _y?: number };
 
@@ -19,11 +20,15 @@ export async function writeVsdxFromIr(ir: GraphIR): Promise<Uint8Array> {
   const nodeEntries = Object.entries(ir.nodes) as Array<[string, NodeWithPos]>;
   for (const [k] of nodeEntries) nodeIds.set(k, String(nextShapeId++));
 
-  // Build shape XML fragments.
+  // Build shape XML fragments. Each shape includes both:
+  //   - Master="N" reference (so Visio can use its stencil library)
+  //   - Inline geometry (so LibreOffice can render even when it can't resolve masters)
   const shapeXmls: string[] = [];
   for (const [k, n] of nodeEntries) {
     const mapping = mapShapeToMaster(n.shape);
     const masterId = String(ALL_MASTERS.indexOf(mapping.master) + 1);
+    const w = 1.0;
+    const h = 0.75;
     shapeXmls.push(buildShapeXml({
       id: nodeIds.get(k)!,
       master: mapping.master,
@@ -31,8 +36,9 @@ export async function writeVsdxFromIr(ir: GraphIR): Promise<Uint8Array> {
       text: n.label ?? "",
       x: n._x ?? 0,
       y: n._y ?? 0,
-      w: 1.0,
-      h: 0.75,
+      w,
+      h,
+      geometry: getInlineGeometryXml(mapping.master, w, h),
     }));
   }
 
@@ -61,12 +67,21 @@ export async function writeVsdxFromIr(ir: GraphIR): Promise<Uint8Array> {
   zip.file("docProps/core.xml", corePropsXml());
   zip.file("docProps/app.xml", appPropsXml());
   zip.file("visio/masters/masters.xml", mastersIndexXml());
+  zip.file("visio/masters/_rels/masters.xml.rels", mastersRelsXml());
+  // One master<N>.xml part per master, with geometry definitions so
+  // LibreOffice (and Visio) know what to actually draw.
+  for (let i = 0; i < ALL_MASTERS.length; i++) {
+    zip.file(`visio/masters/master${i + 1}.xml`, getMasterPartXml(ALL_MASTERS[i]!));
+  }
 
   const buf = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
   return buf;
 }
 
 function contentTypesXml(): string {
+  const masterOverrides = ALL_MASTERS.map((_, i) =>
+    `  <Override PartName="/visio/masters/master${i + 1}.xml" ContentType="application/vnd.ms-visio.master+xml"/>`
+  ).join("\n");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -75,6 +90,7 @@ function contentTypesXml(): string {
   <Override PartName="/visio/pages/pages.xml" ContentType="application/vnd.ms-visio.pages+xml"/>
   <Override PartName="/visio/pages/page1.xml" ContentType="application/vnd.ms-visio.page+xml"/>
   <Override PartName="/visio/masters/masters.xml" ContentType="application/vnd.ms-visio.masters+xml"/>
+${masterOverrides}
   <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
   <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
 </Types>`;
@@ -121,15 +137,30 @@ function pagesRelsXml(): string {
 }
 
 function mastersIndexXml(): string {
+  // masters.xml lists each master and references its geometry part by Rel id.
   const lines: string[] = [
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`,
-    `<Masters xmlns="http://schemas.microsoft.com/office/visio/2012/main" xml:space="preserve">`,
+    `<Masters xmlns="http://schemas.microsoft.com/office/visio/2012/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xml:space="preserve">`,
   ];
   for (let i = 0; i < ALL_MASTERS.length; i++) {
-    lines.push(`<Master ID="${i + 1}" NameU="${xmlEscape(ALL_MASTERS[i]!)}" Name="${xmlEscape(ALL_MASTERS[i]!)}"/>`);
+    const name = xmlEscape(ALL_MASTERS[i]!);
+    lines.push(
+      `<Master ID="${i + 1}" NameU="${name}" Name="${name}" Hidden="0">` +
+      `<PageSheet><Cell N="PageWidth" V="1"/><Cell N="PageHeight" V="0.75"/></PageSheet>` +
+      `<Rel r:id="rId${i + 1}"/>` +
+      `</Master>`
+    );
   }
   lines.push(`</Masters>`);
   return lines.join("");
+}
+
+function mastersRelsXml(): string {
+  const rels = ALL_MASTERS.map((_, i) =>
+    `<Relationship Id="rId${i + 1}" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master${i + 1}.xml"/>`
+  ).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}</Relationships>`;
 }
 
 function corePropsXml(): string {
