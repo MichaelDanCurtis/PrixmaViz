@@ -59,18 +59,23 @@ export function mergeLayoutBack(original: GraphIR, laidOut: GraphIR): GraphIR {
 
 /**
  * Serialize a GraphIR back to Graphviz DOT for the layout extraction round-trip
- * used by the mermaid → vsdx pipeline. Labels are quoted via JSON.stringify so
- * embedded quotes and unicode survive.
+ * used by the mermaid → vsdx pipeline. Labels AND IDs are quoted via
+ * JSON.stringify so that:
+ *   - embedded quotes/unicode in labels survive
+ *   - node IDs that collide with DOT reserved keywords (node, edge, graph,
+ *     digraph, subgraph, strict) don't blow up the parser
+ *   - IDs containing special chars (hyphens, dots, spaces — common in
+ *     hand-written Mermaid) parse correctly
  */
 export function irToDot(ir: GraphIR): string {
   const lines = ["digraph G { rankdir=" + (ir.layout?.direction ?? "TB") + ";"];
   for (const n of Object.values(ir.nodes) as Node[]) {
     const shape = n.shape ?? "box";
-    lines.push(`  ${n.id} [label=${JSON.stringify(n.label ?? n.id)}, shape="${shape}"];`);
+    lines.push(`  ${JSON.stringify(n.id)} [label=${JSON.stringify(n.label ?? n.id)}, shape="${shape}"];`);
   }
   for (const e of Object.values(ir.edges) as Edge[]) {
     const lbl = e.label ? ` [label=${JSON.stringify(e.label)}]` : "";
-    lines.push(`  ${e.from} -> ${e.to}${lbl};`);
+    lines.push(`  ${JSON.stringify(e.from)} -> ${JSON.stringify(e.to)}${lbl};`);
   }
   lines.push("}");
   return lines.join("\n");
