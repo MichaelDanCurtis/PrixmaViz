@@ -280,6 +280,25 @@ select {
   z-index: 1;
 }
 
+.infinite-canvas.drag-over {
+  outline: 3px dashed #4a90e2;
+  outline-offset: -3px;
+}
+
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(74, 144, 226, 0.1);
+  color: #2c5e9e;
+  font-size: 1.5rem;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 1000;
+}
+
 .tile {
   background: white; color: #222; border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.3);

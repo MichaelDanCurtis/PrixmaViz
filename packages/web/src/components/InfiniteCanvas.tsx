@@ -1,8 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "../store";
 import { Tile } from "./Tile";
 import { EmptyStateCards } from "./EmptyStateCards";
-import { api } from "../lib/api";
+import { api, authFetch } from "../lib/api";
 import { clampCamera } from "@prixmaviz/shared";
 
 const DEFAULT_PROMO_CARDS: Array<{ name: string; href: string; tagline: string }> = [];
@@ -15,6 +15,41 @@ export function InfiniteCanvas() {
   const mode = useAppStore((s) => s.mode);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; camX: number; camY: number } | null>(null);
+  const [vsdxDragOver, setVsdxDragOver] = useState(false);
+
+  function handleVsdxDragOver(e: React.DragEvent) {
+    if (Array.from(e.dataTransfer.items).some((it) => it.kind === "file")) {
+      e.preventDefault();
+      setVsdxDragOver(true);
+    }
+  }
+
+  function handleVsdxDragLeave() {
+    setVsdxDragOver(false);
+  }
+
+  async function handleVsdxDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setVsdxDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    const vsdx = files.find((f) => f.name.toLowerCase().endsWith(".vsdx"));
+    if (!vsdx) return;
+
+    const fd = new FormData();
+    fd.set("file", vsdx);
+    fd.set("name", vsdx.name.replace(/\.vsdx$/i, ""));
+    try {
+      const res = await authFetch("/api/import", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "import failed" }));
+        alert(`Visio import failed: ${(err as { error?: string }).error ?? "unknown error"}`);
+        return;
+      }
+      // Server broadcasts the new diagram via WS — the canvas picks it up.
+    } catch (err) {
+      alert(`Visio import failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   // Load workspace on mount
   useEffect(() => {
@@ -63,14 +98,20 @@ export function InfiniteCanvas() {
   return (
     <div
       ref={containerRef}
-      className="infinite-canvas"
+      className={`infinite-canvas${vsdxDragOver ? " drag-over" : ""}`}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
       onMouseLeave={() => { dragRef.current = null; }}
       onWheel={onWheel}
+      onDragOver={handleVsdxDragOver}
+      onDragLeave={handleVsdxDragLeave}
+      onDrop={handleVsdxDrop}
     >
       <div className="infinite-canvas-bg" />
+      {vsdxDragOver && (
+        <div className="drop-overlay">Drop .vsdx to import</div>
+      )}
       {tiles.length === 0 && (
         <div className="infinite-canvas-empty">
           <div className="infinite-canvas-empty-headline">
