@@ -18,6 +18,7 @@ export interface DbDiagram {
   ir: GraphIR | null;
   dsl: string | null;
   svg: string | null;
+  bytes: Uint8Array | null;
   meta: Record<string, unknown>;
   publicView: boolean;
   createdAt: string;
@@ -25,6 +26,7 @@ export interface DbDiagram {
 }
 
 function rowToDiagram(row: Record<string, unknown>): DbDiagram {
+  const rawBytes = row.bytes as Buffer | Uint8Array | null | undefined;
   return {
     id: row.id as string,
     workspaceId: row.workspace_id as string,
@@ -35,6 +37,7 @@ function rowToDiagram(row: Record<string, unknown>): DbDiagram {
     ir: (row.ir as GraphIR | null) ?? null,
     dsl: (row.dsl as string | null) ?? null,
     svg: (row.svg as string | null) ?? null,
+    bytes: rawBytes ? new Uint8Array(rawBytes) : null,
     meta: row.meta as Record<string, unknown>,
     publicView: row.public_view as boolean,
     createdAt: (row.created_at as Date).toISOString(),
@@ -54,10 +57,11 @@ export async function createDiagram(sql: Sql, input: {
   kind: DiagramKind;
   ir?: GraphIR;
   dsl?: string;
+  bytes?: Uint8Array;
 }): Promise<DbDiagram> {
   const id = newDiagramId();
   const rows = await sql`
-    INSERT INTO diagrams (id, workspace_id, slug, name, engine, kind, ir, dsl)
+    INSERT INTO diagrams (id, workspace_id, slug, name, engine, kind, ir, dsl, bytes)
     VALUES (
       ${id},
       ${input.workspaceId},
@@ -66,7 +70,8 @@ export async function createDiagram(sql: Sql, input: {
       ${input.engine},
       ${input.kind},
       ${input.ir ? sql.json(input.ir as unknown as JSONLike) : null},
-      ${input.dsl ?? null}
+      ${input.dsl ?? null},
+      ${input.bytes ? Buffer.from(input.bytes) : null}
     )
     RETURNING *
   `;
@@ -100,6 +105,7 @@ export async function updateDiagram(sql: Sql, workspaceId: string, id: string, p
   ir: GraphIR;
   dsl: string;
   svg: string;
+  bytes: Uint8Array;
   meta: Record<string, unknown>;
 }>): Promise<DbDiagram | null> {
   // Build the set of columns to update. Use sql.json() for JSONB columns.
@@ -108,6 +114,7 @@ export async function updateDiagram(sql: Sql, workspaceId: string, id: string, p
   if (patch.ir !== undefined) updates.ir = sql.json(patch.ir as unknown as JSONLike);
   if (patch.dsl !== undefined) updates.dsl = patch.dsl;
   if (patch.svg !== undefined) updates.svg = patch.svg;
+  if (patch.bytes !== undefined) updates.bytes = Buffer.from(patch.bytes);
   if (patch.meta !== undefined) updates.meta = sql.json(patch.meta as unknown as JSONLike);
 
   if (Object.keys(updates).length === 0) {
