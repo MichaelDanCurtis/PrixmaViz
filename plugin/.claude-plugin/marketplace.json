@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "prixmaviz",
-      "description": "AI-native diagram tool — 28+ engines, annotations, infinite canvas. Renders to a browser tab via the hosted service or your own self-hosted PrixmaViz server.",
-      "version": "0.5.0",
+      "description": "AI-native diagram tool — 29+ engines (incl. Microsoft Visio .vsdx round-trip), annotations, infinite canvas. Renders to a browser tab via the hosted service or your own self-hosted PrixmaViz server.",
+      "version": "0.6.0",
       "source": "./"
     }
   ]

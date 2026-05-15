@@ -1,7 +1,7 @@
 {
   "name": "prixmaviz",
-  "description": "AI-native diagram tool — renders 28+ engines (Mermaid, PlantUML, D2, Vega-Lite, TikZ, Graphviz, WaveDrom, Bytefield, etc.) with annotations, multi-tile infinite canvas, and shared-workspace AI loop.",
-  "version": "0.5.0",
+  "description": "AI-native diagram tool — renders 29+ engines (Mermaid, PlantUML, D2, Vega-Lite, TikZ, Graphviz, WaveDrom, Bytefield, Microsoft Visio .vsdx, etc.) with annotations, multi-tile infinite canvas, and shared-workspace AI loop. Round-trips Visio files: drop a .vsdx in to render natively, or build a diagram and export as Visio-editable .vsdx.",
+  "version": "0.6.0",
   "author": {
     "name": "Michael Curtis",
     "email": "michaeldancurtis@gmail.com"
@@ -9,12 +9,12 @@
   "homepage": "https://github.com/MichaelDanCurtis/PrixmaViz",
   "repository": "https://github.com/MichaelDanCurtis/PrixmaViz",
   "license": "MIT",
-  "keywords": ["diagram", "ai", "mcp", "kroki", "mermaid", "plantuml", "d2", "vega-lite", "annotations", "infinite-canvas"],
+  "keywords": ["diagram", "ai", "mcp", "kroki", "mermaid", "plantuml", "d2", "vega-lite", "visio", "vsdx", "annotations", "infinite-canvas"],
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "PrixmaViz",
-    "shortDescription": "AI-native diagram tool — Mermaid, PlantUML, D2, Vega-Lite, TikZ, Graphviz, 28+ engines",
-    "longDescription": "PrixmaViz lets your AI coding agent render diagrams in a real browser canvas. Ask for a sequence diagram, an ER schema, a Vega-Lite chart, a TikZ physics scene — it renders via the appropriate engine (Mermaid, PlantUML, D2, Vega-Lite, TikZ, Graphviz, WaveDrom, Bytefield, BPMN, Excalidraw, and 18 others), persists into an annotatable infinite-canvas workspace, and feeds your region/pin/tag annotations back to the AI so the next iteration knows what you pointed at. Hosted free at prixmaviz.ailuxis.com; self-host via docker-compose.",
+    "shortDescription": "AI-native diagram tool — Mermaid, PlantUML, D2, Vega-Lite, TikZ, Graphviz, Visio (.vsdx), 29+ engines",
+    "longDescription": "PrixmaViz lets your AI coding agent render diagrams in a real browser canvas. Ask for a sequence diagram, an ER schema, a Vega-Lite chart, a TikZ physics scene — it renders via the appropriate engine (Mermaid, PlantUML, D2, Vega-Lite, TikZ, Graphviz, WaveDrom, Bytefield, BPMN, Excalidraw, and 18 others), persists into an annotatable infinite-canvas workspace, and feeds your region/pin/tag annotations back to the AI so the next iteration knows what you pointed at. **Microsoft Visio round-trip**: drop a .vsdx in to render natively, or build a flowchart and export as a Visio-editable .vsdx. Hosted free at prixmaviz.ailuxis.com; self-host via docker-compose.",
     "developerName": "Michael Curtis",
     "category": "Diagrams",
     "websiteURL": "https://prixmaviz.ailuxis.com",

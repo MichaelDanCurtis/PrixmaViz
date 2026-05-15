@@ -24,7 +24,7 @@ async function main() {
       headers: {
         "Authorization": `Bearer ${workspaceId}`,
         "Content-Type": "application/json",
-        "X-PrixmaViz-Shim-Version": "0.4.0",
+        "X-PrixmaViz-Shim-Version": "0.6.0",
       },
       body: JSON.stringify(args ?? {}),
     });
@@ -36,7 +36,7 @@ async function main() {
   }
 
   const server = new Server(
-    { name: "prixmaviz", version: "0.4.0" },
+    { name: "prixmaviz", version: "0.6.0" },
     { capabilities: { tools: {} } }
   );
 
