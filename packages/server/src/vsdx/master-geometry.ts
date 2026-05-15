@@ -127,6 +127,27 @@ function cylinder(): string {
   ]);
 }
 
+function realCylinder(): string {
+  // Cylinder: vertical sides + half-ellipse on top (slightly visible front
+  // arc) + half-ellipse on bottom. Ellipse ratio: y-radius = 0.08, so the
+  // top ellipse spans y=0.0..0.16 (centered at 0.08), bottom y=0.84..1.0.
+  const arc = (cx: number, cy: number) =>
+    `<Cell N="A" V="${cx}"/><Cell N="B" V="${cy}"/><Cell N="C" V="0"/><Cell N="D" V="1"/>`;
+  return geometrySection([
+    // Top ellipse — full ellipse so it reads as a disk seen edge-on
+    { t: "RelMoveTo",          x: 0,    y: 0.08 },
+    { t: "RelEllipticalArcTo", x: 1,    y: 0.08, extra: arc(0.5, 0) },
+    { t: "RelEllipticalArcTo", x: 0,    y: 0.08, extra: arc(0.5, 0.16) },
+    // Right side down
+    { t: "RelMoveTo",          x: 1,    y: 0.08 },
+    { t: "RelLineTo",          x: 1,    y: 0.92 },
+    // Bottom ellipse (front arc visible — just the bottom half)
+    { t: "RelEllipticalArcTo", x: 0,    y: 0.92, extra: arc(0.5, 1) },
+    // Left side up
+    { t: "RelLineTo",          x: 0,    y: 0.08 },
+  ]);
+}
+
 function circle(): string {
   const arc = (cx: number, cy: number) =>
     `<Cell N="A" V="${cx}"/><Cell N="B" V="${cy}"/><Cell N="C" V="0"/><Cell N="D" V="1"/>`;
@@ -158,6 +179,57 @@ function hexagon(): string {
   ]);
 }
 
+function pentagon(): string {
+  // Regular pentagon, one vertex pointing up (toward y=0 since y increases
+  // downward in our normalized space).
+  // Vertices at angles 270°, 342°, 54°, 126°, 198° (top, upper-right,
+  // lower-right, lower-left, upper-left) — scaled to fit unit box.
+  return geometrySection([
+    { t: "RelMoveTo", x: 0.5,    y: 0    },     // top
+    { t: "RelLineTo", x: 1,      y: 0.38 },     // upper-right
+    { t: "RelLineTo", x: 0.82,   y: 1    },     // lower-right
+    { t: "RelLineTo", x: 0.18,   y: 1    },     // lower-left
+    { t: "RelLineTo", x: 0,      y: 0.38 },     // upper-left
+    { t: "RelLineTo", x: 0.5,    y: 0    },     // close
+  ]);
+}
+
+function octagon(): string {
+  // 8-sided. Vertices at the 8 octant angles, with corners cut off a
+  // square at fraction `c` of the side.
+  const c = 0.29;  // ~tan(22.5°)/2; standard regular-octagon cut
+  return geometrySection([
+    { t: "RelMoveTo", x: c,       y: 0 },
+    { t: "RelLineTo", x: 1 - c,   y: 0 },
+    { t: "RelLineTo", x: 1,       y: c },
+    { t: "RelLineTo", x: 1,       y: 1 - c },
+    { t: "RelLineTo", x: 1 - c,   y: 1 },
+    { t: "RelLineTo", x: c,       y: 1 },
+    { t: "RelLineTo", x: 0,       y: 1 - c },
+    { t: "RelLineTo", x: 0,       y: c },
+    { t: "RelLineTo", x: c,       y: 0 },
+  ]);
+}
+
+function fivePointStar(): string {
+  // Star with 5 outer points (radius=0.5) and 5 inner points (radius=0.5*sin(18°)/sin(54°) ≈ 0.191).
+  // Coordinates pre-computed: outer at angles 270, 342, 54, 126, 198 degrees;
+  // inner at 306, 18, 90, 162, 234. Centered at (0.5, 0.5).
+  return geometrySection([
+    { t: "RelMoveTo", x: 0.5,    y: 0    },      // top point
+    { t: "RelLineTo", x: 0.612,  y: 0.345 },     // inner-right-upper
+    { t: "RelLineTo", x: 0.976,  y: 0.345 },     // upper-right point
+    { t: "RelLineTo", x: 0.682,  y: 0.559 },     // inner-right-lower
+    { t: "RelLineTo", x: 0.794,  y: 0.905 },     // lower-right point
+    { t: "RelLineTo", x: 0.5,    y: 0.691 },     // inner-bottom
+    { t: "RelLineTo", x: 0.206,  y: 0.905 },     // lower-left point
+    { t: "RelLineTo", x: 0.318,  y: 0.559 },     // inner-left-lower
+    { t: "RelLineTo", x: 0.024,  y: 0.345 },     // upper-left point
+    { t: "RelLineTo", x: 0.388,  y: 0.345 },     // inner-left-upper
+    { t: "RelLineTo", x: 0.5,    y: 0    },      // close
+  ]);
+}
+
 function rightArrow(): string {
   return geometrySection([
     { t: "RelMoveTo", x: 0,    y: 0.25 },
@@ -180,7 +252,7 @@ const GEOMETRY: Record<string, () => string> = {
   "Decision":             diamond,
   "Data":                 parallelogram,
   "Document":             rect,
-  "Stored Data":          cylinder,
+  "Stored Data":          realCylinder,
   "Cloud":                rect,
   "Predefined Process":   rect,
   "Manual Input":         parallelogram,
@@ -191,10 +263,10 @@ const GEOMETRY: Record<string, () => string> = {
   "Circle":               circle,
   "Ellipse":              circle,
   "Triangle":             triangle,
-  "Pentagon":             hexagon,
+  "Pentagon":             pentagon,
   "Hexagon":              hexagon,
-  "Octagon":              hexagon,
-  "5-Point Star":         triangle,
+  "Octagon":              octagon,
+  "5-Point Star":         fivePointStar,
   "Right Arrow":          rightArrow,
 };
 

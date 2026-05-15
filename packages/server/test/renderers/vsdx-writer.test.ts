@@ -59,6 +59,49 @@ describe("writeVsdxFromIr", () => {
     expect(mastersContent).toContain("Dynamic connector");
   });
 
+  it("emits distinct geometry for pentagon, hexagon, octagon, star, cylinder", async () => {
+    const ir: GraphIR = {
+      layout: { direction: "TB" },
+      nodes: {
+        p:   { id: "p",   label: "P",   shape: "pentagon" } as Node,
+        h:   { id: "h",   label: "H",   shape: "hexagon" } as Node,
+        o:   { id: "o",   label: "O",   shape: "octagon" } as Node,
+        s:   { id: "s",   label: "S",   shape: "star" } as Node,
+        cyl: { id: "cyl", label: "Cyl", shape: "cylinder" } as Node,
+      },
+      edges: {},
+      groups: {},
+    };
+    const { bytes } = await writeVsdxFromIr(ir);
+    const JSZip = (await import("jszip")).default;
+    const zip = await JSZip.loadAsync(bytes);
+    const page = await zip.file("visio/pages/page1.xml")!.async("string");
+    // Each shape gets its own inline geometry, so each <Shape> block must be
+    // distinct. IDs map by Object.entries order: p=1, h=2, o=3, s=4, cyl=5.
+    const pentagonShape = page.match(/<Shape ID="1"[^>]*>.*?<\/Shape>/s)![0];
+    const hexagonShape  = page.match(/<Shape ID="2"[^>]*>.*?<\/Shape>/s)![0];
+    const octagonShape  = page.match(/<Shape ID="3"[^>]*>.*?<\/Shape>/s)![0];
+    const starShape     = page.match(/<Shape ID="4"[^>]*>.*?<\/Shape>/s)![0];
+    const cylShape      = page.match(/<Shape ID="5"[^>]*>.*?<\/Shape>/s)![0];
+    // Pentagon != hexagon — these were previously identical when pentagon
+    // fell through to hexagon.
+    expect(pentagonShape).not.toBe(hexagonShape);
+    // Octagon != hexagon — same fall-through bug.
+    expect(octagonShape).not.toBe(hexagonShape);
+    // Star != triangle — star previously fell through to triangle.
+    // We can't easily compare to a triangle here, but we can check the
+    // line-segment count: 10 outer+inner edges for a real 5-point star.
+    expect((starShape.match(/<Row T="RelLineTo"/g) ?? []).length).toBe(10);
+    // Pentagon has 5 line segments + 1 MoveTo = 6 rows total.
+    expect((pentagonShape.match(/<Row T="RelLineTo"/g) ?? []).length).toBe(5);
+    // Hexagon has 6 line segments.
+    expect((hexagonShape.match(/<Row T="RelLineTo"/g) ?? []).length).toBe(6);
+    // Octagon has 8 line segments.
+    expect((octagonShape.match(/<Row T="RelLineTo"/g) ?? []).length).toBe(8);
+    // Cylinder uses elliptical arcs for the caps — should have at least one.
+    expect(cylShape).toContain("RelEllipticalArcTo");
+  });
+
   it("warns on edges referencing missing nodes", async () => {
     const ir: GraphIR = {
       layout: { direction: "TB" },
