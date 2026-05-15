@@ -1,5 +1,5 @@
 import type {
-  Annotation, Camera, Diagram, DiagramEngine, DiagramId, DiagramKind, GraphIR, PatchOp, ServerToClient, Tile,
+  Annotation, Camera, Diagram, DiagramEngine, DiagramId, DiagramKind, Edge, GraphIR, Node, PatchOp, ServerToClient, Tile,
 } from "@prixmaviz/shared";
 import { emptyGraphIR, emptyMeta, inferKind, newAnnotationId, newTileId } from "@prixmaviz/shared";
 import type postgres from "postgres";
@@ -213,6 +213,11 @@ export async function handleApi(
       ? `${process.env.PRIXMAVIZ_PUBLIC_URL ?? ""}/p/${diagramId}`
       : undefined;
     return Response.json({ public: body.public, publicUrl });
+  }
+
+  const exportVsdxMatch = p.match(/^\/api\/diagrams\/([^/]+)\/export\.vsdx$/);
+  if (exportVsdxMatch && req.method === "GET") {
+    return await exportVsdxRoute(exportVsdxMatch[1]!, workspaceId, deps);
   }
 
   // GET /api/diagrams/:id — single-diagram metadata (no suffix).
@@ -599,4 +604,73 @@ function broadcastRender(
     warnings: warnings.length ? warnings : undefined,
   };
   hub.broadcast(workspaceId, msg);
+}
+
+async function exportVsdxRoute(
+  id: string,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const row = await dbGetDiagram(deps.sql, workspaceId, id);
+  if (!row) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+
+  let bytes: Uint8Array;
+  if (row.engine === "vsdx" && row.kind === "binary" && row.bytes) {
+    bytes = row.bytes;
+  } else if (row.kind === "graph" && row.ir && canStructuredVsdx(row.engine)) {
+    const { writeVsdxFromIr } = await import("../renderers/vsdx-writer");
+    const ir = await maybeExtractLayout(row.engine, row.ir, row.dsl);
+    bytes = await writeVsdxFromIr(ir);
+  } else {
+    if (!row.svg) return Response.json({ ok: false, error: "no rendered SVG to embed" }, { status: 400 });
+    const { writeVsdxFromSvg } = await import("../renderers/vsdx-writer-fallback");
+    bytes = await writeVsdxFromSvg(row.svg);
+  }
+
+  return new Response(bytes as BodyInit, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/vnd.ms-visio.drawing",
+      "Content-Disposition": `attachment; filename="${row.slug}.vsdx"`,
+    },
+  });
+}
+
+function canStructuredVsdx(engine: DiagramEngine): boolean {
+  return engine === "mermaid" || engine === "d2" || engine === "graphviz";
+}
+
+async function maybeExtractLayout(
+  engine: DiagramEngine,
+  ir: GraphIR,
+  dsl: string | null,
+): Promise<GraphIR> {
+  if (engine === "mermaid") {
+    const { extractGraphFromDot } = await import("../renderers/graphviz-extractor");
+    const dot = irToDot(ir);
+    return await extractGraphFromDot(dot);
+  }
+  if (engine === "graphviz" && dsl) {
+    const { extractGraphFromDot } = await import("../renderers/graphviz-extractor");
+    return await extractGraphFromDot(dsl);
+  }
+  if (engine === "d2" && dsl) {
+    const { extractGraphFromD2 } = await import("../renderers/d2-extractor");
+    return await extractGraphFromD2(dsl);
+  }
+  return ir;
+}
+
+function irToDot(ir: GraphIR): string {
+  const lines = ["digraph G { rankdir=" + (ir.layout?.direction ?? "TB") + ";"];
+  for (const n of Object.values(ir.nodes) as Node[]) {
+    const shape = n.shape ?? "box";
+    lines.push(`  ${n.id} [label=${JSON.stringify(n.label ?? n.id)}, shape="${shape}"];`);
+  }
+  for (const e of Object.values(ir.edges) as Edge[]) {
+    const lbl = e.label ? ` [label=${JSON.stringify(e.label)}]` : "";
+    lines.push(`  ${e.from} -> ${e.to}${lbl};`);
+  }
+  lines.push("}");
+  return lines.join("\n");
 }
