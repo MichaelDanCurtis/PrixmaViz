@@ -5,7 +5,7 @@ export type DiagramEngine =
   | "mermaid" | "nomnoml" | "nwdiag" | "packetdiag"
   | "pikchr" | "plantuml" | "rackdiag" | "seqdiag"
   | "structurizr" | "svgbob" | "symbolator" | "tikz"
-  | "umlet" | "vega" | "vegalite" | "wavedrom" | "wireviz";
+  | "umlet" | "vega" | "vegalite" | "vsdx" | "wavedrom" | "wireviz";
 
 export type EngineFamily =
   | "graph" | "sequence" | "er" | "process"
@@ -41,9 +41,10 @@ export const ENGINE_FAMILY: Record<DiagramEngine, EngineFamily> = {
   nwdiag: "network",
   rackdiag: "network",
   wireviz: "freeform",
+  vsdx: "freeform",
 };
 
-export const KROKI_PATH: Record<DiagramEngine, string> = {
+export const KROKI_PATH: Record<Exclude<DiagramEngine, "vsdx">, string> = {
   actdiag: "actdiag", blockdiag: "blockdiag", bpmn: "bpmn",
   bytefield: "bytefield", c4plantuml: "c4plantuml", d2: "d2",
   dbml: "dbml", diagramsnet: "diagramsnet", ditaa: "ditaa",
