@@ -1,4 +1,5 @@
 import type { GraphIR, Node } from "@prixmaviz/shared";
+import { extractGraphFromDot } from "./graphviz-extractor";
 
 /**
  * Convert a D2 source into a GraphIR with layout coordinates by:
@@ -15,12 +16,14 @@ export async function extractGraphFromD2(source: string): Promise<
     nodes: Record<string, Node & { _x: number; _y: number }>;
   }
 > {
-  const lines = source.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  // Strip /* ... */ block comments first.
+  const sanitized = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  const lines = sanitized.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const nodes: Record<string, { label: string }> = {};
   const edges: Array<{ from: string; to: string; label?: string }> = [];
 
   for (const line of lines) {
-    if (line.startsWith("#")) continue;
+    if (line.startsWith("#") || line.startsWith("//")) continue;
     const edgeMatch = line.match(/^(\S+)\s*->\s*(\S+)(?::\s*(.+))?$/);
     if (edgeMatch) {
       const [, from, to, lbl] = edgeMatch;
@@ -36,7 +39,6 @@ export async function extractGraphFromD2(source: string): Promise<
     }
   }
 
-  const { extractGraphFromDot } = await import("./graphviz-extractor");
   const dotLines: string[] = ["digraph G {"];
   for (const [id, n] of Object.entries(nodes)) {
     dotLines.push(`  ${id} [label=${JSON.stringify(n.label)}];`);

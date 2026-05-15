@@ -35,4 +35,15 @@ describe("extractGraphFromD2", () => {
     expect(ir.nodes.c).toBeDefined();
     expect(ir.nodes.d).toBeDefined();
   });
+
+  it("ignores // line comments", async () => {
+    const d2 = `
+      // a -> b: skip me
+      c -> d
+    `;
+    const ir = await extractGraphFromD2(d2);
+    const nodeIds = Object.keys(ir.nodes).sort();
+    expect(nodeIds).toEqual(["c", "d"]);
+    expect(nodeIds.includes("//")).toBe(false);
+  });
 });
