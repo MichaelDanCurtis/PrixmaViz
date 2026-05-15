@@ -5,7 +5,7 @@ export interface RenderOutput {
   warnings: string[];
 }
 
-const SHAPE_BRACKETS: Record<NodeShape, [string, string]> = {
+const SHAPE_BRACKETS: Partial<Record<NodeShape, [string, string]>> = {
   rect: ["[", "]"],
   round: ["(", ")"],
   circle: ["((", "))"],
@@ -48,7 +48,7 @@ function emitNode(node: Node, warnings: string[]): string {
   const brackets = SHAPE_BRACKETS[shape];
   if (!brackets) {
     warnings.push(`shape "${node.shape}" not supported, fell back to rect`);
-    const [open, close] = SHAPE_BRACKETS.rect;
+    const [open, close] = SHAPE_BRACKETS.rect!;
     return `${node.id}${open}${labelText(node.label)}${close}`;
   }
   const [open, close] = brackets;

@@ -6,7 +6,9 @@ export type GroupId = string;
 export type DiagramId = string;
 
 export type NodeShape =
-  | "rect" | "round" | "circle" | "diamond" | "hex" | "cyl";
+  | "rect" | "round" | "circle" | "diamond" | "hex" | "cyl"
+  | "ellipse" | "parallelogram" | "cylinder" | "triangle"
+  | "hexagon" | "octagon" | "star";
 
 export type EdgeKind = "solid" | "dashed" | "dotted" | "thick";
 export type EdgeArrow = "normal" | "open" | "none";
