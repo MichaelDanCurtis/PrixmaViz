@@ -45,17 +45,25 @@ function cell(n: string, v: number | string, f?: string): string {
 }
 
 export function buildShapeXml(s: ShapeXmlInput): string {
+  // The LineStyle/FillStyle/TextStyle attributes + the Angle/FlipX/FlipY/
+  // ResizeMode/ObjType cells are NOT decorative — LibreOffice's vsdx import
+  // filter silently skips rendering shapes that don't have them. Found by
+  // diffing against a reference vsdx that LibreOffice rendered successfully.
   return [
-    `<Shape ID="${xmlEscape(s.id)}" Type="Shape" Master="${xmlEscape(s.masterId)}" NameU="${xmlEscape(s.master)}">`,
+    `<Shape ID="${xmlEscape(s.id)}" Type="Shape"`,
+    ` Master="${xmlEscape(s.masterId)}" NameU="${xmlEscape(s.master)}"`,
+    ` LineStyle="3" FillStyle="3" TextStyle="3">`,
     cell("PinX", s.x),
     cell("PinY", s.y),
     cell("Width", s.w),
     cell("Height", s.h),
-    cell("LocPinX", s.w / 2),
-    cell("LocPinY", s.h / 2),
-    cell("LineColor", "#000000" as string),
-    cell("LineWeight", 0.01),
-    cell("FillForegnd", "#FFFFFF" as string),
+    `<Cell N="LocPinX" V="${s.w / 2}" F="Width*0.5"/>`,
+    `<Cell N="LocPinY" V="${s.h / 2}" F="Height*0.5"/>`,
+    cell("Angle", 0),
+    cell("FlipX", 0),
+    cell("FlipY", 0),
+    cell("ResizeMode", 0),
+    cell("ObjType", 1),
     s.geometry ?? "",
     `<Text>${xmlEscape(s.text)}</Text>`,
     `</Shape>`,

@@ -1,27 +1,25 @@
 /**
  * Per-master geometry definitions for the vsdx writer.
  *
- * Each master we expose in `stencils.ts` needs a corresponding
- * `<MasterContents>` XML part (`visio/masters/masterN.xml`) that defines what
- * the shape actually looks like — geometry rows like MoveTo/LineTo/EllipticalArcTo.
+ * Coordinate system: **RelMoveTo / RelLineTo / RelEllipticalArcTo** with
+ * X and Y in 0..1, normalized to the shape's Width and Height respectively.
+ * Visio (and LibreOffice's vsdx import filter) interpret these as
+ * "fractions of the shape extent". This is the form LibreOffice actually
+ * renders — absolute `MoveTo`/`LineTo` coordinates are silently dropped
+ * even when they're inside the shape's bounding box.
  *
- * Without these parts, LibreOffice loads the vsdx but renders an empty SVG
- * because it has no master geometry to draw. Visio itself is more forgiving
- * (falls back to its built-in master library), but cross-tool fidelity
- * requires us to ship the geometry inline.
- *
- * The master's local coordinate space is normalized to (0, 0) → (1, 0.75)
- * — a unit box matching the writer's default shape size. Visio/LibreOffice
- * scales the geometry to fit each instance's Width/Height at render time.
+ * Found by diffing our writer's output against a reference vsdx
+ * (`vsdx==0.6.1` python package's `media/media.vsdx` sample) that
+ * LibreOffice rendered successfully.
  */
 
 const NS = `xmlns="http://schemas.microsoft.com/office/visio/2012/main" xml:space="preserve"`;
 
 interface GeomRow {
-  t: string;          // MoveTo | LineTo | EllipticalArcTo
-  x: number;
-  y: number;
-  extra?: string;     // additional cells (control points, angles) for arcs
+  t: string;          // RelMoveTo | RelLineTo | RelEllipticalArcTo
+  x: number;          // 0..1, fraction of shape Width
+  y: number;          // 0..1, fraction of shape Height
+  extra?: string;     // additional cells (control points, etc.) for arcs
 }
 
 function geometrySection(rows: GeomRow[]): string {
@@ -31,6 +29,7 @@ function geometrySection(rows: GeomRow[]): string {
     `<Cell N="NoLine" V="0"/>`,
     `<Cell N="NoShow" V="0"/>`,
     `<Cell N="NoSnap" V="0"/>`,
+    `<Cell N="NoQuickDrag" V="0"/>`,
   ];
   rows.forEach((r, i) => {
     const ix = i + 1;
@@ -55,8 +54,13 @@ function wrap(geometryRows: string, w = 1, h = 0.75): string {
     `<Cell N="PinY" V="${h / 2}"/>`,
     `<Cell N="Width" V="${w}"/>`,
     `<Cell N="Height" V="${h}"/>`,
-    `<Cell N="LocPinX" V="${w / 2}"/>`,
-    `<Cell N="LocPinY" V="${h / 2}"/>`,
+    `<Cell N="LocPinX" V="${w / 2}" F="Width*0.5"/>`,
+    `<Cell N="LocPinY" V="${h / 2}" F="Height*0.5"/>`,
+    `<Cell N="Angle" V="0"/>`,
+    `<Cell N="FlipX" V="0"/>`,
+    `<Cell N="FlipY" V="0"/>`,
+    `<Cell N="ResizeMode" V="0"/>`,
+    `<Cell N="ObjType" V="1"/>`,
     geometryRows,
     `</Shape>`,
     `</Shapes>`,
@@ -64,114 +68,106 @@ function wrap(geometryRows: string, w = 1, h = 0.75): string {
   ].join("");
 }
 
-// ── Shape geometries ────────────────────────────────────────────────────────
+// ── Shape geometries (all coords 0..1, normalized over Width × Height) ──
 
 function rect(): string {
   return geometrySection([
-    { t: "MoveTo", x: 0,    y: 0 },
-    { t: "LineTo", x: 1,    y: 0 },
-    { t: "LineTo", x: 1,    y: 0.75 },
-    { t: "LineTo", x: 0,    y: 0.75 },
-    { t: "LineTo", x: 0,    y: 0 },
+    { t: "RelMoveTo", x: 0, y: 0 },
+    { t: "RelLineTo", x: 1, y: 0 },
+    { t: "RelLineTo", x: 1, y: 1 },
+    { t: "RelLineTo", x: 0, y: 1 },
+    { t: "RelLineTo", x: 0, y: 0 },
   ]);
 }
 
 function diamond(): string {
   return geometrySection([
-    { t: "MoveTo", x: 0.5,  y: 0 },
-    { t: "LineTo", x: 1,    y: 0.375 },
-    { t: "LineTo", x: 0.5,  y: 0.75 },
-    { t: "LineTo", x: 0,    y: 0.375 },
-    { t: "LineTo", x: 0.5,  y: 0 },
+    { t: "RelMoveTo", x: 0.5, y: 0 },
+    { t: "RelLineTo", x: 1,   y: 0.5 },
+    { t: "RelLineTo", x: 0.5, y: 1 },
+    { t: "RelLineTo", x: 0,   y: 0.5 },
+    { t: "RelLineTo", x: 0.5, y: 0 },
   ]);
 }
 
 function roundedRect(): string {
-  // Stadium-shape terminator: two semicircles capping a horizontal rect.
-  // Corner radius = half-height; in this 1×0.75 box that's r = 0.375.
-  // Control point C between two arc endpoints sits at the corner.
-  // EllipticalArcTo: (X,Y) is end; controls give one mid-arc point + angle.
-  const arc = (x: number, y: number, cx: number, cy: number) =>
+  // Stadium-shape terminator: semicircles capping a horizontal rect.
+  // Corner radius = half the shape height; arc control point at the corner.
+  const arc = (cx: number, cy: number) =>
     `<Cell N="A" V="${cx}"/><Cell N="B" V="${cy}"/><Cell N="C" V="0"/><Cell N="D" V="1"/>`;
   return geometrySection([
-    { t: "MoveTo",           x: 0.375, y: 0 },
-    { t: "LineTo",           x: 0.625, y: 0 },
-    { t: "EllipticalArcTo",  x: 0.625, y: 0.75, extra: arc(0.625, 0.75, 1, 0.375) },
-    { t: "LineTo",           x: 0.375, y: 0.75 },
-    { t: "EllipticalArcTo",  x: 0.375, y: 0,    extra: arc(0.375, 0,   0, 0.375) },
+    { t: "RelMoveTo",           x: 0.25, y: 0 },
+    { t: "RelLineTo",           x: 0.75, y: 0 },
+    { t: "RelEllipticalArcTo",  x: 0.75, y: 1,    extra: arc(1, 0.5) },
+    { t: "RelLineTo",           x: 0.25, y: 1 },
+    { t: "RelEllipticalArcTo",  x: 0.25, y: 0,    extra: arc(0, 0.5) },
   ]);
 }
 
 function parallelogram(): string {
-  // Data shape: slanted parallelogram. Skew offset = 0.1875.
   return geometrySection([
-    { t: "MoveTo", x: 0.1875, y: 0 },
-    { t: "LineTo", x: 1,      y: 0 },
-    { t: "LineTo", x: 0.8125, y: 0.75 },
-    { t: "LineTo", x: 0,      y: 0.75 },
-    { t: "LineTo", x: 0.1875, y: 0 },
+    { t: "RelMoveTo", x: 0.2, y: 0 },
+    { t: "RelLineTo", x: 1,   y: 0 },
+    { t: "RelLineTo", x: 0.8, y: 1 },
+    { t: "RelLineTo", x: 0,   y: 1 },
+    { t: "RelLineTo", x: 0.2, y: 0 },
   ]);
 }
 
 function cylinder(): string {
-  // Stored Data: cylinder with curved top + bottom (drawn as flat for v1).
-  // Real cylinder needs two EllipticalArcTo curves; for now use a tall rect
-  // with horizontal lines at top/bottom to suggest the open-end disks.
+  // Stored Data: a rectangle with horizontal cap lines suggesting the
+  // top/bottom disks of a cylinder. Simplification; real cylinder uses
+  // EllipticalArcTo curves for the caps.
   return geometrySection([
-    { t: "MoveTo", x: 0,    y: 0.125 },
-    { t: "LineTo", x: 0,    y: 0.625 },
-    { t: "LineTo", x: 1,    y: 0.625 },
-    { t: "LineTo", x: 1,    y: 0.125 },
-    { t: "LineTo", x: 0,    y: 0.125 },
-    { t: "MoveTo", x: 0,    y: 0.625 },
-    { t: "LineTo", x: 0,    y: 0.125 },
-    { t: "MoveTo", x: 1,    y: 0.625 },
-    { t: "LineTo", x: 1,    y: 0.125 },
+    { t: "RelMoveTo", x: 0, y: 0.15 },
+    { t: "RelLineTo", x: 0, y: 0.85 },
+    { t: "RelLineTo", x: 1, y: 0.85 },
+    { t: "RelLineTo", x: 1, y: 0.15 },
+    { t: "RelLineTo", x: 0, y: 0.15 },
   ]);
 }
 
 function circle(): string {
-  // Small filled circle for connector shapes.
-  const arc = (x: number, y: number, cx: number, cy: number) =>
+  const arc = (cx: number, cy: number) =>
     `<Cell N="A" V="${cx}"/><Cell N="B" V="${cy}"/><Cell N="C" V="0"/><Cell N="D" V="1"/>`;
   return geometrySection([
-    { t: "MoveTo",          x: 0,   y: 0.375 },
-    { t: "EllipticalArcTo", x: 1,   y: 0.375, extra: arc(1,   0.375, 0.5, 0) },
-    { t: "EllipticalArcTo", x: 0,   y: 0.375, extra: arc(0,   0.375, 0.5, 0.75) },
+    { t: "RelMoveTo",           x: 0, y: 0.5 },
+    { t: "RelEllipticalArcTo",  x: 1, y: 0.5, extra: arc(0.5, 0) },
+    { t: "RelEllipticalArcTo",  x: 0, y: 0.5, extra: arc(0.5, 1) },
   ]);
 }
 
 function triangle(): string {
   return geometrySection([
-    { t: "MoveTo", x: 0.5, y: 0 },
-    { t: "LineTo", x: 1,   y: 0.75 },
-    { t: "LineTo", x: 0,   y: 0.75 },
-    { t: "LineTo", x: 0.5, y: 0 },
+    { t: "RelMoveTo", x: 0.5, y: 0 },
+    { t: "RelLineTo", x: 1,   y: 1 },
+    { t: "RelLineTo", x: 0,   y: 1 },
+    { t: "RelLineTo", x: 0.5, y: 0 },
   ]);
 }
 
 function hexagon(): string {
   return geometrySection([
-    { t: "MoveTo", x: 0.25,  y: 0 },
-    { t: "LineTo", x: 0.75,  y: 0 },
-    { t: "LineTo", x: 1,     y: 0.375 },
-    { t: "LineTo", x: 0.75,  y: 0.75 },
-    { t: "LineTo", x: 0.25,  y: 0.75 },
-    { t: "LineTo", x: 0,     y: 0.375 },
-    { t: "LineTo", x: 0.25,  y: 0 },
+    { t: "RelMoveTo", x: 0.25, y: 0 },
+    { t: "RelLineTo", x: 0.75, y: 0 },
+    { t: "RelLineTo", x: 1,    y: 0.5 },
+    { t: "RelLineTo", x: 0.75, y: 1 },
+    { t: "RelLineTo", x: 0.25, y: 1 },
+    { t: "RelLineTo", x: 0,    y: 0.5 },
+    { t: "RelLineTo", x: 0.25, y: 0 },
   ]);
 }
 
 function rightArrow(): string {
   return geometrySection([
-    { t: "MoveTo", x: 0,     y: 0.1875 },
-    { t: "LineTo", x: 0.625, y: 0.1875 },
-    { t: "LineTo", x: 0.625, y: 0 },
-    { t: "LineTo", x: 1,     y: 0.375 },
-    { t: "LineTo", x: 0.625, y: 0.75 },
-    { t: "LineTo", x: 0.625, y: 0.5625 },
-    { t: "LineTo", x: 0,     y: 0.5625 },
-    { t: "LineTo", x: 0,     y: 0.1875 },
+    { t: "RelMoveTo", x: 0,    y: 0.25 },
+    { t: "RelLineTo", x: 0.7,  y: 0.25 },
+    { t: "RelLineTo", x: 0.7,  y: 0 },
+    { t: "RelLineTo", x: 1,    y: 0.5 },
+    { t: "RelLineTo", x: 0.7,  y: 1 },
+    { t: "RelLineTo", x: 0.7,  y: 0.75 },
+    { t: "RelLineTo", x: 0,    y: 0.75 },
+    { t: "RelLineTo", x: 0,    y: 0.25 },
   ]);
 }
 
@@ -208,19 +204,11 @@ export function getMasterPartXml(masterName: string): string {
 }
 
 /**
- * Same geometry as the master, but scaled to the actual shape Width/Height
- * so it can be embedded inline on a page shape. LibreOffice's Visio import
- * reliably renders inline geometry but often skips master resolution.
+ * Same geometry as the master, returned for inline embedding on a page shape.
+ * Coords are already in 0..1 normalized over Width/Height, so no rescaling
+ * is needed regardless of the instance shape's actual Width/Height.
  */
-export function getInlineGeometryXml(masterName: string, w: number, h: number): string {
+export function getInlineGeometryXml(masterName: string, _w: number, _h: number): string {
   const fn = GEOMETRY[masterName] ?? rect;
-  const raw = fn();
-  // Geometry uses a normalized 1×0.75 box. Scale X by w, Y by (h / 0.75).
-  // Find every `V="<number>"` inside `<Cell N="X"...` or `<Cell N="Y"...` and rescale.
-  const xScale = w;
-  const yScale = h / 0.75;
-  return raw.replace(/<Cell N="(X|Y)" V="([0-9.]+)"\/>/g, (_, axis, n) => {
-    const scaled = (parseFloat(n) * (axis === "X" ? xScale : yScale)).toFixed(4);
-    return `<Cell N="${axis}" V="${scaled}"/>`;
-  });
+  return fn();
 }

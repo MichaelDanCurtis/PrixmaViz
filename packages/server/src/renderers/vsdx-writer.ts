@@ -64,6 +64,10 @@ export async function writeVsdxFromIr(ir: GraphIR): Promise<Uint8Array> {
   zip.file("visio/pages/pages.xml", pagesIndexXml());
   zip.file("visio/pages/_rels/pages.xml.rels", pagesRelsXml());
   zip.file("visio/pages/page1.xml", buildPageXml(shapeXmls, connectorXmls));
+  // page1.xml.rels: required for LibreOffice — links the page back to
+  // any masters its shapes reference. Without it, LibreOffice can't
+  // resolve Master="N" attributes on page shapes.
+  zip.file("visio/pages/_rels/page1.xml.rels", page1RelsXml());
   zip.file("docProps/core.xml", corePropsXml());
   zip.file("docProps/app.xml", appPropsXml());
   zip.file("visio/masters/masters.xml", mastersIndexXml());
@@ -106,9 +110,23 @@ function rootRelsXml(): string {
 }
 
 function documentXml(): string {
+  // DocumentSettings with default style refs is required — LibreOffice's
+  // vsdx import filter resolves shape `LineStyle="3"` etc. against these.
+  // Empty <DocumentSettings/> means LibreOffice falls back to "invisible"
+  // styles and renders nothing.
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<VisioDocument xmlns="http://schemas.microsoft.com/office/visio/2012/main" xml:space="preserve">
-  <DocumentSettings/>
+<VisioDocument xmlns="http://schemas.microsoft.com/office/visio/2012/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xml:space="preserve">
+  <DocumentSettings TopPage="0" DefaultTextStyle="3" DefaultLineStyle="3" DefaultFillStyle="3" DefaultGuideStyle="4">
+    <GlueSettings>9</GlueSettings>
+    <SnapSettings>65847</SnapSettings>
+    <SnapExtensions>34</SnapExtensions>
+    <SnapAngles/>
+    <DynamicGridEnabled>1</DynamicGridEnabled>
+    <ProtectStyles>0</ProtectStyles>
+    <ProtectShapes>0</ProtectShapes>
+    <ProtectMasters>0</ProtectMasters>
+    <ProtectBkgnds>0</ProtectBkgnds>
+  </DocumentSettings>
 </VisioDocument>`;
 }
 
@@ -121,10 +139,29 @@ function documentRelsXml(): string {
 }
 
 function pagesIndexXml(): string {
+  // Fully-populated PageSheet (PageWidth, PageHeight, all the standard cells)
+  // is required for LibreOffice to render shapes on the page. Empty
+  // <PageSheet/> = no page extents = nothing drawn.
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Pages xmlns="http://schemas.microsoft.com/office/visio/2012/main" xml:space="preserve">
-  <Page ID="0" Name="Page-1">
-    <PageSheet/>
+<Pages xmlns="http://schemas.microsoft.com/office/visio/2012/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xml:space="preserve">
+  <Page ID="0" NameU="Page-1" Name="Page-1" ViewScale="1" ViewCenterX="4.25" ViewCenterY="5.5">
+    <PageSheet LineStyle="0" FillStyle="0" TextStyle="0">
+      <Cell N="PageWidth" V="8.5"/>
+      <Cell N="PageHeight" V="11"/>
+      <Cell N="ShdwOffsetX" V="0.125"/>
+      <Cell N="ShdwOffsetY" V="-0.125"/>
+      <Cell N="PageScale" V="1"/>
+      <Cell N="DrawingScale" V="1"/>
+      <Cell N="DrawingSizeType" V="0"/>
+      <Cell N="DrawingScaleType" V="0"/>
+      <Cell N="InhibitSnap" V="0"/>
+      <Cell N="UIVisibility" V="0"/>
+      <Cell N="ShdwType" V="0"/>
+      <Cell N="ShdwObliqueAngle" V="0"/>
+      <Cell N="ShdwScaleFactor" V="1"/>
+      <Cell N="DrawingResizeType" V="1"/>
+    </PageSheet>
+    <Rel r:id="rId1"/>
   </Page>
 </Pages>`;
 }
@@ -134,6 +171,18 @@ function pagesRelsXml(): string {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/page" Target="page1.xml"/>
 </Relationships>`;
+}
+
+function page1RelsXml(): string {
+  // Page-level relationships: link the page to all masters its shapes
+  // might reference. Simplest correct form is to link master1 (Process —
+  // the default fallback). LibreOffice requires SOME page→master rel even
+  // if the shape uses inline geometry.
+  const rels = ALL_MASTERS.map((_, i) =>
+    `<Relationship Id="rId${i + 1}" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="../masters/master${i + 1}.xml"/>`
+  ).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}</Relationships>`;
 }
 
 function mastersIndexXml(): string {
