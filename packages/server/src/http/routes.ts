@@ -1,5 +1,5 @@
 import type {
-  Annotation, Camera, Diagram, DiagramEngine, DiagramId, DiagramKind, Edge, GraphIR, Node, PatchOp, ServerToClient, Tile,
+  Annotation, Camera, Diagram, DiagramEngine, DiagramId, DiagramKind, GraphIR, PatchOp, ServerToClient, Tile,
 } from "@prixmaviz/shared";
 import { emptyGraphIR, emptyMeta, inferKind, newAnnotationId, newTileId } from "@prixmaviz/shared";
 import type postgres from "postgres";
@@ -8,6 +8,7 @@ import { applyPatch } from "../ir/engine";
 import { renderDiagram } from "../render";
 import type { WsHub } from "../ws/broadcast";
 import { getHitTester } from "../hit-test";
+import { canStructuredVsdx, maybeExtractLayout } from "../vsdx/export-helpers";
 import { authenticate } from "../auth/bearer";
 import {
   createDiagram as dbCreateDiagram,
@@ -644,46 +645,6 @@ async function exportVsdxRoute(
   });
 }
 
-function canStructuredVsdx(engine: DiagramEngine): boolean {
-  return engine === "mermaid" || engine === "d2" || engine === "graphviz";
-}
-
-async function maybeExtractLayout(
-  engine: DiagramEngine,
-  ir: GraphIR,
-  dsl: string | null,
-): Promise<GraphIR> {
-  // For mermaid: original IR has the semantic shapes/labels. Use graphviz
-  // ONLY for layout — then merge `_x`/`_y` back into the original IR so we
-  // don't lose stencil hints across the round-trip.
-  if (engine === "mermaid") {
-    const { extractGraphFromDot } = await import("../renderers/graphviz-extractor");
-    const laidOut = await extractGraphFromDot(irToDot(ir));
-    return mergeLayoutBack(ir, laidOut);
-  }
-  if (engine === "graphviz" && dsl) {
-    const { extractGraphFromDot } = await import("../renderers/graphviz-extractor");
-    return await extractGraphFromDot(dsl);
-  }
-  if (engine === "d2" && dsl) {
-    const { extractGraphFromD2 } = await import("../renderers/d2-extractor");
-    return await extractGraphFromD2(dsl);
-  }
-  return ir;
-}
-
-function mergeLayoutBack(original: GraphIR, laidOut: GraphIR): GraphIR {
-  const nodes: GraphIR["nodes"] = {};
-  for (const [id, n] of Object.entries(original.nodes) as Array<[string, Node]>) {
-    const laidNode = laidOut.nodes[id];
-    nodes[id] = {
-      ...n,
-      ...(laidNode ? { _x: laidNode._x, _y: laidNode._y } : {}),
-    };
-  }
-  return { ...original, nodes };
-}
-
 const VSDX_MAGIC = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
 
 async function importVsdxRoute(
@@ -758,16 +719,3 @@ async function importVsdxRoute(
   });
 }
 
-function irToDot(ir: GraphIR): string {
-  const lines = ["digraph G { rankdir=" + (ir.layout?.direction ?? "TB") + ";"];
-  for (const n of Object.values(ir.nodes) as Node[]) {
-    const shape = n.shape ?? "box";
-    lines.push(`  ${n.id} [label=${JSON.stringify(n.label ?? n.id)}, shape="${shape}"];`);
-  }
-  for (const e of Object.values(ir.edges) as Edge[]) {
-    const lbl = e.label ? ` [label=${JSON.stringify(e.label)}]` : "";
-    lines.push(`  ${e.from} -> ${e.to}${lbl};`);
-  }
-  lines.push("}");
-  return lines.join("\n");
-}

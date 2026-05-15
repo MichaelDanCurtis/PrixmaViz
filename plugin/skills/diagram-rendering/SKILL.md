@@ -43,10 +43,44 @@ Default to Mermaid is wrong for many domains. The user has 28+ engines available
 | UML class | **PlantUML** | Proper UML semantics |
 | Process / business | **BPMN** | BPM-standard notation |
 | Dependency / call graph | **Graphviz / dot** | Algorithmic layout |
+| Microsoft Visio (`.vsdx`) input/output | **vsdx** | Drop-in for users who live in Visio — see "Working with Visio files" below |
 
 **Override rule:** if the user explicitly names an engine, use that engine — even if the matrix would have picked differently. Respect explicit choice.
 
 **Tie-breaker:** when uncertain between two reasonable choices, pick the one with cleaner output for that family.
+
+## Working with Visio files (`.vsdx`)
+
+PrixmaViz can both **read** real Visio files (import a `.vsdx` the user has) and **write** them (produce a `.vsdx` from a diagram you built).
+
+### "Make me a Visio diagram of X"
+
+Visio files are bytes, not a DSL — you can't write Visio XML directly via `render_dsl`. The workflow:
+
+1. **Build the diagram in a graph engine** that can be exported. Pick `mermaid`, `d2`, or `graphviz` — those three have IR extractors that produce Visio-editable shapes. Avoid `passthrough` engines (PlantUML sequence, Vega-Lite, etc.) when the user wants `.vsdx` — those export as image-embed inside a vsdx, not editable shapes.
+2. **Call `create_diagram` with `engine: "mermaid"` (recommended)** and `kind: "graph"`. Use shape hints that map to Visio stencils: `rect`/`process`, `diamond`/`decision`, `round`/`terminator`, `cylinder`/`database`, `cloud`, `subroutine` (predefined process), `manualInput`, `display`, `parallelogram`/`data`, `document`. Plus `circle`, `ellipse`, `triangle`, `pentagon`, `hexagon`, `octagon`, `star`, `arrow`.
+3. **Populate the IR with `apply_patch`** using `add_node` and `add_edge` ops.
+4. **Call `export_vsdx({ diagramId })`** to get base64 bytes back.
+5. **Save the bytes to a `.vsdx` file** the user can open. In Claude Code:
+   ```
+   Write tool: path=~/Desktop/<name>.vsdx, content=<decoded base64>
+   ```
+   (Use Bash + base64 if Write doesn't handle binary cleanly.)
+
+### "Convert this Visio file to Mermaid"
+
+The user pasted a `.vsdx` path or asked you to translate one:
+
+1. Read the file bytes, base64-encode them, call `import_vsdx({ name, base64Source })` — creates a vsdx-engine tile.
+2. Call `analyze_vsdx({ diagramId })` — returns structured JSON (`pages`, each with `shapes` and `connectors`).
+3. **You** translate that JSON into Mermaid/D2/BPMN DSL (this is the host-side AI translation).
+4. Call `create_diagram` with the translated DSL — a SECOND tile appears next to the imported vsdx.
+
+The original vsdx stays available — you can `export_vsdx` it later and get byte-identical bytes back. Re-exporting the translated Mermaid diagram produces a NEW vsdx with structured shapes.
+
+### Common pitfall
+
+`render_dsl({ engine: "vsdx", source: "..." })` is meaningless — vsdx files are binary OPC ZIPs, not text DSLs. The MCP server rejects it. Always use the build-and-export workflow above for "produce a Visio file" requests.
 
 ## The continuous-loop pattern
 
@@ -129,5 +163,8 @@ You:   [render the diagram]
 - `get_view_url()` — **call after every render**; returns the workspace URL where the diagram is viewable
 - `update_tile(tileId, patch)` — move/resize/focus
 - `set_view({camera?, arrange?})` — viewport + auto-arrange
+- `import_vsdx(name, base64Source)` — import a Microsoft Visio (.vsdx) file
+- `analyze_vsdx(diagramId)` — parse an imported vsdx into structured JSON for AI-side translation
+- `export_vsdx(diagramId)` — export any diagram as `.vsdx` bytes (base64); structured shapes for mermaid/d2/graphviz, image-embed otherwise
 
 When the user explicitly invokes the `/prixmaviz` slash command, use it for direct workspace operations.

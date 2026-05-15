@@ -9,6 +9,7 @@ import { arrange } from "../canvas/arrange";
 import type { KrokiClient } from "../kroki/client";
 import { renderDiagram } from "../render";
 import { parseVsdx } from "../renderers/vsdx-parse";
+import { canStructuredVsdx, maybeExtractLayout } from "../vsdx/export-helpers";
 import type { WsHub } from "../ws/broadcast";
 import {
   createDiagram as dbCreateDiagram,
@@ -212,6 +213,18 @@ export const TOOLS: ToolDef[] = [
       required: ["diagramId"],
     },
     run: analyzeVsdxImpl,
+  },
+  {
+    name: "export_vsdx",
+    description: "Export a diagram as a Microsoft Visio (.vsdx) file. Returns base64-encoded bytes. For graph diagrams (Mermaid/D2/Graphviz), produces a Visio-editable file with real shapes. For other engines, produces an image-embed vsdx. ALWAYS call this after building a graph diagram when the user asks for Visio/vsdx output — then save the bytes to a local .vsdx file path the user can open.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+      },
+      required: ["diagramId"],
+    },
+    run: exportVsdxImpl,
   },
 ];
 
@@ -557,5 +570,40 @@ async function analyzeVsdxImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   }
   const doc = await parseVsdx(row.bytes);
   return doc;
+}
+
+async function exportVsdxImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const diagramId = args.diagramId as string;
+  if (!diagramId) throw new Error("diagramId is required");
+  const row = await dbGetDiagram(ctx.sql, ctx.workspaceId, diagramId);
+  if (!row) throw new Error("diagram not found");
+
+  let bytes: Uint8Array;
+  let strategy: "verbatim" | "structured" | "image-embed";
+  if (row.engine === "vsdx" && row.kind === "binary" && row.bytes) {
+    bytes = row.bytes;
+    strategy = "verbatim";
+  } else if (row.kind === "graph" && row.ir && canStructuredVsdx(row.engine)) {
+    const { writeVsdxFromIr } = await import("../renderers/vsdx-writer");
+    const ir = await maybeExtractLayout(row.engine, row.ir, row.dsl);
+    const result = await writeVsdxFromIr(ir);
+    bytes = result.bytes;
+    if (result.warnings.length) {
+      console.warn("[vsdx-export-mcp]", diagramId, result.warnings);
+    }
+    strategy = "structured";
+  } else {
+    if (!row.svg) throw new Error("no rendered SVG to embed");
+    const { writeVsdxFromSvg } = await import("../renderers/vsdx-writer-fallback");
+    bytes = await writeVsdxFromSvg(row.svg);
+    strategy = "image-embed";
+  }
+
+  return {
+    base64Source: Buffer.from(bytes).toString("base64"),
+    byteCount: bytes.length,
+    suggestedFilename: `${row.slug}.vsdx`,
+    strategy,
+  };
 }
 
