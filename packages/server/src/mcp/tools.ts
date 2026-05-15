@@ -186,6 +186,19 @@ export const TOOLS: ToolDef[] = [
     inputSchema: { type: "object", properties: {} },
     run: getViewUrlImpl,
   },
+  {
+    name: "import_vsdx",
+    description: "Import a Microsoft Visio (.vsdx) file into the workspace. Renders natively via the server-side converter. Returns the new diagram ID.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        base64Source: { type: "string", description: "Base64-encoded .vsdx file bytes" },
+      },
+      required: ["name", "base64Source"],
+    },
+    run: importVsdxImpl,
+  },
 ];
 
 export async function dispatchTool(
@@ -218,6 +231,7 @@ function dbDiagramToDomain(d: DbDiagram): Diagram {
     kind: d.kind,
     ir: d.ir ?? undefined,
     dsl: d.dsl ?? undefined,
+    bytes: d.bytes ?? undefined,
     meta: (d.meta as unknown as Diagram["meta"]) ?? emptyMeta(),
   };
 }
@@ -479,5 +493,41 @@ async function getViewUrlImpl(_args: Record<string, unknown>, ctx: ToolCtx) {
     url,
     note: "Open this URL in any browser to see the rendered diagrams and annotate them.",
   };
+}
+
+const VSDX_MAGIC = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+
+async function importVsdxImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const name = args.name as string;
+  const base64Source = args.base64Source as string;
+  if (!name || !base64Source) throw new Error("name and base64Source are required");
+  const bytes = new Uint8Array(Buffer.from(base64Source, "base64"));
+  if (bytes.length < 4 || !VSDX_MAGIC.every((b, i) => bytes[i] === b)) {
+    throw new Error("not a valid .vsdx file (missing ZIP magic)");
+  }
+  const maxBytes = Number(process.env.VSDX_MAX_BYTES ?? "5242880");
+  if (bytes.length > maxBytes) {
+    throw new Error(`file exceeds VSDX_MAX_BYTES (${maxBytes})`);
+  }
+  const slug = slugify(name);
+
+  const row = await dbCreateDiagram(ctx.sql, {
+    workspaceId: ctx.workspaceId,
+    slug,
+    name,
+    engine: "vsdx",
+    kind: "binary",
+    bytes,
+  });
+  const diagram = dbDiagramToDomain(row);
+  const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
+  if (!outcome.ok) {
+    const { deleteDiagram } = await import("../db/diagrams");
+    await deleteDiagram(ctx.sql, ctx.workspaceId, row.id);
+    throw new Error(`render failed: ${outcome.error}`);
+  }
+  await dbUpdateDiagram(ctx.sql, ctx.workspaceId, row.id, { svg: outcome.result.svg });
+  broadcast(ctx.hub, ctx.workspaceId, diagram, outcome.result.svg, outcome.warnings);
+  return { diagramId: row.id, slug: row.slug, render: outcome.result };
 }
 
