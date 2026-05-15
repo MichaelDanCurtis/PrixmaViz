@@ -3,6 +3,7 @@ import { useAppStore } from "../store";
 import { Tile } from "./Tile";
 import { EmptyStateCards } from "./EmptyStateCards";
 import { api, authFetch } from "../lib/api";
+import { toastError } from "../lib/toast";
 import { clampCamera } from "@prixmaviz/shared";
 
 const DEFAULT_PROMO_CARDS: Array<{ name: string; href: string; tagline: string }> = [];
@@ -55,7 +56,7 @@ export function InfiniteCanvas() {
       const res = await authFetch("/api/import", { method: "POST", body: fd });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "import failed" }));
-        alert(`Visio import failed: ${(err as { error?: string }).error ?? "unknown error"}`);
+        toastError(`Visio import failed: ${(err as { error?: string }).error ?? "unknown error"}`);
         return;
       }
       const data = await res.json() as { diagramId: string; slug: string };
@@ -77,10 +78,10 @@ export function InfiniteCanvas() {
         }),
       });
       if (!tileRes.ok) {
-        alert("Visio import succeeded but tile creation failed");
+        toastError("Visio import succeeded but tile creation failed");
       }
     } catch (err) {
-      alert(`Visio import failed: ${err instanceof Error ? err.message : String(err)}`);
+      toastError(`Visio import failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

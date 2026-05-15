@@ -3,6 +3,7 @@ import type { Tile as TileT } from "@prixmaviz/shared";
 import { SNAP_GRID } from "@prixmaviz/shared";
 import { useAppStore } from "../store";
 import { api, authFetch } from "../lib/api";
+import { toastError } from "../lib/toast";
 import { DiagramView } from "./DiagramView";
 import { AnnotationLayer } from "./AnnotationLayer";
 import { PublicViewToggle } from "./PublicViewToggle";
@@ -25,7 +26,7 @@ export function Tile({ tile }: Props) {
       await downloadDiagramAs(tile.diagramId, tile.diagramSlug, format, svg);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`${format.toUpperCase()} export failed: ${msg}`);
+      toastError(`${format.toUpperCase()} export failed: ${msg}`);
     }
   }
 

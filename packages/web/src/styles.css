@@ -511,3 +511,46 @@ select {
   color: var(--muted); font-size: 14px;
 }
 .public-error { color: var(--err); }
+
+.toasts {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 2000;
+  pointer-events: none;
+  max-width: 380px;
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: white;
+  font-size: 14px;
+  line-height: 1.4;
+  animation: toast-in 0.2s ease-out;
+}
+@keyframes toast-in {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.toast-error { border-left: 3px solid #d33; }
+.toast-success { border-left: 3px solid #2a8; }
+.toast-info { border-left: 3px solid #4a90e2; }
+.toast-message { flex: 1; }
+.toast-dismiss {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  padding: 0;
+  color: #888;
+}
+.toast-dismiss:hover { color: #222; }
