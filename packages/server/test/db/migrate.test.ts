@@ -43,7 +43,7 @@ describe("runMigrations", () => {
     // Capture migration count after first apply.
     const before = await verifySql`SELECT COUNT(*)::int as n FROM schema_migrations`;
     const initialCount = before[0].n;
-    expect(initialCount).toBeGreaterThanOrEqual(6); // 0001..0006
+    expect(initialCount).toBeGreaterThanOrEqual(8); // 0001..0008
 
     // Run again — should be idempotent.
     await runMigrations(TEST_DB_URL, migrationsDir);
@@ -131,12 +131,75 @@ describe("runMigrations", () => {
     await verify.end();
   });
 
-  it("0004/0005/0006 are individually idempotent on an already-migrated DB", async () => {
+  it("0007 adds diagrams.parent_path with default '' and its composite index", async () => {
+    const sql = postgres(TEST_DB_URL);
+    await dropAll(sql);
+    await sql.end();
+    await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
+
+    const verify = postgres(TEST_DB_URL);
+    const cols = await verify`
+      SELECT column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='diagrams'
+        AND column_name='parent_path'
+    `;
+    expect(cols).toHaveLength(1);
+    expect(cols[0]?.data_type).toBe("text");
+    expect(cols[0]?.is_nullable).toBe("NO");
+    // Postgres normalises the default literal — accept either '' or ''::text
+    expect(String(cols[0]?.column_default ?? "")).toMatch(/^''(?:::text)?$/);
+
+    const idx = await verify`
+      SELECT indexname FROM pg_indexes WHERE schemaname='public' AND tablename='diagrams'
+        AND indexname='idx_diagrams_parent_path'
+    `;
+    expect(idx).toHaveLength(1);
+    await verify.end();
+  });
+
+  it("0008 adds diagrams.pinned + last_opened_at + partial recent index", async () => {
+    const sql = postgres(TEST_DB_URL);
+    await dropAll(sql);
+    await sql.end();
+    await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
+
+    const verify = postgres(TEST_DB_URL);
+    const cols = await verify`
+      SELECT column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='diagrams'
+        AND column_name IN ('pinned', 'last_opened_at')
+    `;
+    const byName = Object.fromEntries(
+      cols.map((r) => [r.column_name as string, r as Record<string, unknown>]),
+    );
+    expect(byName.pinned).toBeDefined();
+    expect(byName.pinned?.data_type).toBe("boolean");
+    expect(byName.pinned?.is_nullable).toBe("NO");
+    expect(String(byName.pinned?.column_default ?? "").toLowerCase()).toBe("false");
+    expect(byName.last_opened_at).toBeDefined();
+    expect(byName.last_opened_at?.data_type).toBe("timestamp with time zone");
+    expect(byName.last_opened_at?.is_nullable).toBe("YES");
+
+    // Partial index exists AND is partial (has indpred non-null).
+    const idx = await verify<{ indexdef: string }[]>`
+      SELECT indexdef FROM pg_indexes WHERE schemaname='public' AND tablename='diagrams'
+        AND indexname='idx_diagrams_recent'
+    `;
+    expect(idx).toHaveLength(1);
+    expect(idx[0]?.indexdef).toMatch(/WHERE \(last_opened_at IS NOT NULL\)/);
+    expect(idx[0]?.indexdef).toMatch(/DESC/);
+    await verify.end();
+  });
+
+  it("0004/0005/0006/0007/0008 are individually idempotent on an already-migrated DB", async () => {
     // Verifies the spec promise that the wave-1 migrations all use
     // IF NOT EXISTS so they can safely be re-applied even if their
     // schema_migrations row is somehow missing or rebuilt. We replay
-    // ONLY those three (not the older non-idempotent 0001/0002) by
-    // deleting their schema_migrations entries.
+    // ONLY those that opted into idempotency (not the older
+    // non-idempotent 0001/0002) by deleting their schema_migrations
+    // entries.
     const sql = postgres(TEST_DB_URL);
     await dropAll(sql);
     await sql.end();
@@ -148,7 +211,9 @@ describe("runMigrations", () => {
     await reset`DELETE FROM schema_migrations WHERE filename IN (
       '0004_diagrams_fts.sql',
       '0005_workspace_owner.sql',
-      '0006_annotation_resolution.sql'
+      '0006_annotation_resolution.sql',
+      '0007_diagram_folders.sql',
+      '0008_diagram_pinned_recents.sql'
     )`;
     await reset.end();
 
