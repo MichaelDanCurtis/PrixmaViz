@@ -7,6 +7,8 @@ import {
 } from "../store";
 import { api, authFetch } from "../lib/api";
 import { basename } from "../lib/path";
+import { toastError, toastInfo, toastSuccess } from "../lib/toast";
+import type { ExportFormat, BulkPackaging } from "../lib/export";
 import type { LibraryEntry, Tile } from "@prixmaviz/shared";
 
 /**
@@ -32,8 +34,6 @@ function focusExistingTile(tile: Tile): () => void {
   });
   store.setRecentlyFocusedTileId(tile.id);
   const handle = setTimeout(() => {
-    // Only clear if this is still the most-recent focus — guards against
-    // racing focuses where a newer pulse would otherwise be killed early.
     if (useAppStore.getState().recentlyFocusedTileId === tile.id) {
       useAppStore.getState().setRecentlyFocusedTileId(null);
     }
@@ -41,15 +41,8 @@ function focusExistingTile(tile: Tile): () => void {
   return () => clearTimeout(handle);
 }
 
-// Exported for tests.
 export const _focusExistingTile = focusExistingTile;
 
-/**
- * Library thumbnails go through an auth'd fetch → blob URL because the
- * server requires `Authorization: Bearer <workspaceId>` on `/api/library/
- * <slug>/thumb`, and browsers don't let you attach headers to a bare
- * `<img src>`. Without this, every thumbnail 401s and shows blank.
- */
 function LibraryThumb({ slug }: { slug: string }) {
   const [blobUrl, setBlobUrl] = useState<string>("");
   useEffect(() => {
@@ -80,13 +73,22 @@ export function Library() {
   // Issue #4: client-side sort key + setter, persisted to localStorage.
   const librarySortKey = useAppStore((s) => s.librarySortKey);
   const setLibrarySortKey = useAppStore((s) => s.setLibrarySortKey);
+  // Issue #2: bulk-select state.
+  const selectMode = useAppStore((s) => s.selectMode);
+  const selectedSlugs = useAppStore((s) => s.selectedSlugs);
+  const lastSelectedSlug = useAppStore((s) => s.lastSelectedSlug);
+  const setSelectMode = useAppStore((s) => s.setSelectMode);
+  const toggleSelected = useAppStore((s) => s.toggleSelected);
+  const selectRange = useAppStore((s) => s.selectRange);
+  const selectAll = useAppStore((s) => s.selectAll);
+  const clearSelection = useAppStore((s) => s.clearSelection);
   const [search, setSearch] = useState("");
-  // Track the pending "clear pulse" timeout so we can cancel it on unmount
-  // or when a new focus pulse supersedes it.
+  const [bulkFormat, setBulkFormat] = useState<ExportFormat>("svg");
+  const [bulkPackaging, setBulkPackaging] = useState<BulkPackaging>("zip");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ completed: number; total: number } | null>(null);
   const cancelFocusRef = useRef<(() => void) | null>(null);
-  // Issue #4: scroll-affordance state. We mirror the list's "is there more
-  // above/below?" answer into data attributes that drive the CSS gradient
-  // overlays — pure CSS can't see scroll position, so we have to.
+  // Issue #4: scroll-affordance state.
   const listRef = useRef<HTMLDivElement | null>(null);
   const [scrollState, setScrollState] = useState<{
     canScrollUp: boolean;
@@ -99,17 +101,12 @@ export function Library() {
     );
   }, [setLibrary, setError]);
 
-  // Cancel any pending pulse-clear when the Library unmounts so the timeout
-  // doesn't fire against a stale store.
   useEffect(() => {
     return () => {
       if (cancelFocusRef.current) cancelFocusRef.current();
     };
   }, []);
 
-  // Issue #4: sort first (stable, persisted), then filter by search. This
-  // ordering matches the issue's "sort → filter → render" pipeline so the
-  // user-visible count and the rendered order line up.
   const sorted = useMemo(
     () => [...library].sort((a, b) => compareLibraryEntries(a, b, librarySortKey)),
     [library, librarySortKey],
@@ -125,9 +122,6 @@ export function Library() {
     );
   }, [sorted, search]);
 
-  // Issue #4: update scroll-affordance state on layout changes, scroll
-  // events, and any time the rendered list length changes. The 1px slack on
-  // each end avoids flicker from sub-pixel fractional scrollTop values.
   useLayoutEffect(() => {
     const el = listRef.current;
     if (!el) return;
@@ -156,19 +150,10 @@ export function Library() {
     try {
       const slug = basename(entry.path).replace(/\.pviz$/, "");
 
-      // Issue #3: client-side dedup. If a tile for this diagram is already
-      // on the canvas, don't create another — just pan + pulse the existing
-      // one. The server still has a parallel check (belt-and-suspenders for
-      // multi-tab races); see POST /api/tiles in packages/server/src/http/routes.ts.
       const existing = useAppStore.getState().tiles.find((t) => t.diagramSlug === slug);
       if (existing) {
-        // Cancel any in-flight pulse-clear from a previous focus so the
-        // earlier setTimeout doesn't wipe this new pulse early.
         if (cancelFocusRef.current) cancelFocusRef.current();
         cancelFocusRef.current = focusExistingTile(existing);
-        // Still load + bind to the legacy single-diagram surface so the
-        // sidebar `active` class lights up and the diagram editor (if any)
-        // reflects the focused diagram.
         const result = await api.loadBySlug(slug);
         setDiagram({
           id: result.diagramId,
@@ -184,7 +169,6 @@ export function Library() {
       }
 
       const result = await api.loadBySlug(slug);
-      // create a tile at viewport center
       const camera = useAppStore.getState().camera;
       await api.createTile({
         diagramId: result.diagramId,
@@ -193,7 +177,6 @@ export function Library() {
         y: camera.y + 60,
         w: 600, h: 400,
       });
-      // also keep current diagram = first opened (for legacy single-canvas paths)
       setDiagram({
         id: result.diagramId,
         name: entry.name,
@@ -209,9 +192,7 @@ export function Library() {
     }
   }
 
-  // Issue #4: header count format. Show "12 / 47" when a search filter is
-  // active so the user always knows both the visible-match total and the
-  // workspace total.
+  // Issue #4: header count format.
   const total = library.length;
   const searchActive = search.length > 0;
   const countLabel = searchActive ? `${filtered.length} / ${total}` : `${total}`;
@@ -219,8 +200,59 @@ export function Library() {
     ? `${filtered.length} match${filtered.length === 1 ? "" : "es"} of ${total} diagram${total === 1 ? "" : "s"}`
     : `${total} diagram${total === 1 ? "" : "s"}`;
 
+  // Issue #2: visible-slug list + click handler + bulk export.
+  const visibleSlugs = useMemo(
+    () => filtered.map((e) => basename(e.path).replace(/\.pviz$/, "")),
+    [filtered],
+  );
+
+  function onItemClick(entry: LibraryEntry, slug: string, e: React.MouseEvent) {
+    if (!selectMode) {
+      open(entry);
+      return;
+    }
+    if (e.shiftKey && lastSelectedSlug) {
+      selectRange(visibleSlugs, lastSelectedSlug, slug);
+    } else {
+      toggleSelected(slug);
+    }
+  }
+
+  async function runBulkExport() {
+    const slugs = Array.from(selectedSlugs);
+    if (slugs.length === 0) return;
+    setBulkBusy(true);
+    setBulkProgress({ completed: 0, total: slugs.length });
+    try {
+      const { exportBulk } = await import("../lib/export");
+      const result = await exportBulk(
+        slugs,
+        bulkFormat,
+        bulkPackaging,
+        (p) => setBulkProgress({ completed: p.completed, total: p.total }),
+      );
+      if (result.failureCount === 0) {
+        toastSuccess(`Exported ${result.successCount} diagram${result.successCount === 1 ? "" : "s"}`);
+      } else if (result.successCount === 0) {
+        toastError(`Bulk export failed for all ${result.failureCount} diagrams`);
+      } else {
+        toastInfo(
+          `Exported ${result.successCount} of ${result.successCount + result.failureCount} — ${result.failureCount} failed`,
+        );
+      }
+    } catch (err) {
+      toastError(`Bulk export error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBulkBusy(false);
+      setBulkProgress(null);
+    }
+  }
+
+  const allVisibleSelected =
+    visibleSlugs.length > 0 && visibleSlugs.every((s) => selectedSlugs.has(s));
+
   return (
-    <aside className="library">
+    <aside className={`library${selectMode ? " library-select-mode" : ""}`}>
       <div className="library-header">
         <div className="library-title">Library</div>
         <span
@@ -231,6 +263,13 @@ export function Library() {
         >
           {countLabel}
         </span>
+        <button
+          className={`library-select-toggle${selectMode ? " active" : ""}`}
+          onClick={() => setSelectMode(!selectMode)}
+          title={selectMode ? "Exit select mode" : "Select multiple diagrams"}
+        >
+          {selectMode ? "Done" : "Select"}
+        </button>
       </div>
       <div className="library-controls">
         <input
@@ -253,6 +292,19 @@ export function Library() {
           ))}
         </select>
       </div>
+      {selectMode && (
+        <div className="library-select-row">
+          <button
+            className="library-select-link"
+            onClick={() => (allVisibleSelected ? clearSelection() : selectAll(visibleSlugs))}
+          >
+            {allVisibleSelected ? "Clear selection" : `Select all (${visibleSlugs.length})`}
+          </button>
+          <span className="library-select-count">
+            {selectedSlugs.size} selected
+          </span>
+        </div>
+      )}
       <div
         className="library-list-wrap"
         data-can-scroll-up={scrollState.canScrollUp ? "true" : "false"}
@@ -263,12 +315,28 @@ export function Library() {
           {filtered.map((entry) => {
             const slug = basename(entry.path).replace(/\.pviz$/, "");
             const active = diagram?.name === entry.name;
+            const checked = selectedSlugs.has(slug);
+            const itemClasses = [
+              "library-item",
+              active ? "active" : "",
+              selectMode ? "select-mode" : "",
+              checked ? "selected" : "",
+            ].filter(Boolean).join(" ");
             return (
               <div
                 key={entry.path}
-                className={`library-item ${active ? "active" : ""}`}
-                onClick={() => open(entry)}
+                className={itemClasses}
+                onClick={(e) => onItemClick(entry, slug, e)}
               >
+                {selectMode && (
+                  <input
+                    type="checkbox"
+                    className="library-checkbox"
+                    checked={checked}
+                    onChange={() => { /* row onClick handles it */ }}
+                    aria-label={`Select ${entry.name}`}
+                  />
+                )}
                 <div className="library-thumb">
                   <LibraryThumb slug={slug} />
                 </div>
@@ -288,6 +356,57 @@ export function Library() {
           })}
         </div>
       </div>
+      {selectMode && selectedSlugs.size > 0 && (
+        <div className="library-bulk-bar" role="region" aria-label="Bulk export">
+          <div className="library-bulk-line">
+            <span className="library-bulk-count">
+              {selectedSlugs.size} selected
+            </span>
+            <label className="library-bulk-field">
+              <span>Format</span>
+              <select
+                value={bulkFormat}
+                onChange={(e) => setBulkFormat(e.target.value as ExportFormat)}
+                disabled={bulkBusy}
+              >
+                <option value="svg">SVG</option>
+                <option value="png">PNG</option>
+                <option value="jpeg">JPEG</option>
+                <option value="vsdx">VSDX</option>
+              </select>
+            </label>
+            <label className="library-bulk-field">
+              <span>Packaging</span>
+              <select
+                value={bulkPackaging}
+                onChange={(e) => setBulkPackaging(e.target.value as BulkPackaging)}
+                disabled={bulkBusy}
+              >
+                <option value="zip">Single .zip</option>
+                <option value="individual">Individual files</option>
+              </select>
+            </label>
+          </div>
+          <div className="library-bulk-line">
+            <button
+              className="library-bulk-action"
+              onClick={runBulkExport}
+              disabled={bulkBusy || selectedSlugs.size === 0}
+            >
+              {bulkBusy && bulkProgress
+                ? `Exporting ${bulkProgress.completed}/${bulkProgress.total}…`
+                : `Export ${selectedSlugs.size}`}
+            </button>
+            <button
+              className="library-bulk-secondary"
+              onClick={clearSelection}
+              disabled={bulkBusy}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }
