@@ -3,7 +3,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 export const TOOLS: Tool[] = [
   {
     name: "create_diagram",
-    description: "Create a new diagram in your PrixmaViz workspace and render it.",
+    description: "Create a new diagram in your PrixmaViz workspace and render it. `engine` is one of: actdiag, blockdiag, bpmn, bytefield, c4plantuml, d2, dbml, diagramsnet, ditaa, erd, excalidraw, graphviz, mermaid, nomnoml, nwdiag, packetdiag, pikchr, plantuml, rackdiag, seqdiag, structurizr, svgbob, symbolator, tikz, umlet, vega, vegalite, vsdx, wavedrom, wireviz. `kind` is `graph` (uses IR + apply_patch) or `passthrough` (uses initialDsl + render_dsl).",
     inputSchema: {
       type: "object",
       properties: {
@@ -42,11 +42,11 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "load_diagram",
-    description: "Load a saved diagram by slug into the workspace.",
+    description: "Load a saved diagram by slug into the workspace. Slug is the kebab-case identifier returned by list_diagrams in each entry's `slug` field.",
     inputSchema: {
       type: "object",
-      properties: { name: { type: "string" } },
-      required: ["name"],
+      properties: { slug: { type: "string" } },
+      required: ["slug"],
     },
   },
   {
@@ -62,15 +62,15 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "render_dsl",
-    description: "Render arbitrary DSL via the chosen engine. Saves if name provided.",
+    description: "Render arbitrary diagram DSL via the chosen engine. Pass `engine` (e.g. mermaid, plantuml, d2, graphviz, vegalite, wavedrom, bytefield, structurizr, ditaa, pikchr, svgbob, tikz) and `dsl` (the textual diagram source). Optionally `name` to persist as a saved diagram.",
     inputSchema: {
       type: "object",
       properties: {
         engine: { type: "string" },
-        source: { type: "string" },
+        dsl: { type: "string" },
         name: { type: "string" },
       },
-      required: ["engine", "source"],
+      required: ["engine", "dsl"],
     },
   },
   {
