@@ -86,6 +86,9 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
   const selectRange = useAppStore((s) => s.selectRange);
   const selectAll = useAppStore((s) => s.selectAll);
   const clearSelection = useAppStore((s) => s.clearSelection);
+  // Issue #10: snap-to-grid toggle in library footer.
+  const snapEnabled = useAppStore((s) => s.snapEnabled);
+  const setSnapEnabled = useAppStore((s) => s.setSnapEnabled);
   const [search, setSearch] = useState("");
   const [bulkFormat, setBulkFormat] = useState<ExportFormat>("svg");
   const [bulkPackaging, setBulkPackaging] = useState<BulkPackaging>("zip");
@@ -411,8 +414,17 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
           </div>
         </div>
       )}
-      {onOpenSettings && (
-        <div className="library-footer">
+      <div className="library-footer">
+        <label className="library-snap-toggle">
+          <input
+            type="checkbox"
+            checked={snapEnabled}
+            onChange={(e) => setSnapEnabled(e.target.checked)}
+          />
+          <span>Snap to grid</span>
+          <span className="kbd-hint">G</span>
+        </label>
+        {onOpenSettings && (
           <button
             type="button"
             className="library-settings-button"
@@ -423,8 +435,8 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
           >
             ⚙ Workspace settings
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </aside>
   );
 }

@@ -8,9 +8,13 @@ import { Footer } from "./components/Footer";
 import { WelcomePanel } from "./components/WelcomePanel";
 import { StarterTemplatesGallery, hasSkippedTemplates } from "./components/StarterTemplatesGallery";
 import { Toasts } from "./components/Toasts";
+import { Minimap } from "./components/Minimap";
+import { CommandPalette } from "./components/CommandPalette";
+import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { PublicDiagram } from "./pages/PublicDiagram";
 import { ensureWorkspaceId } from "./lib/api";
 import { useAppStore } from "./store";
+import { useKeyboardShortcuts } from "./lib/use-keyboard-shortcuts";
 
 function getPublicDiagramId(): string | null {
   const m = /^\/p\/([a-z0-9_-]+)\/?$/i.exec(window.location.pathname);
@@ -59,6 +63,9 @@ function WorkspaceApp() {
 
   // Hooks must be called unconditionally — useWebSocket gates internally on workspaceId.
   useWebSocket();
+  // Issue #10 — register global keyboard shortcuts. The hook itself guards
+  // against firing while the user types into an input/textarea/contenteditable.
+  useKeyboardShortcuts();
 
   useEffect(() => {
     // @ts-ignore — __TAURI__ exists only when running inside the Tauri webview
@@ -106,6 +113,9 @@ function WorkspaceApp() {
         <InfiniteCanvas />
       </div>
       <Footer workspaceUrl={window.location.href} />
+      <Minimap />
+      <CommandPalette />
+      <ShortcutsHelp />
       {!welcomeSeen && !welcomeDismissed && (
         <WelcomePanel
           workspaceUrl={window.location.href}

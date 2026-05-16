@@ -961,3 +961,173 @@ div.tile-history[data-testid="tile-history"] {
   cursor: pointer; font-size: 12px;
 }
 .templates-skip:hover { color: #e6e7eb; }
+
+/* Issue #10 — canvas UX additions.
+   Minimap, command palette, shortcuts help, snap-toggle, tile keyboard
+   focus ring. The minimap is < 200×150 px and floats above the canvas
+   in the bottom-right corner without ever stealing focus. */
+
+.minimap {
+  position: fixed;
+  right: 16px;
+  bottom: 52px; /* clear the footer */
+  width: 208px;
+  background: rgba(21, 23, 28, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  z-index: 30;
+  overflow: hidden;
+  user-select: none;
+}
+.minimap-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 8px;
+  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.minimap-close {
+  background: transparent; border: 0; color: var(--muted);
+  cursor: pointer; padding: 0 4px; font-size: 14px;
+}
+.minimap-close:hover { color: var(--fg); background: transparent; }
+.minimap-svg { display: block; cursor: crosshair; background: #0e0f12; }
+.minimap-bg { fill: #0e0f12; }
+.minimap-tile { fill: #2a3a5c; stroke: #4868a4; stroke-width: 1; }
+.minimap-viewport { fill: rgba(122, 162, 247, 0.12); stroke: var(--accent); stroke-width: 1.5; }
+
+.minimap-show {
+  position: fixed;
+  right: 16px;
+  bottom: 52px;
+  z-index: 30;
+  background: rgba(21, 23, 28, 0.92);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.minimap-show:hover { color: var(--fg); }
+
+/* Command palette */
+.palette-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 12vh;
+  z-index: 300;
+}
+.palette-panel {
+  width: min(560px, 90vw);
+  background: #1a1d24; color: #e6e7eb;
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.palette-input {
+  width: 100%; padding: 14px 16px;
+  background: transparent; border: 0; outline: 0;
+  font-size: 15px; color: var(--fg);
+  border-bottom: 1px solid var(--border);
+}
+.palette-list {
+  list-style: none; margin: 0; padding: 4px 0;
+  max-height: 50vh; overflow: auto;
+}
+.palette-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px;
+  font-size: 13px; cursor: pointer;
+}
+.palette-item.selected { background: #2a3a5c; }
+.palette-name { color: var(--fg); }
+.palette-hint {
+  font-size: 11px; color: var(--muted);
+  padding: 1px 6px; border: 1px solid var(--border); border-radius: 3px;
+  background: var(--bg);
+}
+.palette-empty {
+  padding: 14px 16px; color: var(--muted); font-size: 13px; font-style: italic;
+}
+.palette-footer {
+  display: flex; gap: 12px; padding: 6px 14px;
+  border-top: 1px solid var(--border);
+  background: #15171c;
+  color: var(--muted); font-size: 11px;
+}
+
+/* Shortcuts help */
+.shortcuts-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 250;
+}
+.shortcuts-panel {
+  width: min(640px, 90vw); max-height: 80vh;
+  background: #1a1d24; color: #e6e7eb;
+  border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.shortcuts-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+}
+.shortcuts-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.shortcuts-close {
+  background: transparent; border: 0; color: var(--muted);
+  cursor: pointer; font-size: 22px; line-height: 1; padding: 0 6px;
+}
+.shortcuts-close:hover { color: var(--fg); background: transparent; }
+.shortcuts-body { padding: 12px 20px; overflow: auto; }
+.shortcuts-group { margin-bottom: 14px; }
+.shortcuts-group h3 {
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); margin: 0 0 6px;
+}
+.shortcuts-group dl { margin: 0; }
+.shortcuts-row {
+  display: grid; grid-template-columns: 160px 1fr;
+  gap: 12px; padding: 4px 0;
+  font-size: 13px;
+}
+.shortcuts-row dt { margin: 0; }
+.shortcuts-row dd { margin: 0; color: var(--muted); }
+.shortcuts-row kbd {
+  font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+  padding: 2px 6px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--fg);
+}
+.shortcuts-foot {
+  padding: 8px 20px; border-top: 1px solid var(--border);
+  background: #15171c; color: var(--muted); font-size: 12px;
+}
+.shortcuts-foot kbd {
+  font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+  padding: 1px 5px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--fg);
+}
+
+/* Library snap-toggle (shares .library-footer with the settings button). */
+.library-snap-toggle {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--fg); cursor: pointer;
+}
+.library-snap-toggle input { cursor: pointer; }
+.kbd-hint {
+  margin-left: auto;
+  font-family: ui-monospace, Menlo, monospace; font-size: 10px;
+  padding: 1px 5px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 3px; color: var(--muted);
+}
+
+/* Keyboard-focused tile gets a subtle ring so users can see which tile
+   arrow keys / Cmd+D / Delete will target. */
+.tile-kb-focused {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

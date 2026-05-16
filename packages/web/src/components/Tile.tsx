@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { Tile as TileT } from "@prixmaviz/shared";
-import { SNAP_GRID } from "@prixmaviz/shared";
 import { useAppStore } from "../store";
 import { api, authFetch } from "../lib/api";
 import { toastError } from "../lib/toast";
+import { snap as snapVal } from "../lib/canvas-math";
 import { DiagramView } from "./DiagramView";
 import { AnnotationLayer } from "./AnnotationLayer";
 import { PublicViewToggle } from "./PublicViewToggle";
@@ -19,6 +19,9 @@ export function Tile({ tile }: Props) {
   // Issue #3: subscribe so the pulse class repaints when the focus event
   // fires from Library.tsx::focusExistingTile.
   const recentlyFocusedTileId = useAppStore((s) => s.recentlyFocusedTileId);
+  // Issue #10: respect the global snap-to-grid toggle and keyboard focus.
+  const focusedTileId = useAppStore((s) => s.focusedTileId);
+  const setFocusedTileId = useAppStore((s) => s.setFocusedTileId);
   const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string>("");
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -28,6 +31,7 @@ export function Tile({ tile }: Props) {
   // When a restore round-trip yields new source, hand it to the editor.
   const [editorInitial, setEditorInitial] = useState<string | undefined>(undefined);
   const isJustFocused = recentlyFocusedTileId === tile.id;
+  const isKbFocused = focusedTileId === tile.id;
 
   async function onExport(format: "svg" | "png" | "jpeg" | "vsdx") {
     setExportMenuOpen(false);
@@ -55,20 +59,25 @@ export function Tile({ tile }: Props) {
     return () => { stop = true; };
   }, [tile.diagramSlug]);
 
-  function snap(n: number): number {
-    return Math.round(n / SNAP_GRID) * SNAP_GRID;
+  // Snap math now lives in lib/canvas-math.ts. The "should we snap?" decision
+  // is the global toggle XOR'd with the Shift modifier — Shift temporarily
+  // inverts the user's preference for ad-hoc free placement during a drag.
+  function snapXY(x: number, y: number, shiftKey: boolean): { x: number; y: number } {
+    const enabled = useAppStore.getState().snapEnabled !== shiftKey;
+    if (!enabled) return { x, y };
+    return { x: snapVal(x), y: snapVal(y) };
   }
 
   function onHeaderDown(e: React.MouseEvent) {
     e.stopPropagation();
+    setFocusedTileId(tile.id);
     const startX = e.clientX, startY = e.clientY;
     const startTileX = tile.x, startTileY = tile.y;
     function onMove(ev: MouseEvent) {
       const dx = (ev.clientX - startX) / camera.zoom;
       const dy = (ev.clientY - startY) / camera.zoom;
-      const newX = ev.altKey ? startTileX + dx : snap(startTileX + dx);
-      const newY = ev.altKey ? startTileY + dy : snap(startTileY + dy);
-      setTiles(tiles.map(t => t.id === tile.id ? { ...t, x: newX, y: newY } : t));
+      const snapped = snapXY(startTileX + dx, startTileY + dy, ev.shiftKey);
+      setTiles(tiles.map(t => t.id === tile.id ? { ...t, x: snapped.x, y: snapped.y } : t));
     }
     async function onUp() {
       window.removeEventListener("mousemove", onMove);
@@ -82,13 +91,16 @@ export function Tile({ tile }: Props) {
 
   function onResizeDown(e: React.MouseEvent) {
     e.stopPropagation();
+    setFocusedTileId(tile.id);
     const startX = e.clientX, startY = e.clientY;
     const startW = tile.w, startH = tile.h;
     function onMove(ev: MouseEvent) {
       const dw = (ev.clientX - startX) / camera.zoom;
       const dh = (ev.clientY - startY) / camera.zoom;
-      const newW = Math.max(120, snap(startW + dw));
-      const newH = Math.max(80, snap(startH + dh));
+      const enabled = useAppStore.getState().snapEnabled !== ev.shiftKey;
+      const rawW = startW + dw, rawH = startH + dh;
+      const newW = Math.max(120, enabled ? snapVal(rawW) : rawW);
+      const newH = Math.max(80, enabled ? snapVal(rawH) : rawH);
       setTiles(useAppStore.getState().tiles.map(t => t.id === tile.id ? { ...t, w: newW, h: newH } : t));
     }
     async function onUp() {
@@ -108,11 +120,12 @@ export function Tile({ tile }: Props) {
   return (
     <div
       ref={containerRef}
-      className={`tile${isJustFocused ? " tile-just-focused" : ""}`}
+      className={`tile${isJustFocused ? " tile-just-focused" : ""}${isKbFocused ? " tile-kb-focused" : ""}`}
       style={{
         position: "absolute", left: tile.x, top: tile.y,
         width: tile.w, height: tile.h, zIndex: tile.z,
       }}
+      onMouseDown={() => setFocusedTileId(tile.id)}
     >
       <div className="tile-header" onMouseDown={onHeaderDown}>
         <span className="tile-name">{tile.diagramSlug}</span>
