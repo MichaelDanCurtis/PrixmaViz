@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   LIBRARY_SORT_LABELS,
   compareLibraryEntries,
@@ -10,7 +10,19 @@ import { basename } from "../../lib/path";
 import { toastError, toastInfo, toastSuccess } from "../../lib/toast";
 import type { ExportFormat, BulkPackaging } from "../../lib/export";
 import type { LibraryEntry, Tile } from "@prixmaviz/shared";
+import { entriesUnderPath } from "../../lib/folder-tree";
 import { Card } from "./Card";
+import { Tree } from "./Tree";
+
+/**
+ * Issue #7 Wave 2C — distance (in px) from the top/bottom edge of the
+ * library list at which dragover starts auto-scrolling. Native HTML5
+ * DnD does not auto-scroll the container; this helper steps the scroll
+ * top by SCROLL_STEP_PX per dragover tick while the pointer is in the
+ * hot zone.
+ */
+const EDGE_SCROLL_ZONE_PX = 24;
+const SCROLL_STEP_PX = 8;
 
 /**
  * Re-opening a Library entry whose diagram is already on the canvas:
@@ -70,6 +82,9 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
   // Issue #10: snap-to-grid toggle in library footer.
   const snapEnabled = useAppStore((s) => s.snapEnabled);
   const setSnapEnabled = useAppStore((s) => s.setSnapEnabled);
+  // Issue #7 Wave 2C — folder tree state.
+  const selectedFolderPath = useAppStore((s) => s.selectedFolderPath);
+  const [emptyFolders, setEmptyFolders] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [bulkFormat, setBulkFormat] = useState<ExportFormat>("svg");
   const [bulkPackaging, setBulkPackaging] = useState<BulkPackaging>("zip");
@@ -83,11 +98,28 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
     canScrollDown: boolean;
   }>({ canScrollUp: false, canScrollDown: false });
 
-  useEffect(() => {
-    api.library().then(setLibrary).catch((e) =>
-      setError(e instanceof Error ? e.message : String(e)),
-    );
+  // Library + empty-folder list. Issue #7 Wave 2C pulls the empty-folder
+  // list out of the workspace settings JSONB so the tree can render
+  // pristine subdirectories that don't yet contain a diagram.
+  const refreshLibrary = useCallback(async (): Promise<void> => {
+    try {
+      const [entries, ws] = await Promise.all([
+        api.library(),
+        api.getWorkspace().catch(() => null),
+      ]);
+      setLibrary(entries);
+      const ef = (ws?.settings as { emptyFolders?: unknown } | null)?.emptyFolders;
+      setEmptyFolders(
+        Array.isArray(ef) ? ef.filter((p): p is string => typeof p === "string") : [],
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }, [setLibrary, setError]);
+
+  useEffect(() => {
+    void refreshLibrary();
+  }, [refreshLibrary]);
 
   useEffect(() => {
     return () => {
@@ -95,9 +127,17 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
     };
   }, []);
 
+  // Folder-scoped pool first, then sort, then text filter. Issue #7
+  // Wave 2C — when a folder is selected in the tree, the All section
+  // narrows to that folder's contents (including descendants).
+  const folderScoped = useMemo(
+    () => entriesUnderPath(library, selectedFolderPath),
+    [library, selectedFolderPath],
+  );
+
   const sorted = useMemo(
-    () => [...library].sort((a, b) => compareLibraryEntries(a, b, librarySortKey)),
-    [library, librarySortKey],
+    () => [...folderScoped].sort((a, b) => compareLibraryEntries(a, b, librarySortKey)),
+    [folderScoped, librarySortKey],
   );
 
   const filtered = useMemo(() => {
@@ -181,10 +221,16 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
   }
 
   // Issue #4: header count format.
+  // Note: `total` is the full library size, NOT the folder-scoped pool.
+  // When a folder is selected, the count badge already shows
+  // `filtered.length / library.length` (matches / total) via the search
+  // branch — which generalizes correctly to the folder case too.
   const total = library.length;
+  const folderActive = selectedFolderPath.length > 0;
   const searchActive = search.length > 0;
-  const countLabel = searchActive ? `${filtered.length} / ${total}` : `${total}`;
-  const countTitle = searchActive
+  const filteredActive = searchActive || folderActive;
+  const countLabel = filteredActive ? `${filtered.length} / ${total}` : `${total}`;
+  const countTitle = filteredActive
     ? `${filtered.length} match${filtered.length === 1 ? "" : "es"} of ${total} diagram${total === 1 ? "" : "s"}`
     : `${total} diagram${total === 1 ? "" : "s"}`;
 
@@ -238,6 +284,87 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
 
   const allVisibleSelected =
     visibleSlugs.length > 0 && visibleSlugs.every((s) => selectedSlugs.has(s));
+
+  // Issue #7 Wave 2C — folder drop handler. Called when a Card is
+  // dropped on a Tree row. The Tree component does the cycle-guard for
+  // folder-on-folder drops; here we just optimistically update the
+  // library state, fire the API call, and roll back if it fails.
+  const handleDropDiagram = useCallback(
+    async (slug: string, targetFolder: string): Promise<void> => {
+      const slugPath = (e: LibraryEntry) => basename(e.path).replace(/\.pviz$/, "");
+      const currentLibrary = useAppStore.getState().library;
+      const entry = currentLibrary.find((e) => slugPath(e) === slug);
+      if (!entry) return;
+      if (entry.parentPath === targetFolder) return; // no-op
+      // Optimistic update.
+      const prev = currentLibrary;
+      const next = currentLibrary.map((e) =>
+        slugPath(e) === slug ? { ...e, parentPath: targetFolder } : e,
+      );
+      setLibrary(next);
+      try {
+        // The diagram's REST id is held server-side under entry.path's
+        // slug — but the move route accepts the database UUID, not the
+        // slug. We have to round-trip through loadBySlug to discover the
+        // id, which is wasteful for a drop. Defer: the server route
+        // accepts a slug via the same path. Look at how the server
+        // resolves :id below.
+        //
+        // For Wave 2C we call api.moveDiagram with the slug as the URL
+        // segment — the server's PATCH /api/diagrams/:id/move expects
+        // a diagram UUID; we need to round-trip via loadBySlug to get
+        // the canonical id. Cost: one extra HTTP call per drop. Fine
+        // for the scale envelope; revisit if drops become bursty.
+        const loaded = await api.loadBySlug(slug);
+        await api.moveDiagram(loaded.diagramId, targetFolder);
+        // Server broadcasts library:diagram-updated → ws.ts re-fetches.
+        // We pre-refresh now to avoid waiting for the round trip in the
+        // common single-tab case.
+        void refreshLibrary();
+      } catch (err) {
+        // Rollback on failure.
+        setLibrary(prev);
+        toastError(
+          `Move failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    },
+    [setLibrary, refreshLibrary],
+  );
+
+  // Edge-scroll helper. Native HTML5 DnD does NOT auto-scroll a
+  // container during a drag. While the user is hovering near the top or
+  // bottom 24px of the library wrapper, step the scrollTop so the drop
+  // target they're trying to reach comes into view.
+  const dragScrollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopEdgeScroll = useCallback(() => {
+    if (dragScrollIntervalRef.current) {
+      clearInterval(dragScrollIntervalRef.current);
+      dragScrollIntervalRef.current = null;
+    }
+  }, []);
+  useEffect(() => () => stopEdgeScroll(), [stopEdgeScroll]);
+
+  const onWrapperDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    const wrapper = e.currentTarget;
+    const list = wrapper.querySelector<HTMLElement>("[data-testid='library-list']");
+    if (!list) return;
+    const rect = wrapper.getBoundingClientRect();
+    const y = e.clientY;
+    const distFromTop = y - rect.top;
+    const distFromBottom = rect.bottom - y;
+    let direction: -1 | 0 | 1 = 0;
+    if (distFromTop < EDGE_SCROLL_ZONE_PX && distFromTop >= 0) direction = -1;
+    else if (distFromBottom < EDGE_SCROLL_ZONE_PX && distFromBottom >= 0) direction = 1;
+    if (direction === 0) {
+      stopEdgeScroll();
+      return;
+    }
+    if (dragScrollIntervalRef.current) return; // already scrolling
+    dragScrollIntervalRef.current = setInterval(() => {
+      list.scrollTop += direction * SCROLL_STEP_PX;
+    }, 16);
+  }, [stopEdgeScroll]);
 
   return (
     <aside className={`library${selectMode ? " library-select-mode" : ""}`}>
@@ -298,7 +425,16 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
         data-can-scroll-up={scrollState.canScrollUp ? "true" : "false"}
         data-can-scroll-down={scrollState.canScrollDown ? "true" : "false"}
         data-testid="library-list-wrap"
+        onDragOver={onWrapperDragOver}
+        onDragLeave={stopEdgeScroll}
+        onDrop={stopEdgeScroll}
       >
+        <Tree
+          entries={library}
+          emptyFolders={emptyFolders}
+          onDropDiagram={(slug, target) => void handleDropDiagram(slug, target)}
+          onFoldersChanged={() => void refreshLibrary()}
+        />
         <div className="library-list" ref={listRef} data-testid="library-list">
           {filtered.map((entry) => {
             const slug = basename(entry.path).replace(/\.pviz$/, "");
@@ -313,6 +449,7 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
                 selectMode={selectMode}
                 checked={checked}
                 onItemClick={onItemClick}
+                draggable={!selectMode}
               />
             );
           })}

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useAppStore } from "../store";
+import { api } from "./api";
 import type { ServerToClient } from "@prixmaviz/shared";
 
 export function useWebSocket(): void {
@@ -69,5 +70,19 @@ function handleMessage(
   } else if (msg.type === "workspace") {
     store.setCamera(msg.camera);
     store.setTiles(msg.tiles);
+  } else if (
+    msg.type === "library:diagram-updated" ||
+    msg.type === "library:diagram-opened" ||
+    msg.type === "library:folders-changed" ||
+    msg.type === "library:tags-changed"
+  ) {
+    // Issue #7 Wave 2C: any folder/pin/meta/recent change from another
+    // tab re-fetches the library so the local state stays consistent.
+    // The server always sends a full library snapshot via the existing
+    // "library" event when it has one — these are notification-only.
+    api
+      .library()
+      .then(store.setLibrary)
+      .catch(() => {});
   }
 }

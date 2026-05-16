@@ -290,4 +290,44 @@ export const api = {
     ).then((r) => jsonOrThrow<{
       diagramId: string; source: string; render: { svg: string; dsl: string };
     }>(r)),
+
+  // ─── Issue #7 — folders / move / pin / meta ──────────────────────────
+  /**
+   * PATCH /api/diagrams/:id/move. Returns the canonical parentPath the
+   * server actually stored (it normalizes empty/space/etc.).
+   */
+  moveDiagram: (id: string, parentPath: string) =>
+    authFetch(`/api/diagrams/${encodeURIComponent(id)}/move`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parentPath }),
+    }).then((r) => jsonOrThrow<{ ok: true; parentPath: string }>(r)),
+
+  /**
+   * POST /api/folders/empty — add or remove a path in the workspace's
+   * empty-folder list. Used by the "New folder" inline input and the
+   * "Delete empty" folder action.
+   */
+  emptyFolder: (path: string, action: "add" | "remove") =>
+    authFetch("/api/folders/empty", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, action }),
+    }).then((r) => jsonOrThrow<{ emptyFolders: string[] }>(r)),
+
+  /** POST /api/folders/rename — cascade rename. */
+  renameFolder: (from: string, to: string) =>
+    authFetch("/api/folders/rename", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to }),
+    }).then((r) => jsonOrThrow<{ affected: number }>(r)),
+
+  /** POST /api/folders/delete — cascade or refuse-on-nonempty. */
+  deleteFolder: (path: string, cascade: boolean) =>
+    authFetch("/api/folders/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, cascade }),
+    }).then((r) => jsonOrThrow<{ deleted: number }>(r)),
 };
