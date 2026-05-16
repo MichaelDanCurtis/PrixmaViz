@@ -116,9 +116,6 @@ export interface AppState {
   setRecentlyFocusedTileId: (id: string | null) => void;
 
   // Issue #2: Library bulk-select mode + selection set keyed by diagram slug.
-  // When `selectMode === true`, Library rows render checkboxes and clicks
-  // toggle selection instead of opening the tile. `lastSelectedSlug` is the
-  // anchor for shift-click range selection across visible entries.
   selectMode: boolean;
   selectedSlugs: Set<string>;
   lastSelectedSlug: string | null;
@@ -127,6 +124,18 @@ export interface AppState {
   selectRange: (slugs: string[], fromSlug: string, toSlug: string) => void;
   selectAll: (slugs: string[]) => void;
   clearSelection: () => void;
+
+  // Issue #10: canvas UX. Snap-to-grid + keyboard focus + floating surfaces.
+  snapEnabled: boolean;
+  setSnapEnabled: (v: boolean) => void;
+  focusedTileId: string | null;
+  setFocusedTileId: (id: string | null) => void;
+  minimapVisible: boolean;
+  setMinimapVisible: (v: boolean) => void;
+  commandPaletteOpen: boolean;
+  setCommandPaletteOpen: (v: boolean) => void;
+  shortcutsHelpOpen: boolean;
+  setShortcutsHelpOpen: (v: boolean) => void;
 
   setDiagram: (d: Diagram | null) => void;
   setRender: (diagramId: DiagramId, svg: string, dsl: string, ir?: GraphIR) => void;
@@ -227,9 +236,6 @@ export const useAppStore = create<AppState>((set) => ({
   setSelectMode: (v) =>
     set(() => (v
       ? { selectMode: true }
-      // Exit also clears selection — entering select mode is the affirmative
-      // action; leaving it should drop both the toggle and the set so the
-      // bulk-action bar disappears cleanly.
       : { selectMode: false, selectedSlugs: new Set<string>(), lastSelectedSlug: null })),
   toggleSelected: (slug) =>
     set((s) => {
@@ -243,8 +249,6 @@ export const useAppStore = create<AppState>((set) => ({
       const fromIdx = slugs.indexOf(fromSlug);
       const toIdx = slugs.indexOf(toSlug);
       if (fromIdx === -1 || toIdx === -1) {
-        // Fall back to toggling the destination if the anchor isn't on the
-        // currently-visible list (e.g. it was filtered out).
         const next = new Set(s.selectedSlugs);
         if (next.has(toSlug)) next.delete(toSlug);
         else next.add(toSlug);
@@ -259,4 +263,28 @@ export const useAppStore = create<AppState>((set) => ({
   selectAll: (slugs) =>
     set(() => ({ selectedSlugs: new Set(slugs), lastSelectedSlug: slugs[slugs.length - 1] ?? null })),
   clearSelection: () => set({ selectedSlugs: new Set<string>(), lastSelectedSlug: null }),
+
+  // Issue #10
+  snapEnabled:
+    typeof localStorage !== "undefined"
+      ? localStorage.getItem("prixmaviz_snap_enabled") !== "0"
+      : true,
+  setSnapEnabled: (v) => {
+    try { localStorage.setItem("prixmaviz_snap_enabled", v ? "1" : "0"); } catch {}
+    set({ snapEnabled: v });
+  },
+  focusedTileId: null,
+  setFocusedTileId: (id) => set({ focusedTileId: id }),
+  minimapVisible:
+    typeof localStorage !== "undefined"
+      ? localStorage.getItem("prixmaviz_minimap_visible") !== "0"
+      : true,
+  setMinimapVisible: (v) => {
+    try { localStorage.setItem("prixmaviz_minimap_visible", v ? "1" : "0"); } catch {}
+    set({ minimapVisible: v });
+  },
+  commandPaletteOpen: false,
+  setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
+  shortcutsHelpOpen: false,
+  setShortcutsHelpOpen: (v) => set({ shortcutsHelpOpen: v }),
 }));
