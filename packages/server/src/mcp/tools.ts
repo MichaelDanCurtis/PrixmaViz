@@ -41,7 +41,181 @@ export interface ToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /**
+   * Optional legacy parameter aliases honored by the impl. Map from
+   * legacy-name → canonical-name. These keys are accepted by the validator
+   * as substitutes for the canonical required field (e.g. `name` is an
+   * accepted alias for `slug` on `load_diagram`).
+   *
+   * Aliases are also added to the "known properties" set so callers using
+   * the legacy form aren't rejected as supplying an unknown parameter.
+   */
+  legacyAliases?: Record<string, string>;
   run: (args: Record<string, unknown>, ctx: ToolCtx) => Promise<unknown>;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Validation
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Structured error thrown by `validateArgs` when an MCP tool call is rejected
+ * before dispatch. The HTTP layer translates this into a 400 with a stable
+ * `{ error: { code, message, parameter?, expected? } }` envelope.
+ */
+export class ValidationError extends Error {
+  public readonly code: ValidationErrorCode;
+  public readonly parameter?: string;
+  public readonly expected?: unknown;
+
+  constructor(
+    code: ValidationErrorCode,
+    message: string,
+    parameter?: string,
+    expected?: unknown,
+  ) {
+    super(message);
+    this.name = "ValidationError";
+    this.code = code;
+    this.parameter = parameter;
+    this.expected = expected;
+  }
+}
+
+export type ValidationErrorCode =
+  | "missing_required_parameter"
+  | "unknown_parameter"
+  | "invalid_parameter_type"
+  | "invalid_parameter_value";
+
+/**
+ * Thrown when `dispatchTool` is called with a tool name not present in TOOLS.
+ * The HTTP layer maps this to a 404 with `code: "unknown_tool"`.
+ */
+export class UnknownToolError extends Error {
+  public readonly toolName: string;
+  constructor(toolName: string) {
+    super(`unknown tool: ${toolName}`);
+    this.name = "UnknownToolError";
+    this.toolName = toolName;
+  }
+}
+
+interface ParsedSchema {
+  properties: Record<string, { type?: string; enum?: unknown[] }>;
+  required: string[];
+}
+
+function parseSchema(schema: Record<string, unknown>): ParsedSchema {
+  const props = (schema.properties as Record<string, { type?: string; enum?: unknown[] }> | undefined) ?? {};
+  const required = (schema.required as string[] | undefined) ?? [];
+  return { properties: props, required };
+}
+
+function jsTypeOf(v: unknown): string {
+  if (v === null) return "null";
+  if (Array.isArray(v)) return "array";
+  return typeof v;
+}
+
+function expectedTypeMatches(spec: { type?: string }, value: unknown): boolean {
+  const expected = spec.type;
+  if (!expected) return true; // no type constraint
+  const actual = jsTypeOf(value);
+  if (expected === "number" || expected === "integer") return actual === "number";
+  if (expected === "object") return actual === "object";
+  return actual === expected;
+}
+
+/**
+ * Validate an MCP tool's args against the tool's `inputSchema`. Throws
+ * `ValidationError` on the first problem. Checks performed:
+ *
+ *   1. required fields present (alias-aware: a documented `legacyAliases`
+ *      entry mapping `legacy → canonical` satisfies the canonical's
+ *      required check when only the legacy name is supplied)
+ *   2. no unknown top-level keys (catches `format` for `engine`, etc.)
+ *   3. provided values match the declared `type`
+ *   4. provided values are members of any declared `enum`
+ *
+ * Deliberately shallow — nested objects/arrays are accepted as long as the
+ * top-level shape is right. Tool impls remain responsible for deeper
+ * validation of their own structured args (e.g. patch ops).
+ */
+export function validateArgs(tool: ToolDef, args: Record<string, unknown>): void {
+  if (args === null || typeof args !== "object" || Array.isArray(args)) {
+    throw new ValidationError(
+      "invalid_parameter_type",
+      `Arguments must be a JSON object, got ${jsTypeOf(args)}.`,
+    );
+  }
+
+  const { properties, required } = parseSchema(tool.inputSchema);
+  const aliases = tool.legacyAliases ?? {};
+  const known = new Set([...Object.keys(properties), ...Object.keys(aliases)]);
+  const suppliedKeys = Object.keys(args);
+  const unknownSupplied = suppliedKeys.filter((k) => !known.has(k));
+
+  // 1. Required-field check (alias-aware).
+  for (const key of required) {
+    const hasCanonical = args[key] !== undefined && args[key] !== null;
+    if (hasCanonical) continue;
+    // Accept any documented alias that resolves to this canonical name.
+    const aliasMatch = Object.entries(aliases).find(([, canonical]) => canonical === key);
+    if (aliasMatch) {
+      const [legacy] = aliasMatch;
+      if (args[legacy] !== undefined && args[legacy] !== null) continue;
+    }
+    // If the caller supplied keys that aren't recognized at all (e.g.
+    // `format` instead of `engine`), name them in the message — that's
+    // the most common failure pattern from issue #14.
+    const got = suppliedKeys.length > 0 ? ` Got: ${suppliedKeys.join(", ")}.` : "";
+    const hint = unknownSupplied.length > 0
+      ? ` Unknown keys supplied: ${unknownSupplied.join(", ")}.`
+      : "";
+    throw new ValidationError(
+      "missing_required_parameter",
+      `Missing required parameter: ${key}.${got}${hint}`,
+      key,
+    );
+  }
+
+  // 2. Unknown-field check.
+  for (const key of Object.keys(args)) {
+    if (!known.has(key)) {
+      const expectedList = [...known].sort();
+      throw new ValidationError(
+        "unknown_parameter",
+        `Unknown parameter: ${key}. Expected one of: ${expectedList.join(", ")}.`,
+        key,
+        expectedList,
+      );
+    }
+  }
+
+  // 3+4. Type / enum checks on present values (skip aliases — the impl
+  // resolves the alias to the canonical value before use, and the legacy
+  // shape historically wasn't type-checked).
+  for (const [key, spec] of Object.entries(properties)) {
+    const v = args[key];
+    if (v === undefined || v === null) continue;
+    if (!expectedTypeMatches(spec, v)) {
+      throw new ValidationError(
+        "invalid_parameter_type",
+        `Invalid type for parameter ${key}: expected ${spec.type}, got ${jsTypeOf(v)}.`,
+        key,
+        spec.type,
+      );
+    }
+    if (spec.enum && Array.isArray(spec.enum) && !spec.enum.includes(v)) {
+      throw new ValidationError(
+        "invalid_parameter_value",
+        `Invalid value for ${key}: ${JSON.stringify(v)}. Expected one of: ${spec.enum.map((e) => JSON.stringify(e)).join(", ")}.`,
+        key,
+        spec.enum,
+      );
+    }
+  }
 }
 
 export const TOOLS: ToolDef[] = [
@@ -95,6 +269,7 @@ export const TOOLS: ToolDef[] = [
       properties: { slug: { type: "string" } },
       required: ["slug"],
     },
+    legacyAliases: { name: "slug" },
     run: loadDiagramImpl,
   },
   {
@@ -121,6 +296,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ["engine", "dsl"],
     },
+    legacyAliases: { source: "dsl" },
     run: renderDslImpl,
   },
   {
@@ -248,7 +424,8 @@ export async function dispatchTool(
   ctx: ToolCtx,
 ): Promise<unknown> {
   const tool = TOOLS.find((t) => t.name === name);
-  if (!tool) throw new Error(`unknown tool: ${name}`);
+  if (!tool) throw new UnknownToolError(name);
+  validateArgs(tool, args);
   return await tool.run(args, ctx);
 }
 

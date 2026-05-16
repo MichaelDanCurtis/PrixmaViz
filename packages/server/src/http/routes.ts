@@ -9,6 +9,7 @@ import { renderDiagram } from "../render";
 import type { WsHub } from "../ws/broadcast";
 import { getHitTester } from "../hit-test";
 import { canStructuredVsdx, maybeExtractLayout } from "../vsdx/export-helpers";
+import { UnknownToolError, ValidationError } from "../mcp/tools";
 import { authenticate } from "../auth/bearer";
 import {
   createDiagram as dbCreateDiagram,
@@ -253,10 +254,17 @@ export async function handleApi(
   }
 
   if (p === "/api/mcp/call" && req.method === "POST") {
-    const body = await req.json() as { tool: string; args: Record<string, unknown> };
+    const body = await req.json().catch(() => ({})) as { tool?: string; args?: Record<string, unknown> };
+    if (!body.tool || typeof body.tool !== "string") {
+      return mcpErrorResponse(
+        new ValidationError("missing_required_parameter", "Missing required parameter: tool.", "tool"),
+        body.tool ?? "<unknown>",
+      );
+    }
+    const args = (body.args ?? {}) as Record<string, unknown>;
     const { dispatchTool } = await import("../mcp/tools");
     try {
-      const result = await dispatchTool(body.tool, body.args, {
+      const result = await dispatchTool(body.tool, args, {
         sql: deps.sql,
         workspaceId,
         kroki: deps.kroki,
@@ -264,10 +272,7 @@ export async function handleApi(
       });
       return Response.json(result);
     } catch (e) {
-      return Response.json(
-        { ok: false, error: e instanceof Error ? e.message : String(e) },
-        { status: 400 },
-      );
+      return mcpErrorResponse(e, body.tool);
     }
   }
 
@@ -285,10 +290,7 @@ export async function handleApi(
       });
       return Response.json(result);
     } catch (e) {
-      return Response.json(
-        { ok: false, error: e instanceof Error ? e.message : String(e) },
-        { status: 400 },
-      );
+      return mcpErrorResponse(e, toolName);
     }
   }
 
@@ -727,3 +729,123 @@ async function importVsdxRoute(
   });
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// MCP error envelope
+// ───────────────────────────────────────────────────────────────────────────
+//
+// Translate a thrown exception from `dispatchTool` into a structured HTTP
+// response. The error envelope is:
+//
+//   {
+//     "ok": false,
+//     "error": {
+//       "code": "<machine_readable_code>",
+//       "message": "<human readable, names the offending parameter>",
+//       // Optional extras (when applicable):
+//       "parameter": "<arg name>",   // for validation errors
+//       "expected": <unknown>,       // valid alternatives (enum / type)
+//       "tool":     "<tool name>",   // always present
+//       "correlationId": "<uuid>"    // for INTERNAL_ERROR only
+//     }
+//   }
+//
+// Status codes:
+//   400 — validation error (caller bug, fixable from the message)
+//   404 — unknown tool
+//   500 — anything else (treated as an internal error; stack logged
+//         server-side, NOT leaked to the caller)
+//
+// The shim parses the body as plain text and slices to 500 chars before
+// embedding in its own thrown error, so the JSON envelope must remain
+// readable when truncated. `ok: false` is preserved alongside the new
+// `error` object purely for backwards-compat with any consumer still
+// checking the legacy boolean.
+function mcpErrorResponse(e: unknown, toolName: string): Response {
+  if (e instanceof ValidationError) {
+    const body = {
+      ok: false,
+      error: {
+        code: e.code,
+        message: e.message,
+        ...(e.parameter !== undefined ? { parameter: e.parameter } : {}),
+        ...(e.expected !== undefined ? { expected: e.expected } : {}),
+        tool: toolName,
+      },
+    };
+    return Response.json(body, { status: 400 });
+  }
+  if (e instanceof UnknownToolError) {
+    return Response.json(
+      {
+        ok: false,
+        error: {
+          code: "unknown_tool",
+          message: `Unknown MCP tool: ${e.toolName}.`,
+          tool: e.toolName,
+        },
+      },
+      { status: 404 },
+    );
+  }
+  // A plain `Error` carries an intentional, caller-facing message —
+  // e.g. "diagram not found", "tile not found", "patch failed at op N".
+  // Surface it as a 400 with `code: tool_error` so the client gets a
+  // useful explanation without leaking JS-runtime internals.
+  //
+  // A `TypeError` / `ReferenceError` / `RangeError` / `SyntaxError`
+  // signals a bug or unguarded undefined inside the impl (the
+  // classic `s.toLowerCase` / `name.endsWith` leak from issue #14).
+  // The same goes for `UNDEFINED_VALUE` from the postgres driver
+  // when a required field reached the SQL layer as `undefined`.
+  // Map those to a generic 500 so they never reach the caller.
+  const isJsRuntimeError =
+    e instanceof TypeError ||
+    e instanceof ReferenceError ||
+    e instanceof RangeError ||
+    e instanceof SyntaxError ||
+    isUndefinedValuePostgresError(e);
+
+  if (e instanceof Error && !isJsRuntimeError) {
+    return Response.json(
+      {
+        ok: false,
+        error: {
+          code: "tool_error",
+          message: e.message,
+          tool: toolName,
+        },
+      },
+      { status: 400 },
+    );
+  }
+
+  // Unknown / runtime-bug throw — log with a correlation id so operators
+  // can find the original stack, but never leak the runtime detail.
+  const correlationId =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  // eslint-disable-next-line no-console
+  console.error(`[mcp:${toolName}:${correlationId}] internal error:`, e);
+  return Response.json(
+    {
+      ok: false,
+      error: {
+        code: "internal_error",
+        message: "Internal server error. See server logs for details.",
+        tool: toolName,
+        correlationId,
+      },
+    },
+    { status: 500 },
+  );
+}
+
+function isUndefinedValuePostgresError(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false;
+  const code = (e as { code?: unknown }).code;
+  if (typeof code === "string" && code === "UNDEFINED_VALUE") return true;
+  // Some postgres versions put the marker in the message instead of `.code`.
+  const msg = (e as { message?: unknown }).message;
+  return typeof msg === "string" && msg.startsWith("UNDEFINED_VALUE:");
+}
