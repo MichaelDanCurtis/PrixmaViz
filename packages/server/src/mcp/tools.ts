@@ -31,6 +31,7 @@ import { crudTools, loadDiagramTool } from "./tools/crud";
 import { annotationTools } from "./tools/annotations";
 import { workspaceTools } from "./tools/workspaces";
 import { bulkTools } from "./tools/bulk";
+import { searchTools } from "./tools/search";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -540,6 +541,8 @@ export const TOOLS: ToolDef[] = [
   // inserted above where the legacy load_diagram entry used to live so the
   // tool ordering matches the prior surface. ───
   ...crudTools,
+  // Group B — discoverability: search + DSL validation (Issue #5).
+  ...searchTools,
   // Group C — annotation writes (Issue #5).
   ...annotationTools,
   // Group E — workspace lifecycle (Issue #5).
