@@ -10,6 +10,7 @@ import type { WsHub } from "../ws/broadcast";
 import { getHitTester } from "../hit-test";
 import { canStructuredVsdx, maybeExtractLayout } from "../vsdx/export-helpers";
 import { UnknownToolError, ValidationError } from "../mcp/tools";
+import { broadcastWorkspaceUpdate } from "../mcp/broadcast";
 import { authenticate } from "../auth/bearer";
 import {
   createDiagram as dbCreateDiagram,
@@ -445,7 +446,7 @@ export async function handleApi(
     await dbUpdateWorkspaceCamera(deps.sql, workspaceId, body);
     const ws = await dbGetWorkspace(deps.sql, workspaceId);
     if (!ws) return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
-    deps.hub.broadcast(workspaceId, { type: "workspace", camera: ws.camera, tiles: ws.tiles });
+    await broadcastWorkspaceUpdate(deps, workspaceId);
     return Response.json(ws);
   }
 
@@ -471,8 +472,7 @@ export async function handleApi(
     };
     const nextTiles = [...ws.tiles, tile];
     await dbUpdateWorkspaceTiles(deps.sql, workspaceId, nextTiles);
-    const updated = await dbGetWorkspace(deps.sql, workspaceId);
-    if (updated) deps.hub.broadcast(workspaceId, { type: "workspace", camera: updated.camera, tiles: updated.tiles });
+    await broadcastWorkspaceUpdate(deps, workspaceId);
     return Response.json({ tile });
   }
 
@@ -487,8 +487,7 @@ export async function handleApi(
     const nextTiles = [...ws.tiles];
     nextTiles[idx] = { ...nextTiles[idx]!, ...body, id: tileId };
     await dbUpdateWorkspaceTiles(deps.sql, workspaceId, nextTiles);
-    const updated = await dbGetWorkspace(deps.sql, workspaceId);
-    if (updated) deps.hub.broadcast(workspaceId, { type: "workspace", camera: updated.camera, tiles: updated.tiles });
+    await broadcastWorkspaceUpdate(deps, workspaceId);
     return Response.json({ tile: nextTiles[idx] });
   }
 
@@ -498,8 +497,7 @@ export async function handleApi(
     if (!ws) return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
     const nextTiles = ws.tiles.filter((t) => t.id !== tileId);
     await dbUpdateWorkspaceTiles(deps.sql, workspaceId, nextTiles);
-    const updated = await dbGetWorkspace(deps.sql, workspaceId);
-    if (updated) deps.hub.broadcast(workspaceId, { type: "workspace", camera: updated.camera, tiles: updated.tiles });
+    await broadcastWorkspaceUpdate(deps, workspaceId);
     return Response.json({ ok: true });
   }
 

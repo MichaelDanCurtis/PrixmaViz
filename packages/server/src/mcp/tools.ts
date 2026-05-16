@@ -12,6 +12,7 @@ import { getIrRenderer } from "../renderers/registry";
 import { parseVsdx } from "../renderers/vsdx-parse";
 import { canStructuredVsdx, maybeExtractLayout } from "../vsdx/export-helpers";
 import type { WsHub } from "../ws/broadcast";
+import { broadcastWorkspaceUpdate } from "./broadcast";
 import {
   createDiagram as dbCreateDiagram,
   createDiagramWithUniqueSlug as dbCreateDiagramWithUniqueSlug,
@@ -467,9 +468,7 @@ function broadcast(hub: WsHub, workspaceId: string, d: Diagram, svg: string, war
 }
 
 async function broadcastWorkspace(ctx: ToolCtx): Promise<void> {
-  const ws = await dbGetWorkspace(ctx.sql, ctx.workspaceId);
-  if (!ws) return;
-  ctx.hub.broadcast(ctx.workspaceId, { type: "workspace", camera: ws.camera, tiles: ws.tiles });
+  await broadcastWorkspaceUpdate(ctx, ctx.workspaceId);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -688,7 +687,7 @@ async function setViewImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   }
   const ws = await dbGetWorkspace(ctx.sql, ctx.workspaceId);
   if (!ws) throw new Error("workspace not found");
-  ctx.hub.broadcast(ctx.workspaceId, { type: "workspace", camera: ws.camera, tiles: ws.tiles });
+  await broadcastWorkspaceUpdate(ctx, ctx.workspaceId);
   return { camera: ws.camera, tiles: ws.tiles };
 }
 
