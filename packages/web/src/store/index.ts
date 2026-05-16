@@ -6,6 +6,21 @@ import type {
 export type WsStatus = "idle" | "connecting" | "open" | "closed";
 export type CanvasMode = "select" | "region" | "pin" | "tag";
 
+// Issue #7 Wave 2 (F1): server-side search result shape returned by
+// `GET /api/diagrams/search`. Mirrors the `search_diagrams` MCP tool's
+// SearchHit. Lives in the store so the FTS Library wiring can stash an
+// in-flight result without re-defining the type at every callsite.
+export interface SearchResult {
+  slug: string;
+  name: string;
+  engine: string;
+  tags: string[];
+  updatedAt: string;
+  createdAt: string;
+  snippet?: string;
+  score?: number;
+}
+
 // Issue #4: client-side sort keys for the Library sidebar. Persisted to
 // localStorage so the user's choice survives reload. "updated" matches the
 // server's default ORDER BY updated_at DESC.
@@ -176,6 +191,34 @@ export interface AppState {
   setCommandPaletteOpen: (v: boolean) => void;
   shortcutsHelpOpen: boolean;
   setShortcutsHelpOpen: (v: boolean) => void;
+
+  // Issue #7 Wave 2 (F3): active tag filters for the Library list. ALL of
+  // the active tags must appear on an entry for it to render (AND
+  // semantics). The Set is replaced on every mutation so React's
+  // reference-equality bailouts don't miss updates.
+  activeTagFilters: Set<string>;
+  addTagFilter: (tag: string) => void;
+  removeTagFilter: (tag: string) => void;
+  clearTagFilters: () => void;
+
+  // Issue #7 Wave 2 (F3): in-memory cache of distinct tags for autocomplete
+  // (used by the DetailModal's tag chip editor). Refreshed on mount and on
+  // WS `library:tags-changed`.
+  tagAutocompleteCache: string[];
+  setTagAutocomplete: (tags: string[]) => void;
+
+  // Issue #7 Wave 2 (F1): server-side FTS results. `null` means no active
+  // server search — the Library falls back to the local substring filter.
+  // The array is empty when the query returned zero hits.
+  serverSearchResults: SearchResult[] | null;
+  setServerSearchResults: (r: SearchResult[] | null) => void;
+
+  // Issue #7 Wave 2 (F5): item-detail modal target. Carries the diagram
+  // slug (the LibraryEntry's stable key — the diagramId is resolved via
+  // the LibraryEntry's id field). `null` when the modal is closed.
+  detailModalSlug: string | null;
+  openDetailModal: (slug: string) => void;
+  closeDetailModal: () => void;
 
   setDiagram: (d: Diagram | null) => void;
   setRender: (diagramId: DiagramId, svg: string, dsl: string, ir?: GraphIR) => void;
@@ -376,4 +419,35 @@ export const useAppStore = create<AppState>((set) => ({
   setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
   shortcutsHelpOpen: false,
   setShortcutsHelpOpen: (v) => set({ shortcutsHelpOpen: v }),
+
+  // Issue #7 Wave 2 (F3)
+  activeTagFilters: new Set<string>(),
+  addTagFilter: (tag) =>
+    set((s) => {
+      if (s.activeTagFilters.has(tag)) return s;
+      const next = new Set(s.activeTagFilters);
+      next.add(tag);
+      return { activeTagFilters: next };
+    }),
+  removeTagFilter: (tag) =>
+    set((s) => {
+      if (!s.activeTagFilters.has(tag)) return s;
+      const next = new Set(s.activeTagFilters);
+      next.delete(tag);
+      return { activeTagFilters: next };
+    }),
+  clearTagFilters: () => set({ activeTagFilters: new Set<string>() }),
+
+  // Issue #7 Wave 2 (F3)
+  tagAutocompleteCache: [],
+  setTagAutocomplete: (tags) => set({ tagAutocompleteCache: tags }),
+
+  // Issue #7 Wave 2 (F1)
+  serverSearchResults: null,
+  setServerSearchResults: (r) => set({ serverSearchResults: r }),
+
+  // Issue #7 Wave 2 (F5)
+  detailModalSlug: null,
+  openDetailModal: (slug) => set({ detailModalSlug: slug }),
+  closeDetailModal: () => set({ detailModalSlug: null }),
 }));
