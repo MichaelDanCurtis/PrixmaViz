@@ -33,6 +33,7 @@ import { workspaceTools } from "./tools/workspaces";
 import { bulkTools } from "./tools/bulk";
 import { searchTools } from "./tools/search";
 import { canvasTools } from "./tools/canvas";
+import { libraryTools } from "./tools/library";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -552,6 +553,8 @@ export const TOOLS: ToolDef[] = [
   ...workspaceTools,
   // Group F — bulk operations (Issue #5).
   ...bulkTools,
+  // Issue #7 Wave 1B — library / organization (pin / move / meta).
+  ...libraryTools,
 ];
 
 export async function dispatchTool(
