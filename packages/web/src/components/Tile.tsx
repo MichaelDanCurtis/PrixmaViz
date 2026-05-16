@@ -14,9 +14,13 @@ export function Tile({ tile }: Props) {
   const setTiles = useAppStore((s) => s.setTiles);
   const tiles = useAppStore((s) => s.tiles);
   const camera = useAppStore((s) => s.camera);
+  // Issue #3: subscribe so the pulse class repaints when the focus event
+  // fires from Library.tsx::focusExistingTile.
+  const recentlyFocusedTileId = useAppStore((s) => s.recentlyFocusedTileId);
   const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string>("");
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const isJustFocused = recentlyFocusedTileId === tile.id;
 
   async function onExport(format: "svg" | "png" | "jpeg" | "vsdx") {
     setExportMenuOpen(false);
@@ -97,7 +101,7 @@ export function Tile({ tile }: Props) {
   return (
     <div
       ref={containerRef}
-      className="tile"
+      className={`tile${isJustFocused ? " tile-just-focused" : ""}`}
       style={{
         position: "absolute", left: tile.x, top: tile.y,
         width: tile.w, height: tile.h, zIndex: tile.z,

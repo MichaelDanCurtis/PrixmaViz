@@ -1,8 +1,43 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "../store";
 import { api, authFetch } from "../lib/api";
 import { basename } from "../lib/path";
-import type { LibraryEntry } from "@prixmaviz/shared";
+import type { LibraryEntry, Tile } from "@prixmaviz/shared";
+
+/**
+ * Re-opening a Library entry whose diagram is already on the canvas:
+ *  - pans the camera so the existing tile is centered in the viewport
+ *  - flashes the tile via the `.tile-just-focused` class
+ *  - DOES NOT call createTile (issue #3 fix — silent duplicate tile)
+ *
+ * The pulse class is cleared 1.5s later by setRecentlyFocusedTileId(null).
+ * The returned cancel function lets callers (component unmount, rapid
+ * re-clicks on a different entry) drop the pending timeout so we don't
+ * clear someone else's pulse later.
+ */
+function focusExistingTile(tile: Tile): () => void {
+  const store = useAppStore.getState();
+  const viewportW = typeof window !== "undefined" ? window.innerWidth : 1280;
+  const viewportH = typeof window !== "undefined" ? window.innerHeight : 720;
+  const currentZoom = store.camera.zoom;
+  store.setCamera({
+    x: tile.x - viewportW / 2 / currentZoom + tile.w / 2,
+    y: tile.y - viewportH / 2 / currentZoom + tile.h / 2,
+    zoom: currentZoom,
+  });
+  store.setRecentlyFocusedTileId(tile.id);
+  const handle = setTimeout(() => {
+    // Only clear if this is still the most-recent focus — guards against
+    // racing focuses where a newer pulse would otherwise be killed early.
+    if (useAppStore.getState().recentlyFocusedTileId === tile.id) {
+      useAppStore.getState().setRecentlyFocusedTileId(null);
+    }
+  }, 1500);
+  return () => clearTimeout(handle);
+}
+
+// Exported for tests.
+export const _focusExistingTile = focusExistingTile;
 
 /**
  * Library thumbnails go through an auth'd fetch → blob URL because the
@@ -38,12 +73,23 @@ export function Library() {
   const setRender = useAppStore((s) => s.setRender);
   const setError = useAppStore((s) => s.setError);
   const [search, setSearch] = useState("");
+  // Track the pending "clear pulse" timeout so we can cancel it on unmount
+  // or when a new focus pulse supersedes it.
+  const cancelFocusRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     api.library().then(setLibrary).catch((e) =>
       setError(e instanceof Error ? e.message : String(e)),
     );
   }, [setLibrary, setError]);
+
+  // Cancel any pending pulse-clear when the Library unmounts so the timeout
+  // doesn't fire against a stale store.
+  useEffect(() => {
+    return () => {
+      if (cancelFocusRef.current) cancelFocusRef.current();
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     if (!search) return library;
@@ -58,6 +104,34 @@ export function Library() {
   async function open(entry: LibraryEntry) {
     try {
       const slug = basename(entry.path).replace(/\.pviz$/, "");
+
+      // Issue #3: client-side dedup. If a tile for this diagram is already
+      // on the canvas, don't create another — just pan + pulse the existing
+      // one. The server still has a parallel check (belt-and-suspenders for
+      // multi-tab races); see POST /api/tiles in packages/server/src/http/routes.ts.
+      const existing = useAppStore.getState().tiles.find((t) => t.diagramSlug === slug);
+      if (existing) {
+        // Cancel any in-flight pulse-clear from a previous focus so the
+        // earlier setTimeout doesn't wipe this new pulse early.
+        if (cancelFocusRef.current) cancelFocusRef.current();
+        cancelFocusRef.current = focusExistingTile(existing);
+        // Still load + bind to the legacy single-diagram surface so the
+        // sidebar `active` class lights up and the diagram editor (if any)
+        // reflects the focused diagram.
+        const result = await api.loadBySlug(slug);
+        setDiagram({
+          id: result.diagramId,
+          name: entry.name,
+          engine: entry.engine,
+          kind: entry.kind,
+          ir: result.ir,
+          dsl: result.dsl,
+          meta: { createdAt: entry.createdAt, updatedAt: entry.updatedAt, tags: entry.tags, sourcePaths: [] },
+        });
+        setRender(result.diagramId, result.render.svg, result.render.dsl, result.ir);
+        return;
+      }
+
       const result = await api.loadBySlug(slug);
       // create a tile at viewport center
       const camera = useAppStore.getState().camera;

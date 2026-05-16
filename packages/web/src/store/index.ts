@@ -37,6 +37,12 @@ export interface AppState {
   upsertTile: (t: Tile) => void;
   removeTile: (id: string) => void;
 
+  // Issue #3: transient "just got focused" highlight on Library re-open.
+  // Tile.tsx reads this and adds the `.tile-just-focused` class; cleared
+  // ~1500ms later by Library.tsx::focusExistingTile.
+  recentlyFocusedTileId: string | null;
+  setRecentlyFocusedTileId: (id: string | null) => void;
+
   setDiagram: (d: Diagram | null) => void;
   setRender: (diagramId: DiagramId, svg: string, dsl: string, ir?: GraphIR) => void;
   setLibrary: (entries: LibraryEntry[]) => void;
@@ -121,4 +127,7 @@ export const useAppStore = create<AppState>((set) => ({
       : [...s.tiles, t],
   })),
   removeTile: (id) => set((s) => ({ tiles: s.tiles.filter(x => x.id !== id) })),
+
+  recentlyFocusedTileId: null,
+  setRecentlyFocusedTileId: (id) => set({ recentlyFocusedTileId: id }),
 }));
