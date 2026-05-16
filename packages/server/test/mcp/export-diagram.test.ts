@@ -232,6 +232,6 @@ describe("MCP export_diagram", () => {
         { diagramId: d.id, format: "pdf" },
         fakeCtx(sql, ws.id),
       ),
-    ).rejects.toThrow(/unsupported format/);
+    ).rejects.toThrow(/Invalid value for format/);
   });
 });
