@@ -87,6 +87,13 @@ vi.mock("../../src/lib/api", () => ({
     emptyFolder: vi.fn(async () => ({ emptyFolders: [] })),
     renameFolder: vi.fn(async () => ({ affected: 0 })),
     deleteFolder: vi.fn(async () => ({ deleted: 0 })),
+    // Issue #7 Wave 2: new API surface used by the FilterChips / FTS /
+    // DetailModal wiring. Mock them as no-ops so the existing tests
+    // don't trip the Library mount-time fetch.
+    listTags: vi.fn(async () => []),
+    searchDiagrams: vi.fn(async () => ({ results: [] })),
+    updateDiagramMeta: vi.fn(async () => ({ meta: {} })),
+    save: vi.fn(async () => ({ path: "", slug: "" })),
   },
   authFetch: vi.fn(async () => new Response(null, { status: 404 })),
 }));
