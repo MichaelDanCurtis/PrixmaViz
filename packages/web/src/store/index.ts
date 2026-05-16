@@ -6,6 +6,75 @@ import type {
 export type WsStatus = "idle" | "connecting" | "open" | "closed";
 export type CanvasMode = "select" | "region" | "pin" | "tag";
 
+// Issue #4: client-side sort keys for the Library sidebar. Persisted to
+// localStorage so the user's choice survives reload. "updated" matches the
+// server's default ORDER BY updated_at DESC.
+export type LibrarySortKey =
+  | "updated"
+  | "created"
+  | "name-asc"
+  | "name-desc"
+  | "engine";
+
+const LIBRARY_SORT_KEYS: readonly LibrarySortKey[] = [
+  "updated",
+  "created",
+  "name-asc",
+  "name-desc",
+  "engine",
+];
+
+const LIBRARY_SORT_STORAGE_KEY = "prixmaviz_library_sort";
+
+function readPersistedSortKey(): LibrarySortKey {
+  if (typeof localStorage === "undefined") return "updated";
+  try {
+    const raw = localStorage.getItem(LIBRARY_SORT_STORAGE_KEY);
+    if (raw && (LIBRARY_SORT_KEYS as readonly string[]).includes(raw)) {
+      return raw as LibrarySortKey;
+    }
+  } catch {}
+  return "updated";
+}
+
+/**
+ * Issue #4: client-side comparator for the Library sort dropdown. Pure;
+ * exported so tests can pin behavior without rendering the component.
+ *
+ * Sorts are stable for equal keys because [...arr].sort() in modern engines
+ * is spec-stable (Array.prototype.sort, ECMA-262 §23.1.3.30).
+ */
+export function compareLibraryEntries(
+  a: LibraryEntry,
+  b: LibraryEntry,
+  key: LibrarySortKey,
+): number {
+  switch (key) {
+    case "updated":
+      return b.updatedAt.localeCompare(a.updatedAt);
+    case "created":
+      return b.createdAt.localeCompare(a.createdAt);
+    case "name-asc":
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    case "name-desc":
+      return b.name.localeCompare(a.name, undefined, { sensitivity: "base" });
+    case "engine": {
+      const e = a.engine.localeCompare(b.engine);
+      if (e !== 0) return e;
+      // Stable within engine: most recently updated first.
+      return b.updatedAt.localeCompare(a.updatedAt);
+    }
+  }
+}
+
+export const LIBRARY_SORT_LABELS: Record<LibrarySortKey, string> = {
+  updated: "Recently updated",
+  created: "Recently created",
+  "name-asc": "Name A→Z",
+  "name-desc": "Name Z→A",
+  engine: "By engine",
+};
+
 export interface AppState {
   // Cycle 4: workspace identity
   workspaceId: string | null;
@@ -21,6 +90,9 @@ export interface AppState {
   svg: string;
   dsl: string;
   library: LibraryEntry[];
+  // Issue #4: Library sidebar sort key, persisted to localStorage.
+  librarySortKey: LibrarySortKey;
+  setLibrarySortKey: (k: LibrarySortKey) => void;
   wsStatus: WsStatus;
   error: string | null;
   pending: boolean;
@@ -75,6 +147,11 @@ export const useAppStore = create<AppState>((set) => ({
   svg: "",
   dsl: "",
   library: [],
+  librarySortKey: readPersistedSortKey(),
+  setLibrarySortKey: (k) => {
+    try { localStorage.setItem(LIBRARY_SORT_STORAGE_KEY, k); } catch {}
+    set({ librarySortKey: k });
+  },
   wsStatus: "idle",
   error: null,
   pending: false,
