@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { emptyGraphIR, type Tile } from "@prixmaviz/shared";
 import { runMigrations } from "../../../src/db/migrate";
 import { closeDb, getDb } from "../../../src/db/client";
-import { createWorkspace, updateWorkspaceTiles } from "../../../src/db/workspaces";
+import { createWorkspace, updateWorkspaceTiles, getWorkspace } from "../../../src/db/workspaces";
 import { createDiagram, updateDiagram } from "../../../src/db/diagrams";
 import { dispatchTool } from "../../../src/mcp/tools";
 
@@ -145,5 +145,121 @@ describe("MCP list_tiles", () => {
     const { ctx } = makeCtx(sql, ws.id);
     const out = (await dispatchTool("list_tiles", {}, ctx)) as { tiles: unknown[] };
     expect(out.tiles).toEqual([]);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// focus_tile
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("MCP focus_tile", () => {
+  it("raises the target tile's z to max(z)+1 and emits a workspace broadcast", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const { ctx, broadcasts } = makeCtx(sql, ws.id);
+
+    const t1 = await seedTile(sql, ws.id, { id: "t_low", slug: "low", x: 0, y: 0, w: 100, h: 80, z: 1 });
+    const t2 = await seedTile(sql, ws.id, { id: "t_mid", slug: "mid", x: 100, y: 0, w: 100, h: 80, z: 5 });
+    const t3 = await seedTile(sql, ws.id, { id: "t_high", slug: "high", x: 200, y: 0, w: 100, h: 80, z: 9 });
+    await updateWorkspaceTiles(sql, ws.id, [t1, t2, t3]);
+
+    const out = (await dispatchTool("focus_tile", { tileId: "t_low" }, ctx)) as {
+      ok: boolean; tileId: string; newZ: number; panTo?: unknown;
+    };
+    expect(out.ok).toBe(true);
+    expect(out.tileId).toBe("t_low");
+    expect(out.newZ).toBe(10); // max(1, 5, 9) + 1
+    expect(out.panTo).toBeUndefined(); // pan defaults to false
+
+    // Persisted z reflects the bump.
+    const after = await getWorkspace(sql, ws.id);
+    const targetTile = after!.tiles.find((t) => t.id === "t_low")!;
+    expect(targetTile.z).toBe(10);
+
+    // Workspace broadcast went out.
+    const wsEvents = broadcasts.filter((e) => e.msg.type === "workspace");
+    expect(wsEvents.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("with pan: true returns the tile center as world coordinates (no zoom)", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const { ctx } = makeCtx(sql, ws.id);
+
+    const t = await seedTile(sql, ws.id, { id: "t_pan", slug: "pan", x: 100, y: 200, w: 80, h: 40, z: 1 });
+    await updateWorkspaceTiles(sql, ws.id, [t]);
+
+    const out = (await dispatchTool("focus_tile", { tileId: "t_pan", pan: true }, ctx)) as {
+      panTo: { x: number; y: number; zoom?: number };
+    };
+    // Center = (x + w/2, y + h/2) = (140, 220).
+    expect(out.panTo).toEqual({ x: 140, y: 220 });
+    // The server does NOT return zoom.
+    expect((out.panTo as { zoom?: number }).zoom).toBeUndefined();
+  });
+
+  it("resolves by diagramSlug when tileId is omitted", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const { ctx } = makeCtx(sql, ws.id);
+
+    const t = await seedTile(sql, ws.id, { id: "t_via_slug", slug: "via-slug", x: 0, y: 0, w: 100, h: 80, z: 1 });
+    await updateWorkspaceTiles(sql, ws.id, [t]);
+
+    const out = (await dispatchTool("focus_tile", { diagramSlug: "via-slug" }, ctx)) as {
+      ok: boolean; tileId: string;
+    };
+    expect(out.ok).toBe(true);
+    expect(out.tileId).toBe("t_via_slug");
+  });
+
+  it("sets focused: true on the target and clears it on previously-focused tiles", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const { ctx } = makeCtx(sql, ws.id);
+
+    const t1 = await seedTile(sql, ws.id, { id: "t_was_focused", slug: "was", x: 0, y: 0, w: 100, h: 80, z: 1 });
+    const t2 = await seedTile(sql, ws.id, { id: "t_new", slug: "new", x: 100, y: 0, w: 100, h: 80, z: 2 });
+    await updateWorkspaceTiles(sql, ws.id, [
+      { ...t1, focused: true } as Tile & { focused: true },
+      t2,
+    ]);
+
+    await dispatchTool("focus_tile", { tileId: "t_new" }, ctx);
+
+    const after = await getWorkspace(sql, ws.id);
+    const tiles = after!.tiles as Array<Tile & { focused?: boolean }>;
+    expect(tiles.find((t) => t.id === "t_was_focused")!.focused).not.toBe(true);
+    expect(tiles.find((t) => t.id === "t_new")!.focused).toBe(true);
+  });
+
+  it("rejects calls that supply NEITHER tileId nor diagramSlug (oneOf gate)", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const { ctx } = makeCtx(sql, ws.id);
+    await expect(dispatchTool("focus_tile", {}, ctx)).rejects.toThrow(
+      /Exactly one of \[tileId, diagramSlug\] is required/,
+    );
+  });
+
+  it("rejects calls that supply BOTH tileId AND diagramSlug (oneOf gate)", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const { ctx } = makeCtx(sql, ws.id);
+    await expect(
+      dispatchTool("focus_tile", { tileId: "t_x", diagramSlug: "s" }, ctx),
+    ).rejects.toThrow(/Exactly one of \[.+\] is allowed, but multiple were supplied/);
+  });
+
+  it("404s when the resolved tile is missing from the workspace", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const { ctx } = makeCtx(sql, ws.id);
+    await expect(
+      dispatchTool("focus_tile", { tileId: "t_does_not_exist" }, ctx),
+    ).rejects.toThrow(/tile not found/);
+    await expect(
+      dispatchTool("focus_tile", { diagramSlug: "ghost" }, ctx),
+    ).rejects.toThrow(/no tile for diagramSlug/);
   });
 });
