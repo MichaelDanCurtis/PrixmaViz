@@ -398,6 +398,14 @@ export async function handleApi(
     const body = await req.json() as { diagramId: string; diagramSlug: string; x?: number; y?: number; w?: number; h?: number };
     const ws = await dbGetWorkspace(deps.sql, workspaceId);
     if (!ws) return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
+    // Server-side dedup (issue #3): if a tile already exists for this
+    // diagramSlug, return it with `existing: true` instead of appending a
+    // duplicate. Guards against multi-tab races and rapid double-clicks that
+    // bypass the client-side check in Library.tsx::open().
+    const existing = ws.tiles.find((t) => t.diagramSlug === body.diagramSlug);
+    if (existing) {
+      return Response.json({ tile: existing, existing: true });
+    }
     const tile: Tile = {
       id: newTileId(),
       diagramId: body.diagramId,
