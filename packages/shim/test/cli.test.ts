@@ -43,7 +43,7 @@ describe("CLI flags", () => {
     expect(exit).toBe(0);
   });
 
-  it("--version prints 0.6.0 and exits 0", async () => {
+  it("--version prints 0.7.0 and exits 0", async () => {
     const proc = Bun.spawn(["bun", indexPath, "--version"], {
       stdout: "pipe",
       stderr: "pipe",
@@ -51,6 +51,6 @@ describe("CLI flags", () => {
     const out = await new Response(proc.stdout).text();
     const exit = await proc.exited;
     expect(exit).toBe(0);
-    expect(out.trim()).toBe("0.6.0");
+    expect(out.trim()).toBe("0.7.0");
   });
 });

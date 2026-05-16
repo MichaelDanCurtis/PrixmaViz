@@ -8,7 +8,7 @@ import {
 import { TOOLS } from "./tools";
 import { resolveWorkspaceId, workspaceConfigPath } from "./bootstrap";
 
-export const SHIM_VERSION = "0.6.0";
+export const SHIM_VERSION = "0.7.0";
 
 /**
  * Dependencies injected into the call-tool factory. Real callers use Node
@@ -147,7 +147,7 @@ async function main() {
   }
 
   if (argv.includes("--version")) {
-    process.stdout.write("0.6.0\n");
+    process.stdout.write(`${SHIM_VERSION}\n`);
     process.exit(0);
   }
 
