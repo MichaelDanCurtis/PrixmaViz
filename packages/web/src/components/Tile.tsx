@@ -176,13 +176,9 @@ export function Tile({ tile }: Props) {
             diagramId={tile.diagramId}
             onRestored={(newSource, newSvg) => {
               setSvg(newSvg);
+              // Stash the restored source so the editor (if/when toggled)
+              // picks it up without an extra GET round-trip.
               setEditorInitial(newSource);
-              // If the editor is open, hand it the new text. If not, leave
-              // the user a clean tile with the restored render.
-              if (editing) setEditing(false);
-              // Re-mount the editor with the restored source so the user
-              // can immediately tweak it.
-              if (editing) setEditing(true);
             }}
             onClose={() => setHistoryOpen(false)}
           />
