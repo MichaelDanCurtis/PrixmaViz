@@ -30,6 +30,7 @@ import {
 import { crudTools, loadDiagramTool } from "./tools/crud";
 import { annotationTools } from "./tools/annotations";
 import { workspaceTools } from "./tools/workspaces";
+import { bulkTools } from "./tools/bulk";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -543,6 +544,8 @@ export const TOOLS: ToolDef[] = [
   ...annotationTools,
   // Group E — workspace lifecycle (Issue #5).
   ...workspaceTools,
+  // Group F — bulk operations (Issue #5).
+  ...bulkTools,
 ];
 
 export async function dispatchTool(
