@@ -17,7 +17,6 @@ import {
   createDiagram as dbCreateDiagram,
   createDiagramWithUniqueSlug as dbCreateDiagramWithUniqueSlug,
   getDiagram as dbGetDiagram,
-  getDiagramBySlug as dbGetDiagramBySlug,
   listDiagrams as dbListDiagrams,
   updateDiagram as dbUpdateDiagram,
   type DbDiagram,
@@ -28,6 +27,7 @@ import {
   updateWorkspaceCamera as dbUpdateWorkspaceCamera,
   updateWorkspaceTiles as dbUpdateWorkspaceTiles,
 } from "../db/workspaces";
+import { crudTools, loadDiagramTool } from "./tools/crud";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -386,17 +386,9 @@ export const TOOLS: ToolDef[] = [
     },
     run: saveDiagramImpl,
   },
-  {
-    name: "load_diagram",
-    description: "Load a saved diagram by slug into the workspace. Slug is the kebab-case identifier returned by list_diagrams in each entry's `slug` field.",
-    inputSchema: {
-      type: "object",
-      properties: { slug: { type: "string" } },
-      required: ["slug"],
-    },
-    legacyAliases: { name: "slug" },
-    run: loadDiagramImpl,
-  },
+  // load_diagram — defined in tools/crud.ts so the A3-folded extension
+  // (accept diagramId; gain includeSvg) lives next to the new CRUD ops.
+  loadDiagramTool,
   {
     name: "list_diagrams",
     description: "List diagrams in the current workspace.",
@@ -541,6 +533,10 @@ export const TOOLS: ToolDef[] = [
     },
     run: exportDiagramImpl,
   },
+  // ─── Group A — CRUD (delete + duplicate). load_diagram (A3-folded) is
+  // inserted above where the legacy load_diagram entry used to live so the
+  // tool ordering matches the prior surface. ───
+  ...crudTools,
 ];
 
 export async function dispatchTool(
@@ -659,21 +655,9 @@ async function saveDiagramImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   return { diagram: updated };
 }
 
-async function loadDiagramImpl(args: Record<string, unknown>, ctx: ToolCtx) {
-  // Accept either `slug` (new, matches description) or `name` (legacy alias).
-  // The `name` alias will be removed after v0.7.x.
-  const raw = (args.slug ?? args.name) as string | undefined;
-  if (!raw) throw new Error("Missing required parameter: slug");
-  const slug = raw.endsWith(".pviz") ? raw.replace(/\.pviz$/, "") : raw;
-  const row = await dbGetDiagramBySlug(ctx.sql, ctx.workspaceId, slug);
-  if (!row) throw new Error("diagram not found");
-  const diagram = dbDiagramToDomain(row);
-  const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
-  if (!outcome.ok) throw new Error(outcome.error);
-  await dbUpdateDiagram(ctx.sql, ctx.workspaceId, row.id, { svg: outcome.result.svg });
-  broadcast(ctx.hub, ctx.workspaceId, diagram, outcome.result.svg, outcome.warnings);
-  return { diagramId: row.id, ir: diagram.ir, dsl: diagram.dsl, render: outcome.result };
-}
+// loadDiagramImpl moved to tools/crud.ts as part of the A3-folded
+// extension (accept diagramId; gain includeSvg). The registry entry
+// imports `loadDiagramTool` from that module.
 
 async function listDiagramsImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   const tag = args.tag as string | undefined;
