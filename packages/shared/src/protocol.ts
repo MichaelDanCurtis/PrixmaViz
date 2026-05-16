@@ -67,6 +67,14 @@ export interface LibraryEntry {
    * `null` when never opened. Drives the "Recent" Library section. Issue #7.
    */
   lastOpenedAt: string | null;
+  /**
+   * Optional metadata projected from `meta` JSONB into the listing so the
+   * item-detail modal doesn't need a second roundtrip on open. Issue #7
+   * Wave 2 (F5).
+   */
+  description?: string;
+  author?: string;
+  notes?: string;
 }
 
 export type ServerToClient =

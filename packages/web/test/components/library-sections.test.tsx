@@ -70,6 +70,23 @@ vi.mock("../../src/lib/api", () => ({
     loadBySlug: vi.fn(),
     createTile: vi.fn(),
     setPinned: setPinnedMock,
+    // Issue #7 Wave 2: Library now also fetches tag autocomplete on
+    // mount and may exercise the FTS / metadata routes. Mock them as
+    // empty-results no-ops so this section-layout suite stays focused.
+    listTags: vi.fn(async () => []),
+    searchDiagrams: vi.fn(async () => ({ results: [] })),
+    updateDiagramMeta: vi.fn(async () => ({ meta: {} })),
+    save: vi.fn(async () => ({ path: "", slug: "" })),
+    getWorkspace: vi.fn(async () => ({
+      id: "00000000-0000-0000-0000-000000000000",
+      name: null,
+      camera: { x: 0, y: 0, zoom: 1 },
+      tiles: [],
+      settings: {},
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastSeenAt: "2024-01-01T00:00:00Z",
+    })),
   },
   authFetch: vi.fn(async () => new Response(null, { status: 404 })),
 }));

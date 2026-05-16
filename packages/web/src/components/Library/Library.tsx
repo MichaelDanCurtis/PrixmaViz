@@ -13,6 +13,8 @@ import type { LibraryEntry, Tile } from "@prixmaviz/shared";
 import { entriesUnderPath } from "../../lib/folder-tree";
 import { Card } from "./Card";
 import { Tree } from "./Tree";
+import { FilterChips } from "./FilterChips";
+import { DetailModal } from "./DetailModal";
 
 /**
  * Issue #7 Wave 2: section render helper. Emits nothing when `entries`
@@ -144,8 +146,18 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
   const setSnapEnabled = useAppStore((s) => s.setSnapEnabled);
   // Issue #7 Wave 2C — folder tree state.
   const selectedFolderPath = useAppStore((s) => s.selectedFolderPath);
+  // Issue #7 Wave 2 (F3): active tag filter set, AND-applied below.
+  const activeTagFilters = useAppStore((s) => s.activeTagFilters);
+  // Issue #7 Wave 2 (F1): server-side FTS result list. When non-null,
+  // the All section renders these instead of the local-filtered slice.
+  const serverSearchResults = useAppStore((s) => s.serverSearchResults);
+  const setServerSearchResults = useAppStore((s) => s.setServerSearchResults);
+  const setTagAutocomplete = useAppStore((s) => s.setTagAutocomplete);
   const [emptyFolders, setEmptyFolders] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  // Issue #7 Wave 2 (F1): in-flight flag for the FTS HTTP request. Drives
+  // the "Searching…" placeholder while a debounced query is outstanding.
+  const [searching, setSearching] = useState(false);
   const [bulkFormat, setBulkFormat] = useState<ExportFormat>("svg");
   const [bulkPackaging, setBulkPackaging] = useState<BulkPackaging>("zip");
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -181,6 +193,65 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
     void refreshLibrary();
   }, [refreshLibrary]);
 
+  // Issue #7 Wave 2 (F3/F5): seed the autocomplete cache once on mount.
+  // Best-effort — if the route is down we just skip; the DetailModal still
+  // works, it just won't suggest existing tags.
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .listTags()
+      .then((tags) => {
+        if (!cancelled) setTagAutocomplete(tags);
+      })
+      .catch(() => {
+        /* ignore — autocomplete is optional */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [setTagAutocomplete]);
+
+  // Issue #7 Wave 2 (F1): debounced server-side FTS. When the search input
+  // has >= 2 chars, wait 200ms and POST. Earlier requests are dropped via a
+  // `requestId` token so a slow response doesn't overwrite a faster newer
+  // one. When the input drops below 2 chars, clear serverSearchResults so
+  // the All section falls back to the local filter.
+  const searchRequestIdRef = useRef(0);
+  useEffect(() => {
+    if (search.length < 2) {
+      // Drop any pending results from a previous query.
+      if (useAppStore.getState().serverSearchResults !== null) {
+        setServerSearchResults(null);
+      }
+      setSearching(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      const myId = ++searchRequestIdRef.current;
+      setSearching(true);
+      void api
+        .searchDiagrams({
+          q: search,
+          parentPath: selectedFolderPath,
+          tags: [...activeTagFilters],
+        })
+        .then((res) => {
+          // Stale guard — only commit if we're still the latest request.
+          if (myId !== searchRequestIdRef.current) return;
+          setServerSearchResults(res.results);
+        })
+        .catch(() => {
+          if (myId !== searchRequestIdRef.current) return;
+          setServerSearchResults([]);
+        })
+        .finally(() => {
+          if (myId !== searchRequestIdRef.current) return;
+          setSearching(false);
+        });
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [search, selectedFolderPath, activeTagFilters, setServerSearchResults]);
+
   useEffect(() => {
     return () => {
       if (cancelFocusRef.current) cancelFocusRef.current();
@@ -200,15 +271,23 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
     [folderScoped, librarySortKey],
   );
 
+  // Issue #7 Wave 2 (F3): apply the tag AND filter BEFORE the substring
+  // filter so the search box still narrows within the active tag scope.
+  const tagFiltered = useMemo(() => {
+    if (activeTagFilters.size === 0) return sorted;
+    const filters = [...activeTagFilters];
+    return sorted.filter((e) => filters.every((t) => e.tags.includes(t)));
+  }, [sorted, activeTagFilters]);
+
   const filtered = useMemo(() => {
-    if (!search) return sorted;
+    if (!search) return tagFiltered;
     const q = search.toLowerCase();
-    return sorted.filter(
+    return tagFiltered.filter(
       (e) =>
         e.name.toLowerCase().includes(q) ||
         e.tags.some((t) => t.toLowerCase().includes(q)),
     );
-  }, [sorted, search]);
+  }, [tagFiltered, search]);
 
   // Issue #7 Wave 2: section partition over `filtered`.
   //  - Pinned: every pinned entry, honoring the sort dropdown.
@@ -217,22 +296,60 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
   //    purpose is "what did I last touch?".
   //  - All:    everything not pinned, honoring the sort dropdown. Note
   //    Recent is a shortcut, not a filter — its entries also appear here.
+  //
+  // Issue #7 Wave 2 (F1) — when a server-side FTS result is present
+  // (serverSearchResults != null), the All section renders THOSE in
+  // result order instead of the local-filtered slice. Pinned + Recent
+  // are hidden during an active server search so the result list
+  // doesn't read as duplicated against the shortcut sections.
   const RECENT_LIMIT = 10;
+  const serverActive = serverSearchResults !== null;
   const pinnedEntries = useMemo(
-    () => filtered.filter((e) => e.pinned),
-    [filtered],
+    () => (serverActive ? [] : filtered.filter((e) => e.pinned)),
+    [filtered, serverActive],
   );
   const recentEntries = useMemo(() => {
+    if (serverActive) return [];
     return filtered
       .filter((e) => !e.pinned && e.lastOpenedAt)
       .slice()
       .sort((a, b) => (b.lastOpenedAt as string).localeCompare(a.lastOpenedAt as string))
       .slice(0, RECENT_LIMIT);
-  }, [filtered]);
-  const allEntries = useMemo(
-    () => filtered.filter((e) => !e.pinned),
-    [filtered],
-  );
+  }, [filtered, serverActive]);
+  const allEntries = useMemo(() => {
+    if (!serverActive) return filtered.filter((e) => !e.pinned);
+    // Map server result slugs back to LibraryEntry objects (preserve
+    // result order). If the library hasn't caught up via WS yet, fall
+    // back to a synthesized entry built from the search hit so the All
+    // section still renders something — but in the common case the
+    // entry already exists in `library`.
+    const bySlug = new Map<string, LibraryEntry>();
+    for (const e of library) {
+      bySlug.set(basename(e.path).replace(/\.pviz$/, ""), e);
+    }
+    const out: LibraryEntry[] = [];
+    for (const hit of serverSearchResults!) {
+      const existing = bySlug.get(hit.slug);
+      if (existing) {
+        out.push(existing);
+      } else {
+        out.push({
+          id: hit.slug,
+          name: hit.name,
+          path: `/lib/${hit.slug}.pviz`,
+          engine: hit.engine,
+          kind: "graph",
+          tags: hit.tags,
+          createdAt: hit.createdAt ?? "",
+          updatedAt: hit.updatedAt ?? "",
+          parentPath: "",
+          pinned: false,
+          lastOpenedAt: null,
+        } as LibraryEntry);
+      }
+    }
+    return out;
+  }, [filtered, library, serverActive, serverSearchResults]);
 
   useLayoutEffect(() => {
     const el = listRef.current;
@@ -491,6 +608,19 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
           ))}
         </select>
       </div>
+      {/* Issue #7 Wave 2 (F3): active tag-filter chips. Self-hides when
+          no filters are active. */}
+      <FilterChips />
+      {/* Issue #7 Wave 2 (F1): in-flight FTS placeholder. */}
+      {searching && (
+        <div
+          className="library-searching"
+          data-testid="library-searching"
+          aria-live="polite"
+        >
+          Searching…
+        </div>
+      )}
       {selectMode && (
         <div className="library-select-row">
           <button
@@ -625,6 +755,9 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
           </button>
         )}
       </div>
+      {/* Issue #7 Wave 2 (F5): item-detail modal. Self-gates on
+          detailModalSlug — renders nothing when closed. */}
+      <DetailModal />
     </aside>
   );
 }

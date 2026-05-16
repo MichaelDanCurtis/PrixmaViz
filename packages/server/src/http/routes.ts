@@ -175,25 +175,33 @@ export async function handleApi(
   if (p === "/api/library" && req.method === "GET") {
     const rows = await dbListDiagrams(deps.sql, workspaceId);
     return Response.json({
-      entries: rows.map((d) => ({
-        // Issue #7 Wave 2 — surface the diagram UUID so the web Library can
-        // call ID-keyed routes (POST /api/diagrams/:id/pin) and match
-        // library:diagram-* WS events to a row in the local library list.
-        id: d.id,
-        name: d.name,
-        path: `${d.slug}.pviz`,
-        engine: d.engine,
-        kind: d.kind,
-        tags: Array.isArray((d.meta as { tags?: unknown }).tags)
-          ? (d.meta as { tags: string[] }).tags
-          : [],
-        createdAt: d.createdAt,
-        updatedAt: d.updatedAt,
-        // Issue #7 Wave 1B — surface the new columns to the web Library.
-        parentPath: d.parentPath,
-        pinned: d.pinned,
-        lastOpenedAt: d.lastOpenedAt,
-      })),
+      entries: rows.map((d) => {
+        const meta = (d.meta ?? {}) as {
+          tags?: unknown;
+          description?: unknown;
+          author?: unknown;
+          notes?: unknown;
+        };
+        const tags = Array.isArray(meta.tags) ? (meta.tags as string[]) : [];
+        return {
+          id: d.id,
+          name: d.name,
+          path: `${d.slug}.pviz`,
+          engine: d.engine,
+          kind: d.kind,
+          tags,
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
+          parentPath: d.parentPath,
+          pinned: d.pinned,
+          lastOpenedAt: d.lastOpenedAt,
+          ...(typeof meta.description === "string"
+            ? { description: meta.description }
+            : {}),
+          ...(typeof meta.author === "string" ? { author: meta.author } : {}),
+          ...(typeof meta.notes === "string" ? { notes: meta.notes } : {}),
+        };
+      }),
     });
   }
 

@@ -109,6 +109,22 @@ export function Card({
     }
   }
 
+  // Issue #7 Wave 2 (F3): clicking a tag chip on a card adds it to the
+  // global tag-filter set. stopPropagation prevents the card's onClick
+  // (which would open the diagram) from firing in the same gesture.
+  function onTagClick(tag: string, e: React.MouseEvent): void {
+    e.stopPropagation();
+    useAppStore.getState().addTagFilter(tag);
+  }
+
+  // Issue #7 Wave 2 (F5): per-card ⋯ menu opens the detail modal for
+  // this entry's slug. Hidden under bulk-select mode (the row click is
+  // already overloaded with multi-select semantics there).
+  function onOpenMenu(e: React.MouseEvent): void {
+    e.stopPropagation();
+    useAppStore.getState().openDetailModal(slug);
+  }
+
   return (
     <div
       className={itemClasses}
@@ -139,6 +155,18 @@ export function Card({
       >
         {entry.pinned ? "★" : "☆"}
       </button>
+      {!selectMode && (
+        <button
+          type="button"
+          className="library-item-menu"
+          onClick={onOpenMenu}
+          aria-label={`Details for ${entry.name}`}
+          title="Details"
+          data-testid={`library-item-menu-${slug}`}
+        >
+          ⋯
+        </button>
+      )}
       <div className="library-thumb">
         <LibraryThumb slug={slug} />
       </div>
@@ -149,9 +177,16 @@ export function Card({
       {entry.tags.length > 0 && (
         <div className="library-tags">
           {entry.tags.map((t) => (
-            <span key={t} className="tag">
+            <button
+              key={t}
+              type="button"
+              className="tag"
+              onClick={(e) => onTagClick(t, e)}
+              title={`Filter by ${t}`}
+              data-testid={`library-tag-${entry.name}-${t}`}
+            >
               {t}
-            </span>
+            </button>
           ))}
         </div>
       )}
