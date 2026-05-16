@@ -53,6 +53,16 @@ import {
   updateWorkspaceSettings as dbUpdateWorkspaceSettings,
   updateWorkspaceTiles as dbUpdateWorkspaceTiles,
 } from "../db/workspaces";
+// Issue #8 Wave 1A — share links (permission tiers, token-based access).
+import {
+  dbCreateShareLink,
+  dbGetShareByToken,
+  dbListShareLinks,
+  dbResolveShareToken,
+  dbRevokeShareLink,
+  type SharePermission,
+} from "../db/share-links";
+import { getIrRenderer } from "../renderers/registry";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -139,6 +149,48 @@ export async function handleApi(
     return Response.json({
       id: d.id, name: d.name, engine: d.engine, kind: d.kind, svg: d.svg, dsl: d.dsl,
     });
+  }
+
+  // ─── Issue #8 Wave 1A — share-link public routes (no auth) ───────
+  // /s/:token.svg — raw SVG, embed-friendly. Same headers as /p/:id.svg
+  // but adds Referrer-Policy: no-referrer so the token doesn't leak in
+  // outgoing Referer headers (e.g. when the embed loads sub-resources).
+  // Expired tokens → 410 Gone (not 404 — the link existed, just no
+  // longer valid). Missing → 404.
+  const shareSvgMatch = p.match(/^\/s\/([a-z0-9_-]+)\.svg$/i);
+  if (shareSvgMatch && req.method === "GET") {
+    return await shareSvgRoute(shareSvgMatch[1]!, deps);
+  }
+
+  // /s/:token — SPA shell. Resolve the token to confirm it exists, then
+  // fall through to static for index.html so the SPA can fetch via JSON.
+  // Expired → 410; missing → 404. Always sets Referrer-Policy.
+  const shareViewMatch = p.match(/^\/s\/([a-z0-9_-]+)$/i);
+  if (shareViewMatch && req.method === "GET") {
+    return await shareViewRoute(shareViewMatch[1]!, deps);
+  }
+
+  // JSON API for SPA on /s/:token — also no auth.
+  const sharePublicApiMatch = p.match(/^\/api\/public\/shares\/([a-z0-9_-]+)$/i);
+  if (sharePublicApiMatch && req.method === "GET") {
+    return await sharePublicJsonRoute(sharePublicApiMatch[1]!, deps);
+  }
+
+  // /embed/:slug.svg — workspace-public-only. Only serves diagrams whose
+  // workspace has at least one view-or-higher share_link. Sets the
+  // permissive iframe headers + Referrer-Policy: no-referrer. Caches by
+  // slug.
+  const embedSvgMatch = p.match(/^\/embed\/([a-z0-9_-]+)\.svg$/i);
+  if (embedSvgMatch && req.method === "GET") {
+    return await embedSvgRoute(embedSvgMatch[1]!, deps);
+  }
+
+  // /og/:idOrToken.png — social-card preview image. Resolves an opaque
+  // token OR a public-view diagram id, then renders PNG via the existing
+  // export path. Caches the bytes for repeat fetches.
+  const ogMatch = p.match(/^\/og\/([a-z0-9_-]+)\.png$/i);
+  if (ogMatch && req.method === "GET") {
+    return await ogPngRoute(ogMatch[1]!, deps);
   }
 
   if (!p.startsWith("/api/")) return undefined;
@@ -302,6 +354,22 @@ export async function handleApi(
       ? `${process.env.PRIXMAVIZ_PUBLIC_URL ?? ""}/p/${diagramId}`
       : undefined;
     return Response.json({ public: body.public, publicUrl });
+  }
+
+  // ─── Issue #8 Wave 1A — share-link management API (auth-gated) ───
+  // POST /api/diagrams/:id/shares — create.
+  // GET  /api/diagrams/:id/shares — list owner's.
+  // DELETE /api/shares/:token     — revoke (owner-scoped).
+  const sharesMatch = p.match(/^\/api\/diagrams\/([^/]+)\/shares$/);
+  if (sharesMatch && req.method === "POST") {
+    return await createShareRoute(sharesMatch[1]!, req, workspaceId, deps);
+  }
+  if (sharesMatch && req.method === "GET") {
+    return await listSharesRoute(sharesMatch[1]!, workspaceId, deps);
+  }
+  const shareRevokeMatch = p.match(/^\/api\/shares\/([a-z0-9_-]+)$/i);
+  if (shareRevokeMatch && req.method === "DELETE") {
+    return await revokeShareRoute(shareRevokeMatch[1]!, workspaceId, deps);
   }
 
   const exportVsdxMatch = p.match(/^\/api\/diagrams\/([^/]+)\/export\.vsdx$/);
@@ -1500,4 +1568,373 @@ function isUndefinedValuePostgresError(e: unknown): boolean {
   // Some postgres versions put the marker in the message instead of `.code`.
   const msg = (e as { message?: unknown }).message;
   return typeof msg === "string" && msg.startsWith("UNDEFINED_VALUE:");
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Issue #8 Wave 1A — share-link routes
+// ───────────────────────────────────────────────────────────────────────────
+
+const SHARE_PERMISSIONS: ReadonlyArray<SharePermission> = ["view", "comment", "edit"];
+
+/**
+ * Build the share-route URL helper. Lives here so tests can assert exact
+ * format without scraping env state. Returns the full URL the client
+ * would share — `${publicUrl}/s/${token}`.
+ */
+function shareUrlFor(token: string): string {
+  const base = (process.env.PRIXMAVIZ_PUBLIC_URL ?? "").replace(/\/$/, "");
+  return `${base}/s/${token}`;
+}
+
+/**
+ * Headers applied to every `/s/*` route so the opaque token never leaks
+ * via Referer when the share page loads sub-resources. We also set
+ * Cache-Control: private so intermediaries don't cache token-keyed
+ * content (which is OK to be re-fetched on every load).
+ */
+function shareHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "private, max-age=0",
+    ...extra,
+  };
+}
+
+/**
+ * GET /s/:token.svg — raw SVG behind a share token. 410 on expired,
+ * 404 on missing.
+ */
+async function shareSvgRoute(token: string, deps: RouteDeps): Promise<Response> {
+  const resolved = await dbResolveShareToken(deps.sql, token);
+  if (!resolved) {
+    // Distinguish missing vs expired so the client can show "expired"
+    // rather than "not found" copy.
+    const existing = await dbGetShareByToken(deps.sql, token);
+    if (existing) {
+      return new Response("Gone", { status: 410, headers: shareHeaders() });
+    }
+    return new Response("Not Found", { status: 404, headers: shareHeaders() });
+  }
+  // dbGetDiagram requires a workspaceId scope — share tokens deliberately
+  // cross workspace boundaries (the token holder is "the public"), so we
+  // look up by id directly.
+  const rows = await deps.sql`
+    SELECT id, workspace_id, name, engine, kind, svg FROM diagrams WHERE id = ${resolved.diagramId}
+  `;
+  if (rows.length === 0 || !rows[0]!.svg) {
+    return new Response("Not Found", { status: 404, headers: shareHeaders() });
+  }
+  return new Response(rows[0]!.svg as string, {
+    status: 200,
+    headers: shareHeaders({
+      "Content-Type": "image/svg+xml; charset=utf-8",
+      "X-Frame-Options": "ALLOWALL",
+      "Content-Security-Policy": "frame-ancestors *",
+    }),
+  });
+}
+
+/**
+ * GET /s/:token — SPA shell. Resolve to ensure the token is live so we
+ * can return 410 / 404 instead of letting the SPA boot to a useless
+ * "not found" screen.
+ */
+async function shareViewRoute(token: string, deps: RouteDeps): Promise<Response | undefined> {
+  const resolved = await dbResolveShareToken(deps.sql, token);
+  if (!resolved) {
+    const existing = await dbGetShareByToken(deps.sql, token);
+    if (existing) return new Response("Gone", { status: 410, headers: shareHeaders() });
+    return new Response("Not Found", { status: 404, headers: shareHeaders() });
+  }
+  // Fall through — static handler serves index.html and the SPA renders
+  // the public diagram view client-side.
+  return undefined;
+}
+
+/**
+ * GET /api/public/shares/:token — JSON for SPA. Same gating as
+ * shareSvgRoute, but returns the diagram metadata + svg + permission.
+ */
+async function sharePublicJsonRoute(token: string, deps: RouteDeps): Promise<Response> {
+  const resolved = await dbResolveShareToken(deps.sql, token);
+  if (!resolved) {
+    const existing = await dbGetShareByToken(deps.sql, token);
+    if (existing) {
+      return Response.json(
+        { ok: false, error: "share link expired" },
+        { status: 410, headers: shareHeaders() },
+      );
+    }
+    return Response.json(
+      { ok: false, error: "not found" },
+      { status: 404, headers: shareHeaders() },
+    );
+  }
+  const rows = await deps.sql`
+    SELECT id, name, engine, kind, svg, dsl FROM diagrams WHERE id = ${resolved.diagramId}
+  `;
+  if (rows.length === 0) {
+    return Response.json(
+      { ok: false, error: "not found" },
+      { status: 404, headers: shareHeaders() },
+    );
+  }
+  const r = rows[0]!;
+  return new Response(
+    JSON.stringify({
+      id: r.id,
+      name: r.name,
+      engine: r.engine,
+      kind: r.kind,
+      svg: r.svg,
+      dsl: r.dsl,
+      permission: resolved.permission,
+    }),
+    {
+      status: 200,
+      headers: shareHeaders({ "Content-Type": "application/json" }),
+    },
+  );
+}
+
+/**
+ * GET /embed/:slug.svg — workspace-public-only.
+ *
+ * "Workspace-public" = the diagram's workspace has at least one
+ * view-or-higher share link on ANY of its diagrams. That promise is
+ * what an embed asserts: the workspace owner opted into sharing this
+ * content surface. We don't gate per-diagram for embeds; per-diagram
+ * gating is what /s/:token is for.
+ */
+async function embedSvgRoute(slug: string, deps: RouteDeps): Promise<Response> {
+  // Resolve the slug to a diagram + workspace.
+  const rows = await deps.sql<{ id: string; workspace_id: string; svg: string | null }[]>`
+    SELECT id, workspace_id, svg FROM diagrams WHERE slug = ${slug}
+  `;
+  if (rows.length === 0) {
+    return new Response("Not Found", { status: 404 });
+  }
+  const d = rows[0]!;
+  // Workspace must own at least one share link to opt into embed.
+  const shares = await deps.sql`
+    SELECT 1 FROM share_links WHERE created_by = ${d.workspace_id} LIMIT 1
+  `;
+  if (shares.length === 0) {
+    return new Response("Not Found", { status: 404 });
+  }
+  if (!d.svg) {
+    return new Response("Not Found", { status: 404 });
+  }
+  return new Response(d.svg, {
+    status: 200,
+    headers: {
+      "Content-Type": "image/svg+xml; charset=utf-8",
+      "X-Frame-Options": "ALLOWALL",
+      "Content-Security-Policy": "frame-ancestors *",
+      "Referrer-Policy": "no-referrer",
+      "Cache-Control": "public, max-age=60",
+    },
+  });
+}
+
+/**
+ * GET /og/:idOrToken.png — social-card preview image.
+ *
+ * Accepts either an opaque share token OR a public-view diagram id.
+ * Renders PNG via the existing `renderBinary` path. Cached via the
+ * Kroki client's binary cache (keyed by engine + format + dsl), so
+ * repeat fetches for the same diagram pay the upstream cost once.
+ */
+async function ogPngRoute(idOrToken: string, deps: RouteDeps): Promise<Response> {
+  // Resolve: token first (most common), then public-view fallback.
+  let diagramId: string | null = null;
+  const resolved = await dbResolveShareToken(deps.sql, idOrToken);
+  if (resolved) {
+    diagramId = resolved.diagramId;
+  } else {
+    const existing = await dbGetShareByToken(deps.sql, idOrToken);
+    if (existing) {
+      return new Response("Gone", { status: 410, headers: { "Referrer-Policy": "no-referrer" } });
+    }
+    // Fallback: treat as a public-view diagram id.
+    const { getPublicDiagram } = await import("../db/diagrams");
+    const d = await getPublicDiagram(deps.sql, idOrToken);
+    if (d) diagramId = d.id;
+  }
+  if (!diagramId) {
+    return new Response("Not Found", { status: 404 });
+  }
+
+  const rows = await deps.sql<{ engine: string; kind: string; ir: unknown; dsl: string | null; svg: string | null }[]>`
+    SELECT engine, kind, ir, dsl, svg FROM diagrams WHERE id = ${diagramId}
+  `;
+  if (rows.length === 0) {
+    return new Response("Not Found", { status: 404 });
+  }
+  const d = rows[0]!;
+  try {
+    const bytes = await renderPngForOg(d, deps);
+    return new Response(bytes as BodyInit, {
+      status: 200,
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=300",
+        "Referrer-Policy": "no-referrer",
+      },
+    });
+  } catch (e) {
+    console.error(`[og:${idOrToken}] render failed:`, e);
+    return new Response("render failed", { status: 502 });
+  }
+}
+
+/**
+ * Internal: render PNG bytes for the OG endpoint. Mirrors the
+ * `export_diagram` MCP tool's PNG path but adapted to the raw row
+ * shape since we don't have a DbDiagram here.
+ */
+async function renderPngForOg(
+  d: { engine: string; kind: string; ir: unknown; dsl: string | null; svg: string | null },
+  deps: RouteDeps,
+): Promise<Uint8Array> {
+  if (d.kind === "graph") {
+    if (!d.ir) throw new Error("graph diagram missing ir");
+    const renderer = getIrRenderer(d.engine as DiagramEngine);
+    if (!renderer) throw new Error(`no IR renderer for engine "${d.engine}"`);
+    const out = renderer(d.ir as GraphIR);
+    return await deps.kroki.renderBinary(d.engine as DiagramEngine, out.dsl, "png");
+  }
+  if (d.kind === "passthrough") {
+    if (d.dsl === null || d.dsl === undefined) throw new Error("passthrough diagram missing dsl");
+    return await deps.kroki.renderBinary(d.engine as DiagramEngine, d.dsl, "png");
+  }
+  throw new Error(`cannot render PNG for kind "${d.kind}"`);
+}
+
+/**
+ * POST /api/diagrams/:id/shares — create a share link.
+ * Body: { permission: 'view' | 'comment' | 'edit', expiresAt?: ISO-string }
+ * Returns: { token, url }. Broadcasts library:share-created.
+ *
+ * Also fires a fire-and-forget PNG export so the OG cache is warm by
+ * the time anyone follows the link. Uses Bun's native Promise — no
+ * await, no .then() chain that could fail the request.
+ */
+async function createShareRoute(
+  diagramId: string,
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as {
+    permission?: unknown;
+    expiresAt?: unknown;
+  };
+  if (typeof body.permission !== "string" || !SHARE_PERMISSIONS.includes(body.permission as SharePermission)) {
+    return Response.json(
+      { ok: false, error: `permission must be one of: ${SHARE_PERMISSIONS.join(", ")}` },
+      { status: 400 },
+    );
+  }
+  let expiresAt: string | null = null;
+  if (body.expiresAt !== undefined && body.expiresAt !== null) {
+    if (typeof body.expiresAt !== "string") {
+      return Response.json(
+        { ok: false, error: "expiresAt must be an ISO-8601 string" },
+        { status: 400 },
+      );
+    }
+    const t = Date.parse(body.expiresAt);
+    if (Number.isNaN(t)) {
+      return Response.json(
+        { ok: false, error: "expiresAt is not a valid ISO-8601 timestamp" },
+        { status: 400 },
+      );
+    }
+    expiresAt = new Date(t).toISOString();
+  }
+
+  // Ownership check first.
+  const existing = await dbGetDiagram(deps.sql, workspaceId, diagramId);
+  if (!existing) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+
+  const permission = body.permission as SharePermission;
+  const { token } = await dbCreateShareLink(
+    deps.sql,
+    diagramId,
+    permission,
+    expiresAt,
+    workspaceId,
+  );
+
+  deps.hub.broadcast(workspaceId, {
+    type: "library:share-created",
+    diagramId,
+    token,
+    permission,
+  });
+
+  // Fire-and-forget PNG warm-up so /og/:token.png is fast on first hit.
+  // No await — explicit Promise so any rejection logs cleanly without
+  // crashing the response. Bun's promise scheduler keeps this alive past
+  // the response return.
+  void (async () => {
+    try {
+      const rows = await deps.sql<{ engine: string; kind: string; ir: unknown; dsl: string | null; svg: string | null }[]>`
+        SELECT engine, kind, ir, dsl, svg FROM diagrams WHERE id = ${diagramId}
+      `;
+      if (rows.length === 0) return;
+      await renderPngForOg(rows[0]!, deps);
+    } catch (e) {
+      console.warn(`[og:warm:${token}] failed:`, e);
+    }
+  })();
+
+  return Response.json({ token, url: shareUrlFor(token) });
+}
+
+/**
+ * GET /api/diagrams/:id/shares — list owner's links for this diagram.
+ * Workspace ownership of the diagram is required (no cross-tenant leak
+ * even though dbListShareLinks is already keyed by createdBy).
+ */
+async function listSharesRoute(
+  diagramId: string,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const existing = await dbGetDiagram(deps.sql, workspaceId, diagramId);
+  if (!existing) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+  const links = await dbListShareLinks(deps.sql, diagramId, workspaceId);
+  return Response.json({
+    links: links.map((l) => ({
+      id: l.id,
+      token: l.token,
+      permission: l.permission,
+      expiresAt: l.expiresAt,
+      createdAt: l.createdAt,
+      url: shareUrlFor(l.token),
+    })),
+  });
+}
+
+/**
+ * DELETE /api/shares/:token — revoke (owner-scoped). 404 on missing or
+ * non-owned (we deliberately don't leak existence to non-owners).
+ */
+async function revokeShareRoute(
+  token: string,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const n = await dbRevokeShareLink(deps.sql, token, workspaceId);
+  if (n === 0) {
+    return Response.json({ ok: false, error: "share not found" }, { status: 404 });
+  }
+  deps.hub.broadcast(workspaceId, { type: "library:share-revoked", token });
+  return Response.json({ ok: true });
 }

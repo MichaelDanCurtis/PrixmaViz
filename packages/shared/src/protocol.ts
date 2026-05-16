@@ -92,7 +92,11 @@ export type ServerToClient =
   | { type: "library:diagram-updated"; diagramId: DiagramId; change: "pinned" | "moved" | "meta" }
   | { type: "library:diagram-opened"; diagramId: DiagramId; lastOpenedAt: string }
   | { type: "library:folders-changed"; emptyFolders: string[] }
-  | { type: "library:tags-changed" };
+  | { type: "library:tags-changed" }
+  // Issue #8 Wave 1A: share-link lifecycle. Cross-tab clients listen for
+  // these to refresh the share modal without polling.
+  | { type: "library:share-created"; diagramId: DiagramId; token: string; permission: "view" | "comment" | "edit" }
+  | { type: "library:share-revoked"; token: string };
 
 export type ClientToServer =
   | { type: "open"; diagramId: DiagramId }
