@@ -362,4 +362,46 @@ export const TOOLS: Tool[] = [
       required: ["items"],
     },
   },
+  // ─── Group G — Library organization (Issue #7) ────────────────────────────
+  {
+    name: "update_diagram_meta",
+    description:
+      "Patch user-editable metadata on a diagram (`description`, `author`, `notes`). Preserves other `meta` keys (`tags`, `sourcePaths`, timestamps). At least one patch field must be supplied; pass an explicit empty string to clear a field. Broadcasts `library:diagram-updated` (change: meta) over WS.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+        description: { type: "string" },
+        author: { type: "string" },
+        notes: { type: "string" },
+      },
+      required: ["diagramId"],
+    },
+  },
+  {
+    name: "move_diagram",
+    description:
+      "Set a diagram's `parent_path` to place it in a folder. Empty string moves to the workspace root. Slash-delimited segments, lower-kebab-case alphanumerics + `_`; no leading/trailing slash, no `..`, no `//`. Broadcasts `library:diagram-updated` (change: moved) over WS.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+        parentPath: { type: "string" },
+      },
+      required: ["diagramId", "parentPath"],
+    },
+  },
+  {
+    name: "pin_diagram",
+    description:
+      "Toggle the `pinned` flag on a diagram. Pinned diagrams float to the top of the Library's Pinned section. Broadcasts `library:diagram-updated` (change: pinned) over WS.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+        pinned: { type: "boolean" },
+      },
+      required: ["diagramId", "pinned"],
+    },
+  },
 ];

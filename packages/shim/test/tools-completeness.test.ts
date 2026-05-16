@@ -2,18 +2,19 @@ import { describe, expect, it } from "bun:test";
 import { TOOLS } from "../src/tools";
 
 /**
- * Wave-3 / Issue #5 surface contract: the shim's `tools/list` response must
+ * Surface contract: the shim's `tools/list` response must
  * advertise every MCP tool the server now dispatches. If a tool ships
  * server-side but is missing from this list, Claude can't see it.
  *
- * The expected list below is the FULL surface as of v0.7.0:
+ * The expected list below is the FULL surface as of v0.8.0:
  *   - 15 pre-Issue-5 tools (cycle 1-4 base + vsdx round-trip + export_diagram)
- *   - 13 new Issue #5 tools (Groups A–F)
- * Total: 28.
+ *   - 13 Issue #5 tools (Groups A–F)
+ *   - 3 Issue #7 library tools (Group G)
+ * Total: 31.
  *
  * (The plugin doc previously reported "14 tools" because the vsdx round-trip
  * PR bumped the surface to 15 without updating the doc string. v0.7.0
- * realigns the doc with reality.)
+ * realigned the doc with reality at 28; v0.8.0 takes it to 31.)
  *
  * When you add a new MCP tool to the server, you MUST also:
  *   1. Add its descriptor to packages/shim/src/tools.ts
@@ -55,10 +56,14 @@ const EXPECTED_TOOLS: readonly string[] = [
   "list_workspaces",
   // Group F — Bulk
   "import_diagrams",
+  // Group G — Library organization (Issue #7)
+  "update_diagram_meta",
+  "move_diagram",
+  "pin_diagram",
 ] as const;
 
 describe("TOOLS descriptor surface", () => {
-  it("advertises every expected tool name (v0.7.0 contract)", () => {
+  it("advertises every expected tool name (v0.8.0 contract)", () => {
     const names = new Set(TOOLS.map((t) => t.name));
     const missing = EXPECTED_TOOLS.filter((n) => !names.has(n));
     expect(missing).toEqual([]);
