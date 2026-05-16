@@ -73,27 +73,33 @@ export function SettingsPanel({ onClose }: Props) {
   return (
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
-        <h2>Settings</h2>
+        <h2>Workspace settings</h2>
 
         <label>
-          <span>Workspace name (optional)</span>
+          <span>Workspace name</span>
           <input
             type="text"
             value={workspaceName}
             onChange={(e) => setWorkspaceName(e.target.value)}
-            placeholder="My workspace"
+            placeholder="Untitled workspace"
+            data-testid="workspace-name-input"
           />
         </label>
 
         <label>
-          <span>Workspace UUID (read-only)</span>
+          <span>Workspace ID (for shim / MCP setup)</span>
           <input
             type="text"
             readOnly
             value={workspaceId ?? ""}
             onClick={(e) => (e.currentTarget as HTMLInputElement).select()}
+            data-testid="workspace-id-input"
           />
         </label>
+        <p className="settings-hint">
+          Point your local shim or MCP client at this workspace by passing
+          this UUID as the bearer token (<code>Authorization: Bearer &lt;id&gt;</code>).
+        </p>
 
         <label>
           <span>Kroki URL</span>
@@ -114,6 +120,11 @@ export function SettingsPanel({ onClose }: Props) {
           {testStatus === "ok" && <span className="settings-status ok">✓ reachable</span>}
           {testStatus === "fail" && <span className="settings-status fail">✗ {testError}</span>}
         </div>
+
+        <p className="settings-hint settings-soon">
+          More workspace defaults (default engine, default tile size,
+          snap-to-grid, theme) are coming soon — see issue #9.
+        </p>
 
         <div className="settings-danger">
           <h3>Danger zone</h3>
