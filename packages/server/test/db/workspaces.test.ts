@@ -8,6 +8,7 @@ import {
   deleteWorkspace,
   deleteExpiredWorkspaces,
 } from "../../src/db/workspaces";
+import { createDiagram, setDiagramPublic } from "../../src/db/diagrams";
 
 const db = setupTestDb();
 
@@ -68,7 +69,6 @@ describe("workspaces repo", () => {
   it("deleteExpiredWorkspaces preserves workspaces containing public diagrams", async () => {
     const sql = db.sql();
     const ws = await createWorkspace(sql);
-    const { createDiagram, setDiagramPublic } = await import("../../src/db/diagrams");
     const d = await createDiagram(sql, { workspaceId: ws.id, slug: "shared", name: "S", engine: "mermaid", kind: "graph" });
     await setDiagramPublic(sql, ws.id, d.id, true);
     await sql`UPDATE workspaces SET last_seen_at = now() - interval '2 hours' WHERE id = ${ws.id}`;
