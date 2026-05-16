@@ -2,7 +2,7 @@ import { readFile, mkdir, open } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 
-function workspaceConfigPath(): string {
+export function workspaceConfigPath(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE;
   if (!home) throw new Error("cannot resolve home directory");
   if (process.platform === "darwin") {
