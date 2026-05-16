@@ -32,6 +32,9 @@ function entry(p: Partial<LibraryEntry>): LibraryEntry {
     tags: p.tags ?? [],
     createdAt: p.createdAt ?? "2024-01-01T00:00:00Z",
     updatedAt: p.updatedAt ?? "2024-01-01T00:00:00Z",
+    parentPath: p.parentPath ?? "",
+    pinned: p.pinned ?? false,
+    lastOpenedAt: p.lastOpenedAt ?? null,
   };
 }
 
