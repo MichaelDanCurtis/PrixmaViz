@@ -97,7 +97,7 @@ describe("load_diagram aliases", () => {
     // `name` alias. The error message names all valid options.
     await expect(
       dispatchTool("load_diagram", {}, ctx(sql, ws.id)),
-    ).rejects.toThrow(/Missing required parameter:.*slug/);
+    ).rejects.toThrow(/Exactly one of \[slug, diagramId\] is required/);
   });
 });
 

@@ -81,7 +81,7 @@ describe("validateArgs — required fields", () => {
     // load_diagram now uses `oneOf` to allow either slug, diagramId, or the
     // legacy `name` alias. The error message lists all valid options.
     expect(() => validateArgs(tool("load_diagram"), {})).toThrow(
-      /Missing required parameter:.*slug/,
+      /Exactly one of \[slug, diagramId\] is required/,
     );
   });
 });

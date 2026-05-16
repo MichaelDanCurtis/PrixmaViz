@@ -194,7 +194,7 @@ describe("delete_diagram", () => {
     const ws = await createWorkspace(sql);
     await expect(
       dispatchTool("delete_diagram", {}, ctx(sql, ws.id)),
-    ).rejects.toThrow(/exactly one of slug, diagramId/);
+    ).rejects.toThrow(/Exactly one of \[slug, diagramId\] is required/);
   });
 
   it("rejects calls that supply BOTH slug and diagramId (oneOf gate)", async () => {
@@ -205,7 +205,7 @@ describe("delete_diagram", () => {
     });
     await expect(
       dispatchTool("delete_diagram", { slug: d.slug, diagramId: d.id }, ctx(sql, ws.id)),
-    ).rejects.toThrow(/Conflicting parameters/);
+    ).rejects.toThrow(/Exactly one of \[.+\] is allowed, but multiple were supplied/);
   });
 });
 
@@ -371,7 +371,7 @@ describe("duplicate_diagram", () => {
     const ws = await createWorkspace(sql);
     await expect(
       dispatchTool("duplicate_diagram", { newName: "Anon" }, ctx(sql, ws.id)),
-    ).rejects.toThrow(/exactly one of sourceSlug, sourceDiagramId/);
+    ).rejects.toThrow(/Exactly one of \[sourceSlug, sourceDiagramId\] is required/);
   });
 });
 
@@ -469,7 +469,7 @@ describe("load_diagram (extended)", () => {
     const ws = await createWorkspace(sql);
     await expect(
       dispatchTool("load_diagram", {}, ctx(sql, ws.id)),
-    ).rejects.toThrow(/Missing required parameter/);
+    ).rejects.toThrow(/Exactly one of \[slug, diagramId\] is required/);
   });
 
   it("rejects calls with BOTH slug AND diagramId (oneOf gate)", async () => {
@@ -485,6 +485,6 @@ describe("load_diagram (extended)", () => {
         { slug: d.slug, diagramId: d.id },
         ctx(sql, ws.id),
       ),
-    ).rejects.toThrow(/Conflicting parameters/);
+    ).rejects.toThrow(/Exactly one of \[.+\] is allowed, but multiple were supplied/);
   });
 });

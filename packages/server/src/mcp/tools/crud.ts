@@ -342,8 +342,8 @@ export const crudTools: ToolDef[] = [
         diagramId: { type: "string" },
         cascade: { type: "boolean" },
       },
+      oneOf: ["slug", "diagramId"],
     },
-    oneOf: [["slug", "diagramId"]],
     run: deleteDiagramImpl,
   },
   {
@@ -360,8 +360,8 @@ export const crudTools: ToolDef[] = [
         preserveAnnotations: { type: "boolean" },
       },
       required: ["newName"],
+      oneOf: ["sourceSlug", "sourceDiagramId"],
     },
-    oneOf: [["sourceSlug", "sourceDiagramId"]],
     run: duplicateDiagramImpl,
   },
 ];
@@ -380,9 +380,9 @@ export const loadDiagramTool: ToolDef = {
       diagramId: { type: "string" },
       includeSvg: { type: "boolean" },
     },
+    oneOf: ["slug", "diagramId"],
   },
   legacyAliases: { name: "slug" },
-  oneOf: [["slug", "diagramId", "name"]],
   run: loadDiagramImpl,
 };
 
