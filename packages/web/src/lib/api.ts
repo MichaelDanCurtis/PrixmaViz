@@ -240,4 +240,54 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ public: isPublic }),
     }).then((r) => jsonOrThrow<{ public: boolean; publicUrl?: string }>(r)),
+
+  // Issue #6: inline editor + version history.
+  // getSource is GET-side (no render); updateSource and restoreVersion both
+  // re-render. updateSource returns 502 with `{ error, source }` when the
+  // user's text fails to parse/render — the editor preserves the text and
+  // shows the error inline (the prior good SVG/DSL is untouched).
+  getSource: (id: string) =>
+    authFetch(`/api/diagrams/${encodeURIComponent(id)}/source`)
+      .then((r) => jsonOrThrow<{
+        id: string; engine: string; kind: string; source: string;
+      }>(r)),
+
+  updateSource: async (id: string, source: string): Promise<
+    | { ok: true; source: string; svg: string; warnings: string[] }
+    | { ok: false; error: string; source: string }
+  > => {
+    const res = await authFetch(`/api/diagrams/${encodeURIComponent(id)}/source`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source }),
+    });
+    if (res.ok) {
+      const body = await res.json() as {
+        diagramId: string; source: string;
+        render: { svg: string; dsl: string };
+        warnings?: string[];
+      };
+      return { ok: true, source: body.source, svg: body.render.svg, warnings: body.warnings ?? [] };
+    }
+    const body = await res.json().catch(() => ({})) as { error?: string; source?: string };
+    return { ok: false, error: body.error ?? `HTTP ${res.status}`, source: body.source ?? source };
+  },
+
+  listVersions: (id: string) =>
+    authFetch(`/api/diagrams/${encodeURIComponent(id)}/versions`)
+      .then((r) => jsonOrThrow<{
+        versions: Array<{
+          id: string; engine: string; kind: string;
+          source: string | null; createdAt: string;
+        }>;
+      }>(r))
+      .then((j) => j.versions),
+
+  restoreVersion: (diagramId: string, versionId: string) =>
+    authFetch(
+      `/api/diagrams/${encodeURIComponent(diagramId)}/versions/${encodeURIComponent(versionId)}/restore`,
+      { method: "POST" },
+    ).then((r) => jsonOrThrow<{
+      diagramId: string; source: string; render: { svg: string; dsl: string };
+    }>(r)),
 };

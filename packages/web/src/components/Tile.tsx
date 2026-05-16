@@ -7,6 +7,8 @@ import { toastError } from "../lib/toast";
 import { DiagramView } from "./DiagramView";
 import { AnnotationLayer } from "./AnnotationLayer";
 import { PublicViewToggle } from "./PublicViewToggle";
+import { TileEditor } from "./TileEditor";
+import { TileHistory } from "./TileHistory";
 
 interface Props { tile: TileT; }
 
@@ -20,6 +22,11 @@ export function Tile({ tile }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string>("");
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  // Issue #6: inline editor + history panel toggles.
+  const [editing, setEditing] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // When a restore round-trip yields new source, hand it to the editor.
+  const [editorInitial, setEditorInitial] = useState<string | undefined>(undefined);
   const isJustFocused = recentlyFocusedTileId === tile.id;
 
   async function onExport(format: "svg" | "png" | "jpeg" | "vsdx") {
@@ -110,6 +117,29 @@ export function Tile({ tile }: Props) {
       <div className="tile-header" onMouseDown={onHeaderDown}>
         <span className="tile-name">{tile.diagramSlug}</span>
         <PublicViewToggle diagramId={tile.diagramId} />
+        <button
+          className={`tile-edit${editing ? " active" : ""}`}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            setEditorInitial(undefined);  // force a fresh load
+            setEditing((v) => !v);
+            if (historyOpen) setHistoryOpen(false);
+          }}
+          title="Edit DSL source"
+          data-testid="tile-edit-toggle"
+        >
+          {editing ? "✕ Edit" : "✎ Edit"}
+        </button>
+        <button
+          className={`tile-history${historyOpen ? " active" : ""}`}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); setHistoryOpen((v) => !v); }}
+          title="Version history"
+          data-testid="tile-history-toggle"
+        >
+          ⟲ History
+        </button>
         <div className="tile-export-wrapper">
           <button
             className="tile-export"
@@ -133,6 +163,30 @@ export function Tile({ tile }: Props) {
       <div className="tile-body">
         {svg && <DiagramView diagramId={tile.diagramId} svg={svg} />}
         <AnnotationLayer diagramId={tile.diagramId} containerRef={containerRef} />
+        {editing && (
+          <TileEditor
+            diagramId={tile.diagramId}
+            initialSource={editorInitial}
+            onSaved={(newSvg) => setSvg(newSvg)}
+            onClose={() => setEditing(false)}
+          />
+        )}
+        {historyOpen && (
+          <TileHistory
+            diagramId={tile.diagramId}
+            onRestored={(newSource, newSvg) => {
+              setSvg(newSvg);
+              setEditorInitial(newSource);
+              // If the editor is open, hand it the new text. If not, leave
+              // the user a clean tile with the restored render.
+              if (editing) setEditing(false);
+              // Re-mount the editor with the restored source so the user
+              // can immediately tweak it.
+              if (editing) setEditing(true);
+            }}
+            onClose={() => setHistoryOpen(false)}
+          />
+        )}
       </div>
       <div className="tile-resize" onMouseDown={onResizeDown} />
     </div>
