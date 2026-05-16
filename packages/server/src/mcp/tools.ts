@@ -34,6 +34,7 @@ import { bulkTools } from "./tools/bulk";
 import { searchTools } from "./tools/search";
 import { canvasTools } from "./tools/canvas";
 import { libraryTools } from "./tools/library";
+import { shareTools } from "./tools/shares";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -555,6 +556,8 @@ export const TOOLS: ToolDef[] = [
   ...bulkTools,
   // Issue #7 Wave 1B — library / organization (pin / move / meta).
   ...libraryTools,
+  // Issue #8 Wave 1A — share links (permission tiers, token-based access).
+  ...shareTools,
 ];
 
 export async function dispatchTool(
