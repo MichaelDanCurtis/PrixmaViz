@@ -20,6 +20,11 @@ import {
   type DbDiagram,
 } from "../db/diagrams";
 import {
+  snapshotVersion as dbSnapshotVersion,
+  listVersions as dbListVersions,
+  getVersion as dbGetVersion,
+} from "../db/versions";
+import {
   addAnnotation as dbAddAnnotation,
   deleteAnnotation as dbDeleteAnnotation,
   listAnnotations as dbListAnnotations,
@@ -225,6 +230,54 @@ export async function handleApi(
 
   if (p === "/api/import" && req.method === "POST") {
     return await importVsdxRoute(req, workspaceId, deps);
+  }
+
+  // ─── Issue #6: inline editor + version history ───────────
+  // GET /api/diagrams/:id/source — current renderable source (DSL) without
+  // re-rendering. The editor uses this to populate the textarea on open.
+  const sourceGetMatch = p.match(/^\/api\/diagrams\/([^/]+)\/source$/);
+  if (sourceGetMatch && req.method === "GET") {
+    const id = sourceGetMatch[1] as DiagramId;
+    const d = await dbGetDiagram(deps.sql, workspaceId, id);
+    if (!d) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+    return Response.json({
+      id: d.id, engine: d.engine, kind: d.kind, source: d.dsl ?? "",
+    });
+  }
+
+  // POST /api/diagrams/:id/source — update DSL from the inline editor.
+  // Snapshots the prior DSL into diagram_versions, persists the new DSL,
+  // and re-renders. On render failure: the prior DSL is restored so the
+  // tile keeps showing its previously-good SVG, and the failed text is
+  // returned to the client so the editor can preserve it. Passthrough
+  // engines only — graph (IR-based) diagrams must go through apply_patch.
+  if (sourceGetMatch && req.method === "POST") {
+    const id = sourceGetMatch[1] as DiagramId;
+    const body = await req.json().catch(() => ({})) as { source?: string };
+    return await updateDiagramSourceRoute(id, body.source ?? "", workspaceId, deps);
+  }
+
+  // GET /api/diagrams/:id/versions — list newest-first.
+  const versionsListMatch = p.match(/^\/api\/diagrams\/([^/]+)\/versions$/);
+  if (versionsListMatch && req.method === "GET") {
+    const id = versionsListMatch[1] as DiagramId;
+    const d = await dbGetDiagram(deps.sql, workspaceId, id);
+    if (!d) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+    const versions = await dbListVersions(deps.sql, id);
+    return Response.json({
+      versions: versions.map((v) => ({
+        id: v.id, engine: v.engine, kind: v.kind, source: v.source, createdAt: v.createdAt,
+      })),
+    });
+  }
+
+  // POST /api/diagrams/:id/versions/:versionId/restore — restore.
+  // Snapshots the current state first, then restores the version's source.
+  const restoreMatch = p.match(/^\/api\/diagrams\/([^/]+)\/versions\/([^/]+)\/restore$/);
+  if (restoreMatch && req.method === "POST") {
+    const id = restoreMatch[1] as DiagramId;
+    const versionId = restoreMatch[2]!;
+    return await restoreVersionRoute(id, versionId, workspaceId, deps);
   }
 
   // GET /api/diagrams/:id — single-diagram metadata (no suffix).
@@ -578,6 +631,97 @@ async function saveDiagramRoute(
   }
   const updated = await dbUpdateDiagram(deps.sql, workspaceId, id, patch);
   return Response.json({ diagram: updated });
+}
+
+// Issue #6: inline editor save. Snapshot prior DSL, persist new DSL, render.
+// On render failure: leave the live `diagrams` row UNCHANGED so existing
+// SVG remains; return 502 with the engine's error message so the editor
+// can surface it inline and keep the user's text.
+async function updateDiagramSourceRoute(
+  id: DiagramId,
+  source: string,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const row = await dbGetDiagram(deps.sql, workspaceId, id);
+  if (!row) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  if (row.kind !== "passthrough") {
+    return Response.json(
+      { ok: false, error: `inline source editing only supported for passthrough kinds (got "${row.kind}"); use apply_patch for graph diagrams` },
+      { status: 400 },
+    );
+  }
+  // Try-render BEFORE persisting — keeps the prior good state on failure.
+  const trial: Diagram = {
+    id: row.id, name: row.name, engine: row.engine, kind: row.kind,
+    dsl: source, meta: (row.meta as unknown as Diagram["meta"]) ?? emptyMeta(),
+  };
+  const outcome = await renderDiagram(trial, { kroki: deps.kroki });
+  if (!outcome.ok) {
+    return Response.json(
+      { ok: false, error: outcome.error, source },
+      { status: 502 },
+    );
+  }
+  // Render succeeded — snapshot the prior source, then write the new one.
+  await dbSnapshotVersion(deps.sql, {
+    diagramId: row.id, engine: row.engine, kind: row.kind, source: row.dsl ?? "",
+  });
+  await dbUpdateDiagram(deps.sql, workspaceId, id, {
+    dsl: source, svg: outcome.result.svg,
+  });
+  broadcastRender(deps.hub, workspaceId, trial, outcome.result.svg, outcome.warnings);
+  return Response.json({
+    diagramId: row.id,
+    source,
+    render: outcome.result,
+    warnings: outcome.warnings,
+  });
+}
+
+// Issue #6: restore a prior version. Snapshots the current source first so
+// "Restore" is itself reversible, then writes the version's source back.
+async function restoreVersionRoute(
+  diagramId: DiagramId,
+  versionId: string,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const row = await dbGetDiagram(deps.sql, workspaceId, diagramId);
+  if (!row) return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  const version = await dbGetVersion(deps.sql, versionId);
+  if (!version || version.diagramId !== diagramId) {
+    return Response.json({ ok: false, error: "version not found" }, { status: 404 });
+  }
+  if (row.kind !== "passthrough" || version.kind !== "passthrough") {
+    return Response.json(
+      { ok: false, error: "restore only supported between passthrough versions" },
+      { status: 400 },
+    );
+  }
+  const restoredSource = version.source ?? "";
+  const trial: Diagram = {
+    id: row.id, name: row.name, engine: row.engine, kind: row.kind,
+    dsl: restoredSource, meta: (row.meta as unknown as Diagram["meta"]) ?? emptyMeta(),
+  };
+  const outcome = await renderDiagram(trial, { kroki: deps.kroki });
+  if (!outcome.ok) {
+    return Response.json({ ok: false, error: outcome.error }, { status: 502 });
+  }
+  // Snapshot the current state before restoring so the user can undo.
+  await dbSnapshotVersion(deps.sql, {
+    diagramId: row.id, engine: row.engine, kind: row.kind, source: row.dsl ?? "",
+  });
+  await dbUpdateDiagram(deps.sql, workspaceId, diagramId, {
+    dsl: restoredSource, svg: outcome.result.svg,
+  });
+  broadcastRender(deps.hub, workspaceId, trial, outcome.result.svg, outcome.warnings);
+  return Response.json({
+    diagramId: row.id,
+    source: restoredSource,
+    render: outcome.result,
+    warnings: outcome.warnings,
+  });
 }
 
 async function renderDslRoute(
