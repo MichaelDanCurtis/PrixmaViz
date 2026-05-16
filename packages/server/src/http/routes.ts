@@ -313,6 +313,22 @@ export async function handleApi(
     return await importVsdxRoute(req, workspaceId, deps);
   }
 
+  // ─── Issue #8 Wave 1B — .pviz workspace bundle export/import ────
+  // GET /api/workspaces/:id/export — stream a .pviz zip of the addressed
+  // workspace. The `:id` must equal the authenticated workspaceId; we
+  // gate on the same model as every other authenticated endpoint
+  // (bearer == workspace id == addressable workspace).
+  const exportBundleMatch = p.match(/^\/api\/workspaces\/([^/]+)\/export$/);
+  if (exportBundleMatch && req.method === "GET") {
+    return await exportWorkspaceBundleRoute(exportBundleMatch[1]!, workspaceId, deps);
+  }
+
+  // POST /api/workspaces/import — multipart upload, always creates a NEW
+  // workspace owned by the caller. NEVER touches an existing workspace.
+  if (p === "/api/workspaces/import" && req.method === "POST") {
+    return await importWorkspaceBundleRoute(req, workspaceId, deps);
+  }
+
   // ─── Issue #6: inline editor + version history ───────────
   // GET /api/diagrams/:id/source — current renderable source (DSL) without
   // re-rendering. The editor uses this to populate the textarea on open.
@@ -984,6 +1000,108 @@ async function importVsdxRoute(
     slug: row.slug,
     render: outcome.result,
   });
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Issue #8 Wave 1B — .pviz workspace bundle export + import
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/workspaces/:id/export — stream a .pviz bundle of the workspace.
+ *
+ * Authorization: caller's bearer must equal the addressed workspace id
+ * (`urlWorkspaceId === authWorkspaceId`). Any other workspace returns 404
+ * — we never leak existence of a workspace the caller can't read.
+ */
+async function exportWorkspaceBundleRoute(
+  urlWorkspaceId: string,
+  authWorkspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  if (urlWorkspaceId !== authWorkspaceId) {
+    // Caller is authenticated as a DIFFERENT workspace. Don't leak whether
+    // urlWorkspaceId exists — same shape as a non-existent workspace.
+    return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
+  }
+  const { composeBundle } = await import("../bundle/pviz-writer");
+  const { getWorkspace } = await import("../db/workspaces");
+  const ws = await getWorkspace(deps.sql, authWorkspaceId);
+  if (!ws) {
+    return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
+  }
+  const buf = await composeBundle(deps.sql, authWorkspaceId);
+  // Filename: prefer the workspace name, fall back to the id. Strip any
+  // chars that don't survive a Content-Disposition; quote the result.
+  const baseName = (ws.name && ws.name.trim().length > 0 ? ws.name : ws.id)
+    .replace(/[\\/:*?"<>|\r\n]/g, "_")
+    .slice(0, 100);
+  return new Response(buf as BodyInit, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${baseName}.pviz"`,
+    },
+  });
+}
+
+/**
+ * POST /api/workspaces/import — multipart upload that ALWAYS creates a
+ * brand-new workspace owned by the caller. Never modifies any existing
+ * workspace (Issue #8 spec). The new workspace's `owner_token_hash` is
+ * set to `sha256(callerToken)` so MCP `list_workspaces` finds it.
+ *
+ * The bundle's original diagram/annotation/tile IDs are NOT preserved
+ * on the new rows (they get fresh IDs); the original diagram id is
+ * stashed in `meta.originalId` for traceability.
+ */
+async function importWorkspaceBundleRoute(
+  req: Request,
+  callerWorkspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const maxBytes = Number(process.env.PVIZ_BUNDLE_MAX_BYTES ?? "104857600"); // 100 MB default
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return Response.json({ ok: false, error: "expected multipart/form-data" }, { status: 400 });
+  }
+  const file = formData.get("file");
+  if (!(file instanceof Blob)) {
+    return Response.json({ ok: false, error: "file part required" }, { status: 400 });
+  }
+  if (file.size > maxBytes) {
+    return Response.json(
+      { ok: false, error: `file exceeds PVIZ_BUNDLE_MAX_BYTES (${maxBytes})` },
+      { status: 413 },
+    );
+  }
+  const buf = new Uint8Array(await file.arrayBuffer());
+
+  const { parseBundle, BundleParseError } = await import("../bundle/pviz-reader");
+  const { importBundle } = await import("../bundle/pviz-import");
+  const { hashOwnerToken } = await import("../db/workspaces");
+
+  let parsed;
+  try {
+    parsed = await parseBundle(buf);
+  } catch (e) {
+    if (e instanceof BundleParseError) {
+      const status = e.code === "unsupported_version" ? 422 : 400;
+      return Response.json(
+        { ok: false, error: { code: e.code, message: e.message } },
+        { status },
+      );
+    }
+    return Response.json(
+      { ok: false, error: `bundle parse failed: ${(e as Error).message}` },
+      { status: 400 },
+    );
+  }
+
+  const ownerHash = hashOwnerToken(callerWorkspaceId);
+  const result = await importBundle(deps.sql, parsed, ownerHash);
+  return Response.json(result);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
