@@ -18,6 +18,8 @@ function rowToAnnotation(row: Record<string, unknown>): Annotation {
     color: (row.color as string) ?? undefined,
     createdAt: (row.created_at as Date).toISOString(),
     resolvedAt: row.resolved_at ? (row.resolved_at as Date).toISOString() : undefined,
+    resolution: (row.resolution as string) ?? undefined,
+    author: (row.author as string) ?? undefined,
     targetNodes: (row.target_nodes as string[]) ?? undefined,
     bboxPixel: (row.bbox_pixel as Annotation["bboxPixel"]) ?? undefined,
     bboxData: row.bbox_data ?? undefined,
@@ -28,7 +30,7 @@ function rowToAnnotation(row: Record<string, unknown>): Annotation {
 
 export async function addAnnotation(sql: Sql, diagramId: string, a: Annotation): Promise<Annotation> {
   const rows = await sql`
-    INSERT INTO annotations (id, diagram_id, kind, text, color, resolved_at, target_nodes, bbox_pixel, bbox_data, point, nearest_node, created_at)
+    INSERT INTO annotations (id, diagram_id, kind, text, color, resolved_at, resolution, author, target_nodes, bbox_pixel, bbox_data, point, nearest_node, created_at)
     VALUES (
       ${a.id},
       ${diagramId},
@@ -36,6 +38,8 @@ export async function addAnnotation(sql: Sql, diagramId: string, a: Annotation):
       ${a.text ?? null},
       ${a.color ?? null},
       ${a.resolvedAt ?? null},
+      ${a.resolution ?? null},
+      ${a.author ?? null},
       ${a.targetNodes ? sql.json(a.targetNodes as unknown as JSONLike) : null},
       ${a.bboxPixel ? sql.json(a.bboxPixel as unknown as JSONLike) : null},
       ${a.bboxData !== undefined ? sql.json(a.bboxData as unknown as JSONLike) : null},
@@ -63,6 +67,8 @@ export async function updateAnnotation(sql: Sql, diagramId: string, id: string, 
   if (patch.text !== undefined) updates.text = patch.text;
   if (patch.color !== undefined) updates.color = patch.color;
   if (patch.resolvedAt !== undefined) updates.resolved_at = patch.resolvedAt;
+  if (patch.resolution !== undefined) updates.resolution = patch.resolution;
+  if (patch.author !== undefined) updates.author = patch.author;
   if (patch.targetNodes !== undefined) updates.target_nodes = sql.json(patch.targetNodes as unknown as JSONLike);
   if (patch.bboxPixel !== undefined) updates.bbox_pixel = sql.json(patch.bboxPixel as unknown as JSONLike);
   if (patch.bboxData !== undefined) updates.bbox_data = sql.json(patch.bboxData as unknown as JSONLike);
@@ -85,4 +91,33 @@ export async function updateAnnotation(sql: Sql, diagramId: string, id: string, 
 
 export async function deleteAnnotation(sql: Sql, diagramId: string, id: string): Promise<void> {
   await sql`DELETE FROM annotations WHERE id = ${id} AND diagram_id = ${diagramId}`;
+}
+
+/**
+ * Fetch a single annotation by its ID along with the workspace_id of its
+ * parent diagram, so callers can authorize the request against the
+ * authenticated workspace before mutating.
+ *
+ * SECURITY: this is the only annotation lookup that doesn't take a
+ * diagramId — every MCP write tool uses it to resolve the row and then
+ * verify `workspaceId` matches the caller's workspace before proceeding.
+ */
+export async function getAnnotationWithWorkspace(
+  sql: Sql,
+  id: string,
+): Promise<{ annotation: Annotation; diagramId: string; workspaceId: string } | null> {
+  const rows = await sql`
+    SELECT a.*, d.workspace_id AS workspace_id
+    FROM annotations a
+    JOIN diagrams d ON d.id = a.diagram_id
+    WHERE a.id = ${id}
+    LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+  const row = rows[0]!;
+  return {
+    annotation: rowToAnnotation(row),
+    diagramId: row.diagram_id as string,
+    workspaceId: row.workspace_id as string,
+  };
 }
