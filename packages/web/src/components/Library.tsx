@@ -63,7 +63,11 @@ function LibraryThumb({ slug }: { slug: string }) {
   return blobUrl ? <img src={blobUrl} alt="" /> : null;
 }
 
-export function Library() {
+interface LibraryProps {
+  onOpenSettings?: () => void;
+}
+
+export function Library({ onOpenSettings }: LibraryProps = {}) {
   const library = useAppStore((s) => s.library);
   const diagram = useAppStore((s) => s.diagram);
   const setLibrary = useAppStore((s) => s.setLibrary);
@@ -405,6 +409,20 @@ export function Library() {
               Clear
             </button>
           </div>
+        </div>
+      )}
+      {onOpenSettings && (
+        <div className="library-footer">
+          <button
+            type="button"
+            className="library-settings-button"
+            onClick={onOpenSettings}
+            aria-label="Workspace settings"
+            title="Workspace settings"
+            data-testid="library-settings-button"
+          >
+            ⚙ Workspace settings
+          </button>
         </div>
       )}
     </aside>

@@ -6,6 +6,7 @@ import { useWebSocket } from "./lib/ws";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { Footer } from "./components/Footer";
 import { WelcomePanel } from "./components/WelcomePanel";
+import { StarterTemplatesGallery, hasSkippedTemplates } from "./components/StarterTemplatesGallery";
 import { Toasts } from "./components/Toasts";
 import { PublicDiagram } from "./pages/PublicDiagram";
 import { ensureWorkspaceId } from "./lib/api";
@@ -32,10 +33,12 @@ function WorkspaceApp() {
   const [bootstrapping, setBootstrapping] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
+  const [templatesDismissed, setTemplatesDismissed] = useState(false);
   const workspaceId = useAppStore((s) => s.workspaceId);
   const setWorkspaceId = useAppStore((s) => s.setWorkspaceId);
   const welcomeSeen = useAppStore((s) => s.welcomeSeen);
   const setWelcomeSeen = useAppStore((s) => s.setWelcomeSeen);
+  const tiles = useAppStore((s) => s.tiles);
 
   // Bootstrap the workspace UUID before mounting anything that hits /api/*.
   useEffect(() => {
@@ -85,11 +88,21 @@ function WorkspaceApp() {
     );
   }
 
+  // First-run: show the starter-templates gallery once the workspace is
+  // bootstrapped, the welcome panel has been seen/dismissed, and the canvas
+  // is empty. `hasSkippedTemplates` is per-workspace and persists across
+  // reloads.
+  const showTemplates =
+    tiles.length === 0 &&
+    (welcomeSeen || welcomeDismissed) &&
+    !templatesDismissed &&
+    !hasSkippedTemplates(workspaceId);
+
   return (
     <div className="app">
       <Topbar onOpenSettings={() => setSettingsOpen(true)} />
       <div className="workspace">
-        <Library />
+        <Library onOpenSettings={() => setSettingsOpen(true)} />
         <InfiniteCanvas />
       </div>
       <Footer workspaceUrl={window.location.href} />
@@ -99,6 +112,9 @@ function WorkspaceApp() {
           onDismiss={() => setWelcomeDismissed(true)}
           onNeverShowAgain={() => setWelcomeSeen(true)}
         />
+      )}
+      {showTemplates && (
+        <StarterTemplatesGallery onDismiss={() => setTemplatesDismissed(true)} />
       )}
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
     </div>
