@@ -28,6 +28,7 @@ import {
   updateWorkspaceTiles as dbUpdateWorkspaceTiles,
 } from "../db/workspaces";
 import { crudTools, loadDiagramTool } from "./tools/crud";
+import { annotationTools } from "./tools/annotations";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -537,6 +538,8 @@ export const TOOLS: ToolDef[] = [
   // inserted above where the legacy load_diagram entry used to live so the
   // tool ordering matches the prior surface. ───
   ...crudTools,
+  // Group C — annotation writes (Issue #5).
+  ...annotationTools,
 ];
 
 export async function dispatchTool(
