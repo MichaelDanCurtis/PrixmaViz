@@ -70,19 +70,17 @@ function handleMessage(
   } else if (msg.type === "workspace") {
     store.setCamera(msg.camera);
     store.setTiles(msg.tiles);
+  } else if (msg.type === "library:diagram-opened") {
+    // Targeted update: only the lastOpenedAt for this entry changed; bump
+    // it locally so the Recent section re-sorts without a full refetch.
+    store.setLibraryLastOpenedAt(msg.diagramId, msg.lastOpenedAt);
   } else if (
     msg.type === "library:diagram-updated" ||
-    msg.type === "library:diagram-opened" ||
     msg.type === "library:folders-changed" ||
     msg.type === "library:tags-changed"
   ) {
-    // Issue #7 Wave 2C: any folder/pin/meta/recent change from another
-    // tab re-fetches the library so the local state stays consistent.
-    // The server always sends a full library snapshot via the existing
-    // "library" event when it has one — these are notification-only.
-    api
-      .library()
-      .then(store.setLibrary)
-      .catch(() => {});
+    // For pin/meta/move/folder/tag changes, just re-fetch the library to
+    // converge on authoritative state. Cheaper than tracking every field.
+    api.library().then(store.setLibrary).catch(() => {});
   }
 }
