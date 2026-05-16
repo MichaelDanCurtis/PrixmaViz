@@ -32,6 +32,7 @@ import { annotationTools } from "./tools/annotations";
 import { workspaceTools } from "./tools/workspaces";
 import { bulkTools } from "./tools/bulk";
 import { searchTools } from "./tools/search";
+import { canvasTools } from "./tools/canvas";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -545,6 +546,8 @@ export const TOOLS: ToolDef[] = [
   ...searchTools,
   // Group C — annotation writes (Issue #5).
   ...annotationTools,
+  // Group D — canvas state introspection + manipulation (Issue #5).
+  ...canvasTools,
   // Group E — workspace lifecycle (Issue #5).
   ...workspaceTools,
   // Group F — bulk operations (Issue #5).
