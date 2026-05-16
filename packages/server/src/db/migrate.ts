@@ -2,9 +2,30 @@ import postgres from "postgres";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export async function runMigrations(databaseUrl: string, migrationsDir: string): Promise<void> {
-  const sql = postgres(databaseUrl, { onnotice: () => {} });
+export interface RunMigrationsOptions {
+  /**
+   * Postgres schema to create (if missing) and route all migrations into.
+   * When set, every connection used by this call has `search_path` bound
+   * to the schema. Useful for isolating test runs that share one database.
+   * When omitted, migrations run against the default `search_path`
+   * (typically `public`).
+   */
+  searchPath?: string;
+}
+
+export async function runMigrations(
+  databaseUrl: string,
+  migrationsDir: string,
+  opts: RunMigrationsOptions = {},
+): Promise<void> {
+  const sql = postgres(databaseUrl, {
+    onnotice: () => {},
+    ...(opts.searchPath ? { connection: { search_path: opts.searchPath } } : {}),
+  });
   try {
+    if (opts.searchPath) {
+      await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS "${opts.searchPath}"`);
+    }
     // Ensure schema_migrations exists (idempotent)
     await sql`
       CREATE TABLE IF NOT EXISTS schema_migrations (
