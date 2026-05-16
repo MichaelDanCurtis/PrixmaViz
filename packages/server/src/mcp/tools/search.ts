@@ -75,7 +75,7 @@ const MAX_LIMIT = 100;
  *     EXISTS still gets returned, but with score=0 (coalesced); recency
  *     breaks ties.
  */
-async function searchDiagramsImpl(
+export async function searchDiagramsImpl(
   args: Record<string, unknown>,
   ctx: ToolCtx,
 ): Promise<{ results: SearchHit[] }> {
@@ -83,6 +83,11 @@ async function searchDiagramsImpl(
   const engines = args.engines as string[] | undefined;
   const tags = args.tags as string[] | undefined;
   const updatedSince = args.updatedSince as string | undefined;
+  // Issue #7 Wave 1B: parent_path scopes results to a folder subtree.
+  // Empty string matches the workspace root only (no descendants).
+  // A non-empty value matches the folder itself AND its descendants
+  // (Library tree selection includes nested folders by convention).
+  const parentPath = args.parentPath as string | undefined;
   const sort = ((args.sort as SearchSort | undefined) ?? "relevance") as SearchSort;
   const rawLimit = args.limit as number | undefined;
 
@@ -111,6 +116,22 @@ async function searchDiagramsImpl(
   if (updatedSince !== undefined) {
     if (typeof updatedSince !== "string" || Number.isNaN(Date.parse(updatedSince))) {
       throw new Error("updatedSince must be an ISO datetime string");
+    }
+  }
+  if (parentPath !== undefined) {
+    if (typeof parentPath !== "string") {
+      throw new Error("parentPath must be a string");
+    }
+    // Defense-in-depth: reuse the folder-path validator from db/diagrams.ts.
+    // Cheaper than importing for one call — the validator is a regex + two
+    // includes checks. Keep them in sync.
+    const trimmed = parentPath;
+    if (trimmed.includes("..") || trimmed.includes("//")) {
+      throw new Error(`invalid parentPath: ${JSON.stringify(parentPath)}`);
+    }
+    // Note: we DO accept empty string here (= workspace root scope).
+    if (trimmed !== "" && !/^([a-z0-9](?:[a-z0-9-_/]*[a-z0-9])?)?$/i.test(trimmed)) {
+      throw new Error(`invalid parentPath: ${JSON.stringify(parentPath)}`);
     }
   }
   const validSorts: SearchSort[] = ["updated", "created", "name", "relevance"];
@@ -157,6 +178,18 @@ async function searchDiagramsImpl(
 
   if (updatedSince) {
     where.push(sql`d.updated_at >= ${updatedSince}::timestamptz`);
+  }
+
+  // Issue #7 Wave 1B: parent_path subtree filter. Empty string matches
+  // ONLY the workspace root (parent_path = ''). A non-empty value matches
+  // the folder itself AND its descendants — uses starts_with() for the
+  // same reason as dbRenameFolder (LIKE would silently glob on `%`/`_`).
+  if (parentPath !== undefined) {
+    if (parentPath === "") {
+      where.push(sql`d.parent_path = ''`);
+    } else {
+      where.push(sql`(d.parent_path = ${parentPath} OR starts_with(d.parent_path, ${parentPath + "/"}))`);
+    }
   }
 
   // Combine WHERE fragments with AND. The runtime composes a single query.
@@ -311,7 +344,7 @@ export const searchTools: ToolDef[] = [
   {
     name: "search_diagrams",
     description:
-      "Full-text search across diagrams in the current workspace. Searches `name`, `dsl`, and annotation bodies; filters by `engines`, `tags` (AND), and `updatedSince`. Sort by `relevance` (default), `updated`, `created`, or `name`. Returns up to `limit` (default 20, max 100) results with optional `snippet` and relevance `score` when a `query` is provided.",
+      "Full-text search across diagrams in the current workspace. Searches `name`, `dsl`, and annotation bodies; filters by `engines`, `tags` (AND), `updatedSince`, and `parentPath` (folder subtree). Sort by `relevance` (default), `updated`, `created`, or `name`. Returns up to `limit` (default 20, max 100) results with optional `snippet` and relevance `score` when a `query` is provided.",
     inputSchema: {
       type: "object",
       properties: {
@@ -319,6 +352,9 @@ export const searchTools: ToolDef[] = [
         engines: { type: "array", items: { type: "string" } },
         tags: { type: "array", items: { type: "string" } },
         updatedSince: { type: "string" },
+        // Issue #7 Wave 1B: subtree filter. Empty string = workspace root
+        // only. Non-empty matches the folder AND its descendants.
+        parentPath: { type: "string" },
         sort: { type: "string", enum: ["updated", "created", "name", "relevance"] },
         limit: { type: "integer" },
       },

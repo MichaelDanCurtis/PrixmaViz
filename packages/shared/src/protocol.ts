@@ -71,7 +71,14 @@ export type ServerToClient =
   | { type: "annotation:created"; diagramId: DiagramId; annotation: Annotation }
   | { type: "annotation:updated"; diagramId: DiagramId; annotation: Annotation }
   | { type: "annotation:deleted"; diagramId: DiagramId; annotationId: string }
-  | { type: "workspace"; camera: Camera; tiles: Tile[] };
+  | { type: "workspace"; camera: Camera; tiles: Tile[] }
+  // Issue #7 Wave 1B: library / org events. Each fans out to every WS
+  // client authenticated for the workspace so a change in tab A surfaces
+  // in tab B without polling.
+  | { type: "library:diagram-updated"; diagramId: DiagramId; change: "pinned" | "moved" | "meta" }
+  | { type: "library:diagram-opened"; diagramId: DiagramId; lastOpenedAt: string }
+  | { type: "library:folders-changed"; emptyFolders: string[] }
+  | { type: "library:tags-changed" };
 
 export type ClientToServer =
   | { type: "open"; diagramId: DiagramId }
