@@ -74,12 +74,19 @@ function handleMessage(
     // Targeted update: only the lastOpenedAt for this entry changed; bump
     // it locally so the Recent section re-sorts without a full refetch.
     store.setLibraryLastOpenedAt(msg.diagramId, msg.lastOpenedAt);
+  } else if (msg.type === "library:tags-changed") {
+    // F3: refresh the tag-autocomplete cache when any diagram's tags change.
+    // Best-effort — a transient fetch failure leaves stale data in place;
+    // the next mount will recover.
+    api
+      .listTags()
+      .then((tags) => useAppStore.getState().setTagAutocomplete(tags))
+      .catch(() => {});
   } else if (
     msg.type === "library:diagram-updated" ||
-    msg.type === "library:folders-changed" ||
-    msg.type === "library:tags-changed"
+    msg.type === "library:folders-changed"
   ) {
-    // For pin/meta/move/folder/tag changes, just re-fetch the library to
+    // For pin/meta/move/folder changes, re-fetch the library list to
     // converge on authoritative state. Cheaper than tracking every field.
     api.library().then(store.setLibrary).catch(() => {});
   }
