@@ -19,8 +19,22 @@ import {
   getDiagramBySlug as dbGetDiagramBySlug,
   listDiagrams as dbListDiagrams,
   updateDiagram as dbUpdateDiagram,
+  // Issue #7 Wave 1B — library / organization helpers.
+  dbBumpLastOpenedAt,
+  dbListTags,
+  dbMoveDiagram,
+  dbSetPinned,
+  dbUpdateMeta,
+  isValidFolderPath,
   type DbDiagram,
 } from "../db/diagrams";
+import {
+  dbDeleteFolder,
+  dbListEmptyFolders,
+  dbRenameFolder,
+  dbSetEmptyFolders,
+} from "../db/folders";
+import { searchDiagramsImpl } from "../mcp/tools/search";
 import {
   snapshotVersion as dbSnapshotVersion,
   listVersions as dbListVersions,
@@ -152,8 +166,10 @@ export async function handleApi(
   }
 
   // ─── Library (alias for /api/diagrams + Postgres-backed thumb) ───
-  // The web Library component expects the cycle-3 LibraryEntry shape:
-  //   { name, path, engine, kind, tags, createdAt, updatedAt }
+  // The web Library component expects the cycle-3 LibraryEntry shape,
+  // extended for Issue #7 Wave 1B with `parentPath / pinned / lastOpenedAt`
+  // so the new Library sections (folders, pinned, recent) have the data
+  // they need on first mount without a follow-up roundtrip.
   // `path` is synthesized from the slug (the web client extracts the slug
   // back out with basename(path).replace(/\.pviz$/, "")).
   if (p === "/api/library" && req.method === "GET") {
@@ -169,8 +185,59 @@ export async function handleApi(
           : [],
         createdAt: d.createdAt,
         updatedAt: d.updatedAt,
+        // Issue #7 Wave 1B — surface the new columns to the web Library.
+        parentPath: d.parentPath,
+        pinned: d.pinned,
+        lastOpenedAt: d.lastOpenedAt,
       })),
     });
+  }
+
+  // ─── Issue #7 Wave 1B — search / library / folders ──────────────
+  // GET /api/diagrams/search — query params translate to the
+  // search_diagrams MCP impl's args shape. Single SQL builder shared
+  // across both transports (per the spec — no duplicate query).
+  if (p === "/api/diagrams/search" && req.method === "GET") {
+    return await searchDiagramsRoute(url, workspaceId, deps);
+  }
+
+  // GET /api/diagrams/tags — distinct tag list for autocomplete (F3).
+  if (p === "/api/diagrams/tags" && req.method === "GET") {
+    const tags = await dbListTags(deps.sql, workspaceId);
+    return Response.json({ tags });
+  }
+
+  // POST /api/diagrams/:id/pin — toggle pinned (F4).
+  const pinMatch = p.match(/^\/api\/diagrams\/([^/]+)\/pin$/);
+  if (pinMatch && req.method === "POST") {
+    return await pinDiagramRoute(pinMatch[1]!, req, workspaceId, deps);
+  }
+
+  // PATCH /api/diagrams/:id/meta — update description / author / notes (F5).
+  const metaMatch = p.match(/^\/api\/diagrams\/([^/]+)\/meta$/);
+  if (metaMatch && req.method === "PATCH") {
+    return await updateMetaRoute(metaMatch[1]!, req, workspaceId, deps);
+  }
+
+  // PATCH /api/diagrams/:id/move — set parent_path (F2 drag-drop).
+  const moveMatch = p.match(/^\/api\/diagrams\/([^/]+)\/move$/);
+  if (moveMatch && req.method === "PATCH") {
+    return await moveDiagramRoute(moveMatch[1]!, req, workspaceId, deps);
+  }
+
+  // POST /api/folders/empty — add/remove a path in emptyFolders (F2).
+  if (p === "/api/folders/empty" && req.method === "POST") {
+    return await emptyFolderRoute(req, workspaceId, deps);
+  }
+
+  // POST /api/folders/rename — cascade-rename a folder (F2).
+  if (p === "/api/folders/rename" && req.method === "POST") {
+    return await renameFolderRoute(req, workspaceId, deps);
+  }
+
+  // POST /api/folders/delete — cascade or refuse-on-nonempty delete (F2).
+  if (p === "/api/folders/delete" && req.method === "POST") {
+    return await deleteFolderRoute(req, workspaceId, deps);
   }
 
   const thumbMatch = p.match(/^\/api\/library\/([^/]+)\/thumb$/);
@@ -472,6 +539,27 @@ export async function handleApi(
     };
     const nextTiles = [...ws.tiles, tile];
     await dbUpdateWorkspaceTiles(deps.sql, workspaceId, nextTiles);
+    // Issue #7 Wave 1B: createTile is a "first open" event — bump
+    // last_opened_at and broadcast so Recent section ordering follows.
+    // The helper validates diagramId ownership via the workspace_id JOIN
+    // implicit in the SET; an invalid/foreign diagramId is a no-op return.
+    // Note: we still check ownership above for the dedup loop, so we
+    // only bump when the create succeeded.
+    try {
+      const verifiedOwn = await dbGetDiagram(deps.sql, workspaceId, body.diagramId);
+      if (verifiedOwn) {
+        const lastOpenedAt = await dbBumpLastOpenedAt(deps.sql, body.diagramId);
+        if (lastOpenedAt) {
+          deps.hub.broadcast(workspaceId, {
+            type: "library:diagram-opened",
+            diagramId: body.diagramId,
+            lastOpenedAt,
+          });
+        }
+      }
+    } catch (e) {
+      console.error(`[createTile] last_opened_at bump failed for ${body.diagramId}:`, e);
+    }
     await broadcastWorkspaceUpdate(deps, workspaceId);
     return Response.json({ tile });
   }
@@ -606,6 +694,21 @@ async function loadDiagramRoute(slug: string, workspaceId: string, deps: RouteDe
   const outcome = await renderDiagram(diagram, { kroki: deps.kroki });
   if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
   await dbUpdateDiagram(deps.sql, workspaceId, row.id, { svg: outcome.result.svg });
+  // Issue #7 Wave 1B: bump last_opened_at (debounced 1s inside the helper)
+  // and broadcast the new timestamp so the Recent section reorders without
+  // refetching. Best-effort: failure here must NOT fail the load.
+  try {
+    const lastOpenedAt = await dbBumpLastOpenedAt(deps.sql, row.id);
+    if (lastOpenedAt) {
+      deps.hub.broadcast(workspaceId, {
+        type: "library:diagram-opened",
+        diagramId: row.id,
+        lastOpenedAt,
+      });
+    }
+  } catch (e) {
+    console.error(`[loadDiagram] last_opened_at bump failed for ${row.id}:`, e);
+  }
   broadcastRender(deps.hub, workspaceId, diagram, outcome.result.svg, outcome.warnings);
   return Response.json({
     diagramId: row.id,
@@ -869,6 +972,401 @@ async function importVsdxRoute(
     slug: row.slug,
     render: outcome.result,
   });
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Issue #7 Wave 1B — library / folder route helpers
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/diagrams/search — thin HTTP shell around the `search_diagrams`
+ * MCP impl. The SQL builder lives in `mcp/tools/search.ts`; this route
+ * translates URLSearchParams into the tool's args object and forwards.
+ * One query path, two transports — no duplicate SQL.
+ *
+ * Multi-valued params (`engines`, `tags`) accept either repeated keys
+ * (`?engines=mermaid&engines=d2`) or comma-separated values
+ * (`?engines=mermaid,d2`). The latter is what `URLSearchParams.toString()`
+ * naturally produces from an array.
+ */
+async function searchDiagramsRoute(
+  url: URL,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const sp = url.searchParams;
+  const q = sp.get("q") ?? undefined;
+  const sort = sp.get("sort") ?? undefined;
+  const limit = sp.get("limit") ? Number(sp.get("limit")) : undefined;
+  const since = sp.get("since") ?? sp.get("updatedSince") ?? undefined;
+  const parentPath = sp.has("parent_path")
+    ? sp.get("parent_path") ?? ""
+    : sp.has("parentPath")
+    ? sp.get("parentPath") ?? ""
+    : undefined;
+
+  const enginesRaw = sp.getAll("engines");
+  const engines =
+    enginesRaw.length === 0
+      ? undefined
+      : enginesRaw.length === 1 && enginesRaw[0]!.includes(",")
+      ? enginesRaw[0]!.split(",").map((s) => s.trim()).filter(Boolean)
+      : enginesRaw;
+  const tagsRaw = sp.getAll("tags");
+  const tags =
+    tagsRaw.length === 0
+      ? undefined
+      : tagsRaw.length === 1 && tagsRaw[0]!.includes(",")
+      ? tagsRaw[0]!.split(",").map((s) => s.trim()).filter(Boolean)
+      : tagsRaw;
+
+  // Build args matching the MCP tool's input shape.
+  const args: Record<string, unknown> = {};
+  if (q) args.query = q;
+  if (engines) args.engines = engines;
+  if (tags) args.tags = tags;
+  if (since) args.updatedSince = since;
+  if (parentPath !== undefined) args.parentPath = parentPath;
+  if (sort) args.sort = sort;
+  if (limit !== undefined) args.limit = limit;
+
+  try {
+    const result = await searchDiagramsImpl(args, {
+      sql: deps.sql,
+      workspaceId,
+      kroki: deps.kroki,
+      hub: deps.hub,
+    });
+    return Response.json(result);
+  } catch (e) {
+    // Validation-style errors from the impl carry useful messages.
+    const message = e instanceof Error ? e.message : String(e);
+    return Response.json({ ok: false, error: message }, { status: 400 });
+  }
+}
+
+/**
+ * POST /api/diagrams/:id/pin — toggle pinned. Ownership check via
+ * dbGetDiagram before invoking dbSetPinned (the helper keys on
+ * diagramId only). Broadcasts library:diagram-updated on success.
+ */
+async function pinDiagramRoute(
+  diagramId: string,
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as { pinned?: unknown };
+  if (typeof body.pinned !== "boolean") {
+    return Response.json(
+      { ok: false, error: "pinned must be a boolean" },
+      { status: 400 },
+    );
+  }
+  const existing = await dbGetDiagram(deps.sql, workspaceId, diagramId);
+  if (!existing) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+  const newPinned = await dbSetPinned(deps.sql, diagramId, body.pinned);
+  if (newPinned === null) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+  deps.hub.broadcast(workspaceId, {
+    type: "library:diagram-updated",
+    diagramId,
+    change: "pinned",
+  });
+  return Response.json({ pinned: newPinned });
+}
+
+/**
+ * PATCH /api/diagrams/:id/meta — patch description / author / notes.
+ * Wave 1A's dbUpdateMeta uses JSONB `||` merge so `tags / sourcePaths /
+ * createdAt` survive. Ownership check first, then mutate + broadcast.
+ */
+async function updateMetaRoute(
+  diagramId: string,
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as {
+    description?: unknown;
+    author?: unknown;
+    notes?: unknown;
+  };
+  // Type-check each provided patch field.
+  for (const k of ["description", "author", "notes"] as const) {
+    if (body[k] !== undefined && typeof body[k] !== "string") {
+      return Response.json(
+        { ok: false, error: `${k} must be a string` },
+        { status: 400 },
+      );
+    }
+  }
+  if (body.description === undefined && body.author === undefined && body.notes === undefined) {
+    return Response.json(
+      { ok: false, error: "at least one of description, author, or notes must be provided" },
+      { status: 400 },
+    );
+  }
+
+  const existing = await dbGetDiagram(deps.sql, workspaceId, diagramId);
+  if (!existing) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+
+  const patch: { description?: string; author?: string; notes?: string } = {};
+  if (typeof body.description === "string") patch.description = body.description;
+  if (typeof body.author === "string") patch.author = body.author;
+  if (typeof body.notes === "string") patch.notes = body.notes;
+
+  const meta = await dbUpdateMeta(deps.sql, diagramId, patch);
+  if (meta === null) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+  deps.hub.broadcast(workspaceId, {
+    type: "library:diagram-updated",
+    diagramId,
+    change: "meta",
+  });
+  return Response.json({ meta });
+}
+
+/**
+ * PATCH /api/diagrams/:id/move — set parent_path. isValidFolderPath
+ * gate before DB mutate so path-traversal (`../`), wildcards (`%`/`_`
+ * in invalid positions), and leading/trailing slashes are rejected
+ * with a clean 400.
+ */
+async function moveDiagramRoute(
+  diagramId: string,
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as { parentPath?: unknown };
+  if (typeof body.parentPath !== "string") {
+    return Response.json(
+      { ok: false, error: "parentPath must be a string" },
+      { status: 400 },
+    );
+  }
+  if (!isValidFolderPath(body.parentPath)) {
+    return Response.json(
+      { ok: false, error: `invalid folder path: ${JSON.stringify(body.parentPath)}` },
+      { status: 400 },
+    );
+  }
+
+  const existing = await dbGetDiagram(deps.sql, workspaceId, diagramId);
+  if (!existing) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+
+  const newPath = await dbMoveDiagram(deps.sql, diagramId, body.parentPath);
+  if (newPath === null) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+  deps.hub.broadcast(workspaceId, {
+    type: "library:diagram-updated",
+    diagramId,
+    change: "moved",
+  });
+  return Response.json({ ok: true, parentPath: newPath });
+}
+
+/**
+ * POST /api/folders/empty — add or remove a path in
+ * `workspaces.settings.emptyFolders`. The list tracks folders that
+ * exist in the Library tree but contain no diagrams yet (F2: "New
+ * folder" inline-input).
+ *
+ * On first drag-drop INTO an empty folder, the F2 web flow removes
+ * the entry separately — this route is for explicit add/remove.
+ */
+async function emptyFolderRoute(
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as {
+    path?: unknown;
+    action?: unknown;
+  };
+  if (typeof body.path !== "string") {
+    return Response.json({ ok: false, error: "path must be a string" }, { status: 400 });
+  }
+  if (body.action !== "add" && body.action !== "remove") {
+    return Response.json(
+      { ok: false, error: "action must be 'add' or 'remove'" },
+      { status: 400 },
+    );
+  }
+  if (!isValidFolderPath(body.path) || body.path === "") {
+    return Response.json(
+      { ok: false, error: `invalid folder path: ${JSON.stringify(body.path)}` },
+      { status: 400 },
+    );
+  }
+
+  const current = await dbListEmptyFolders(deps.sql, workspaceId);
+  const next =
+    body.action === "add"
+      ? current.includes(body.path)
+        ? current
+        : [...current, body.path]
+      : current.filter((p) => p !== body.path);
+
+  try {
+    await dbSetEmptyFolders(deps.sql, workspaceId, next);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return Response.json({ ok: false, error: message }, { status: 400 });
+  }
+  deps.hub.broadcast(workspaceId, {
+    type: "library:folders-changed",
+    emptyFolders: next,
+  });
+  return Response.json({ emptyFolders: next });
+}
+
+/**
+ * POST /api/folders/rename — cascade-rename. Wave 1A's dbRenameFolder
+ * handles the diagram rows (using starts_with, not LIKE — guards
+ * against `%`/`_` glob attacks). We additionally rewrite any
+ * empty-folder entries whose path starts with the renamed prefix,
+ * since those live in workspaces.settings and aren't touched by the
+ * diagram-rename SQL.
+ */
+async function renameFolderRoute(
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as { from?: unknown; to?: unknown };
+  if (typeof body.from !== "string" || typeof body.to !== "string") {
+    return Response.json(
+      { ok: false, error: "from and to must both be strings" },
+      { status: 400 },
+    );
+  }
+  if (body.from === "" || !isValidFolderPath(body.from)) {
+    return Response.json(
+      { ok: false, error: `invalid source folder: ${JSON.stringify(body.from)}` },
+      { status: 400 },
+    );
+  }
+  if (body.to === "" || !isValidFolderPath(body.to)) {
+    return Response.json(
+      { ok: false, error: `invalid target folder: ${JSON.stringify(body.to)}` },
+      { status: 400 },
+    );
+  }
+
+  let affected = 0;
+  try {
+    affected = await dbRenameFolder(deps.sql, workspaceId, body.from, body.to);
+  } catch (e) {
+    // Wave 1A throws a structured error with `error / rows / cap` for
+    // the row-cap overflow case. Pass it through with a 400 so the
+    // client can show the count.
+    const err = e as { error?: string; rows?: number; cap?: number; message?: string };
+    if (err.error === "folder rename touches too many rows") {
+      return Response.json(
+        { ok: false, error: err.error, rows: err.rows, cap: err.cap },
+        { status: 400 },
+      );
+    }
+    return Response.json(
+      { ok: false, error: err.message ?? String(e) },
+      { status: 400 },
+    );
+  }
+
+  // Now rewrite the workspace's empty-folder entries with the same
+  // prefix-rewrite as the SQL helper. Defensive: list, transform, set.
+  const ef = await dbListEmptyFolders(deps.sql, workspaceId);
+  const rewriteFrom = body.from;
+  const rewriteTo = body.to;
+  const rewritten = ef.map((p) => {
+    if (p === rewriteFrom) return rewriteTo;
+    if (p.startsWith(rewriteFrom + "/")) {
+      return rewriteTo + p.slice(rewriteFrom.length);
+    }
+    return p;
+  });
+  if (rewritten.some((p, i) => p !== ef[i])) {
+    try {
+      await dbSetEmptyFolders(deps.sql, workspaceId, rewritten);
+    } catch (e) {
+      console.error("[renameFolder] empty-folder rewrite failed:", e);
+      // Non-fatal — diagrams already moved.
+    }
+  }
+
+  deps.hub.broadcast(workspaceId, {
+    type: "library:folders-changed",
+    emptyFolders: rewritten,
+  });
+  return Response.json({ affected });
+}
+
+/**
+ * POST /api/folders/delete — cascade or refuse-on-nonempty.
+ * Wave 1A's dbDeleteFolder atomically deletes the diagrams (when
+ * cascade) AND strips the path from emptyFolders.
+ */
+async function deleteFolderRoute(
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as {
+    path?: unknown;
+    cascade?: unknown;
+  };
+  if (typeof body.path !== "string") {
+    return Response.json({ ok: false, error: "path must be a string" }, { status: 400 });
+  }
+  if (typeof body.cascade !== "boolean") {
+    return Response.json(
+      { ok: false, error: "cascade must be a boolean" },
+      { status: 400 },
+    );
+  }
+  if (body.path === "" || !isValidFolderPath(body.path)) {
+    return Response.json(
+      { ok: false, error: `invalid folder path: ${JSON.stringify(body.path)}` },
+      { status: 400 },
+    );
+  }
+
+  let deleted = 0;
+  try {
+    deleted = await dbDeleteFolder(deps.sql, workspaceId, body.path, body.cascade);
+  } catch (e) {
+    const err = e as { error?: string; count?: number; message?: string };
+    if (err.error === "folder has N diagrams") {
+      return Response.json(
+        { ok: false, error: err.error, count: err.count },
+        { status: 409 },
+      );
+    }
+    return Response.json(
+      { ok: false, error: err.message ?? String(e) },
+      { status: 400 },
+    );
+  }
+
+  // After delete, broadcast the new empty-folder state (dbDeleteFolder
+  // strips the path inside its transaction — list again for accuracy).
+  const ef = await dbListEmptyFolders(deps.sql, workspaceId);
+  deps.hub.broadcast(workspaceId, {
+    type: "library:folders-changed",
+    emptyFolders: ef,
+  });
+  return Response.json({ deleted });
 }
 
 // ───────────────────────────────────────────────────────────────────────────
