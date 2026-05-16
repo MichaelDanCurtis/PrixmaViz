@@ -6,6 +6,7 @@ import { join } from "node:path";
 const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/prixmaviz_test";
 
 async function dropAll(sql: ReturnType<typeof postgres>): Promise<void> {
+  await sql`DROP TABLE IF EXISTS share_links CASCADE`;
   await sql`DROP TABLE IF EXISTS annotations CASCADE`;
   await sql`DROP TABLE IF EXISTS diagram_versions CASCADE`;
   await sql`DROP TABLE IF EXISTS diagrams CASCADE`;
@@ -193,6 +194,104 @@ describe("runMigrations", () => {
     await verify.end();
   });
 
+  it("0010 adds share_links table + token/diagram indexes + permission CHECK", async () => {
+    const sql = postgres(TEST_DB_URL);
+    await dropAll(sql);
+    await sql.end();
+    await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
+
+    const verify = postgres(TEST_DB_URL);
+    // Table exists with the expected columns.
+    const cols = await verify`
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='share_links'
+      ORDER BY column_name
+    `;
+    const names = cols.map((r) => r.column_name as string).sort();
+    expect(names).toEqual([
+      "created_at",
+      "created_by",
+      "diagram_id",
+      "expires_at",
+      "id",
+      "permission",
+      "token",
+    ]);
+
+    // Both indexes exist (UNIQUE on token; non-unique composite on diagram_id+created_by).
+    const indexes = await verify<{ indexname: string; indexdef: string }[]>`
+      SELECT indexname, indexdef FROM pg_indexes WHERE schemaname='public' AND tablename='share_links'
+    `;
+    const byName = Object.fromEntries(indexes.map((r) => [r.indexname, r.indexdef]));
+    expect(byName.idx_share_links_token).toBeDefined();
+    expect(byName.idx_share_links_token).toMatch(/UNIQUE/);
+    expect(byName.idx_share_links_diagram).toBeDefined();
+    expect(byName.idx_share_links_diagram).toMatch(/diagram_id/);
+    expect(byName.idx_share_links_diagram).toMatch(/created_by/);
+
+    // CHECK constraint on permission column rejects unknown values.
+    // Build a real workspace + diagram so we get past the FK constraints
+    // and exercise ONLY the CHECK on the permission column.
+    const ws = await verify<{ id: string }[]>`
+      INSERT INTO workspaces DEFAULT VALUES RETURNING id
+    `;
+    const wsId = ws[0]!.id;
+    await verify`
+      INSERT INTO diagrams (id, workspace_id, slug, name, engine, kind)
+      VALUES ('d_check_test', ${wsId}, 'check-test', 'Check Test', 'mermaid', 'graph')
+    `;
+    try {
+      await verify`
+        INSERT INTO share_links (diagram_id, token, permission, created_by)
+        VALUES ('d_check_test', 's_check_test', 'admin', ${wsId})
+      `;
+      throw new Error("expected CHECK to reject 'admin' permission");
+    } catch (e) {
+      // Postgres CHECK violation code is 23514.
+      expect((e as { code?: string }).code).toBe("23514");
+    }
+
+    await verify.end();
+  });
+
+  it("0010 backfill creates a view-only share_link for public_view=TRUE diagrams", async () => {
+    // Seed a workspace + public diagram BEFORE migration 0010, then re-apply.
+    // We simulate "pre-0010" by deleting the 0010 schema_migrations row +
+    // truncating share_links, then re-running the migration.
+    const sql = postgres(TEST_DB_URL);
+    await dropAll(sql);
+    await sql.end();
+    await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
+
+    const setup = postgres(TEST_DB_URL);
+    const ws = await setup<{ id: string }[]>`
+      INSERT INTO workspaces DEFAULT VALUES RETURNING id
+    `;
+    const wsId = ws[0]!.id;
+    await setup`
+      INSERT INTO diagrams (id, workspace_id, slug, name, engine, kind, public_view)
+      VALUES ('d_pub_test', ${wsId}, 'pub-test', 'Pub Test', 'mermaid', 'graph', TRUE)
+    `;
+    // Clear any backfill from the first pass, then replay just 0010.
+    await setup`TRUNCATE share_links`;
+    await setup`DELETE FROM schema_migrations WHERE filename = '0010_share_links.sql'`;
+    await setup.end();
+
+    await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
+
+    const verify = postgres(TEST_DB_URL);
+    const rows = await verify`
+      SELECT permission, token, created_by FROM share_links WHERE diagram_id = 'd_pub_test'
+    `;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.permission).toBe("view");
+    expect(rows[0]!.created_by).toBe(wsId);
+    // Backfill token format is 'pub_<32 hex>'.
+    expect(rows[0]!.token).toMatch(/^pub_[0-9a-f]{32}$/);
+    await verify.end();
+  });
+
   it("0004/0005/0006/0007/0008 are individually idempotent on an already-migrated DB", async () => {
     // Verifies the spec promise that the wave-1 migrations all use
     // IF NOT EXISTS so they can safely be re-applied even if their
@@ -213,7 +312,8 @@ describe("runMigrations", () => {
       '0005_workspace_owner.sql',
       '0006_annotation_resolution.sql',
       '0007_diagram_folders.sql',
-      '0008_diagram_pinned_recents.sql'
+      '0008_diagram_pinned_recents.sql',
+      '0010_share_links.sql'
     )`;
     await reset.end();
 
