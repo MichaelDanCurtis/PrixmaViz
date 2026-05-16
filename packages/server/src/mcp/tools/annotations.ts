@@ -1,9 +1,12 @@
 /**
  * Group C — annotation writes (Issue #5).
  *
- * MCP tools that mutate the annotations table.
+ * Three MCP tools that mutate the annotations table:
+ *   - `add_annotation`     : create a new annotation (diagram-wide, node-scoped, or region-scoped)
+ *   - `update_annotation`  : patch an annotation body (refuses resolved unless force:true)
+ *   - `resolve_annotation` : mark resolved + optional resolution text (idempotent)
  *
- * All tools in this module:
+ * All three:
  *   - Authorize via the parent diagram's workspace_id against ctx.workspaceId
  *     (re-using the same trust boundary that get_annotations enforces).
  *   - Broadcast over WS so the web client picks up the change live, using the
@@ -16,7 +19,11 @@
 
 import type { Annotation, BBox, ServerToClient } from "@prixmaviz/shared";
 import { newAnnotationId } from "@prixmaviz/shared";
-import { addAnnotation as dbAddAnnotation } from "../../db/annotations";
+import {
+  addAnnotation as dbAddAnnotation,
+  getAnnotationWithWorkspace as dbGetAnnotationWithWorkspace,
+  updateAnnotation as dbUpdateAnnotation,
+} from "../../db/annotations";
 import { getDiagram as dbGetDiagram } from "../../db/diagrams";
 import type { ToolCtx, ToolDef } from "../tools";
 import { ValidationError } from "../tools";
@@ -128,6 +135,81 @@ async function addAnnotationImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   };
 }
 
+async function updateAnnotationImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const annotationId = args.annotationId as string;
+  const body = args.body as string;
+  const force = Boolean(args.force);
+
+  const lookup = await dbGetAnnotationWithWorkspace(ctx.sql, annotationId);
+  if (!lookup || lookup.workspaceId !== ctx.workspaceId) {
+    // 404-style — either the annotation doesn't exist or it lives in a
+    // different workspace. Don't leak which.
+    return { ok: false, code: "annotation_not_found", message: "annotation not found" };
+  }
+
+  if (lookup.annotation.resolvedAt && !force) {
+    return {
+      ok: false,
+      code: "annotation_resolved",
+      message: "annotation is resolved; pass force: true to update",
+    };
+  }
+
+  const updated = await dbUpdateAnnotation(
+    ctx.sql,
+    lookup.diagramId,
+    annotationId,
+    { text: body },
+  );
+  if (!updated) {
+    // Should be unreachable — we already looked it up — but guard anyway.
+    return { ok: false, code: "annotation_not_found", message: "annotation not found" };
+  }
+
+  broadcastAnnotation(ctx, lookup.diagramId, "updated", updated);
+
+  return {
+    ok: true,
+    annotationId: updated.id,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function resolveAnnotationImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const annotationId = args.annotationId as string;
+  const resolution = args.resolution as string | undefined;
+
+  const lookup = await dbGetAnnotationWithWorkspace(ctx.sql, annotationId);
+  if (!lookup || lookup.workspaceId !== ctx.workspaceId) {
+    return { ok: false, code: "annotation_not_found", message: "annotation not found" };
+  }
+
+  // Idempotent: if already resolved, just refresh the timestamp + resolution
+  // text. The spec calls this out explicitly — agents shouldn't have to
+  // care whether resolution already happened.
+  const resolvedAt = new Date().toISOString();
+  const patch: Partial<Annotation> = { resolvedAt };
+  if (resolution !== undefined) patch.resolution = resolution;
+
+  const updated = await dbUpdateAnnotation(
+    ctx.sql,
+    lookup.diagramId,
+    annotationId,
+    patch,
+  );
+  if (!updated) {
+    return { ok: false, code: "annotation_not_found", message: "annotation not found" };
+  }
+
+  broadcastAnnotation(ctx, lookup.diagramId, "updated", updated);
+
+  return {
+    ok: true,
+    annotationId: updated.id,
+    resolvedAt: updated.resolvedAt ?? resolvedAt,
+  };
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Tool definitions
 // ───────────────────────────────────────────────────────────────────────────
@@ -158,8 +240,39 @@ export const annotationTools: ToolDef[] = [
     },
     run: addAnnotationImpl,
   },
+  {
+    name: "update_annotation",
+    description:
+      "Update an annotation's body text. If the annotation is already resolved, returns `{ ok: false, code: 'annotation_resolved' }` unless `force: true` is supplied.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        annotationId: { type: "string" },
+        body: { type: "string" },
+        force: { type: "boolean" },
+      },
+      required: ["annotationId", "body"],
+    },
+    run: updateAnnotationImpl,
+  },
+  {
+    name: "resolve_annotation",
+    description:
+      "Mark an annotation resolved with an optional resolution note. Idempotent — resolving an already-resolved annotation just refreshes the timestamp and resolution text. Resolved annotations are excluded from `get_annotations` unless `includeResolved: true` is passed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        annotationId: { type: "string" },
+        resolution: { type: "string" },
+      },
+      required: ["annotationId"],
+    },
+    run: resolveAnnotationImpl,
+  },
 ];
 
 export const annotationImpls = {
   add_annotation: addAnnotationImpl,
+  update_annotation: updateAnnotationImpl,
+  resolve_annotation: resolveAnnotationImpl,
 };

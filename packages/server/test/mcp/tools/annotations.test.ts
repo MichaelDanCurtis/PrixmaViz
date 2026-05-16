@@ -196,3 +196,238 @@ describe("MCP add_annotation", () => {
     ).rejects.toThrow(/not found/);
   });
 });
+
+describe("MCP update_annotation", () => {
+  it("updates the body and the new text is visible via get_annotations", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const d = await makeDiagram(sql, ws.id);
+    const { ctx } = makeCtx(sql, ws.id);
+
+    const add = (await dispatchTool(
+      "add_annotation",
+      { diagramId: d.id, body: "original" },
+      ctx,
+    )) as { annotationId: string };
+
+    const upd = (await dispatchTool(
+      "update_annotation",
+      { annotationId: add.annotationId, body: "edited" },
+      ctx,
+    )) as { ok: boolean; annotationId: string; updatedAt: string };
+    expect(upd.ok).toBe(true);
+
+    const list = (await dispatchTool(
+      "get_annotations",
+      { diagramId: d.id },
+      ctx,
+    )) as { annotations: Annotation[] };
+    expect(list.annotations[0]!.text).toBe("edited");
+  });
+
+  it("returns annotation_resolved without force on a resolved annotation", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const d = await makeDiagram(sql, ws.id);
+    const { ctx } = makeCtx(sql, ws.id);
+
+    const add = (await dispatchTool(
+      "add_annotation",
+      { diagramId: d.id, body: "starts open" },
+      ctx,
+    )) as { annotationId: string };
+    await dispatchTool("resolve_annotation", { annotationId: add.annotationId }, ctx);
+
+    const upd = (await dispatchTool(
+      "update_annotation",
+      { annotationId: add.annotationId, body: "tried to edit" },
+      ctx,
+    )) as { ok: boolean; code?: string; message?: string };
+    expect(upd.ok).toBe(false);
+    expect(upd.code).toBe("annotation_resolved");
+    expect(upd.message).toMatch(/force: true/);
+
+    // The body should NOT have been updated.
+    const list = (await dispatchTool(
+      "get_annotations",
+      { diagramId: d.id, includeResolved: true },
+      ctx,
+    )) as { annotations: Annotation[] };
+    expect(list.annotations[0]!.text).toBe("starts open");
+  });
+
+  it("updates a resolved annotation when force: true is supplied", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const d = await makeDiagram(sql, ws.id);
+    const { ctx } = makeCtx(sql, ws.id);
+
+    const add = (await dispatchTool(
+      "add_annotation",
+      { diagramId: d.id, body: "starts open" },
+      ctx,
+    )) as { annotationId: string };
+    await dispatchTool("resolve_annotation", { annotationId: add.annotationId }, ctx);
+
+    const upd = (await dispatchTool(
+      "update_annotation",
+      { annotationId: add.annotationId, body: "after force", force: true },
+      ctx,
+    )) as { ok: boolean };
+    expect(upd.ok).toBe(true);
+
+    const list = (await dispatchTool(
+      "get_annotations",
+      { diagramId: d.id, includeResolved: true },
+      ctx,
+    )) as { annotations: Annotation[] };
+    expect(list.annotations[0]!.text).toBe("after force");
+  });
+
+  it("returns annotation_not_found for a missing id", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const { ctx } = makeCtx(sql, ws.id);
+
+    const r = (await dispatchTool(
+      "update_annotation",
+      { annotationId: "ann_NONEXISTENT", body: "x" },
+      ctx,
+    )) as { ok: boolean; code?: string };
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("annotation_not_found");
+  });
+
+  it("returns annotation_not_found when the annotation lives in another workspace", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const wsA = await createWorkspace(sql);
+    const wsB = await createWorkspace(sql);
+    const dA = await makeDiagram(sql, wsA.id);
+    const { ctx: ctxA } = makeCtx(sql, wsA.id);
+    const { ctx: ctxB } = makeCtx(sql, wsB.id);
+
+    const add = (await dispatchTool(
+      "add_annotation",
+      { diagramId: dA.id, body: "in A" },
+      ctxA,
+    )) as { annotationId: string };
+
+    const r = (await dispatchTool(
+      "update_annotation",
+      { annotationId: add.annotationId, body: "from B" },
+      ctxB,
+    )) as { ok: boolean; code?: string };
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("annotation_not_found");
+  });
+});
+
+describe("MCP resolve_annotation", () => {
+  it("sets resolvedAt and excludes the annotation from get_annotations by default", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const d = await makeDiagram(sql, ws.id);
+    const { ctx } = makeCtx(sql, ws.id);
+
+    const add = (await dispatchTool(
+      "add_annotation",
+      { diagramId: d.id, body: "open" },
+      ctx,
+    )) as { annotationId: string };
+
+    const res = (await dispatchTool(
+      "resolve_annotation",
+      { annotationId: add.annotationId },
+      ctx,
+    )) as { ok: boolean; resolvedAt: string };
+    expect(res.ok).toBe(true);
+    expect(res.resolvedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    // Excluded from default get_annotations
+    const list = (await dispatchTool(
+      "get_annotations",
+      { diagramId: d.id },
+      ctx,
+    )) as { annotations: Annotation[] };
+    expect(list.annotations.length).toBe(0);
+  });
+
+  it("includes the annotation with includeResolved:true and exposes the resolution text", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const d = await makeDiagram(sql, ws.id);
+    const { ctx } = makeCtx(sql, ws.id);
+
+    const add = (await dispatchTool(
+      "add_annotation",
+      { diagramId: d.id, body: "open" },
+      ctx,
+    )) as { annotationId: string };
+    await dispatchTool(
+      "resolve_annotation",
+      { annotationId: add.annotationId, resolution: "fixed in commit abc123" },
+      ctx,
+    );
+
+    const list = (await dispatchTool(
+      "get_annotations",
+      { diagramId: d.id, includeResolved: true },
+      ctx,
+    )) as { annotations: Annotation[] };
+    expect(list.annotations.length).toBe(1);
+    expect(list.annotations[0]!.resolution).toBe("fixed in commit abc123");
+    expect(list.annotations[0]!.resolvedAt).toBeTruthy();
+  });
+
+  it("is idempotent — resolving twice just refreshes timestamp / resolution text", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const d = await makeDiagram(sql, ws.id);
+    const { ctx } = makeCtx(sql, ws.id);
+
+    const add = (await dispatchTool(
+      "add_annotation",
+      { diagramId: d.id, body: "x" },
+      ctx,
+    )) as { annotationId: string };
+
+    const r1 = (await dispatchTool(
+      "resolve_annotation",
+      { annotationId: add.annotationId, resolution: "first" },
+      ctx,
+    )) as { ok: boolean; resolvedAt: string };
+
+    // Small delay so the second resolvedAt differs deterministically.
+    await new Promise((r) => setTimeout(r, 5));
+
+    const r2 = (await dispatchTool(
+      "resolve_annotation",
+      { annotationId: add.annotationId, resolution: "second" },
+      ctx,
+    )) as { ok: boolean; resolvedAt: string };
+
+    expect(r1.ok).toBe(true);
+    expect(r2.ok).toBe(true);
+    // Resolution text should be the latest value.
+    const list = (await dispatchTool(
+      "get_annotations",
+      { diagramId: d.id, includeResolved: true },
+      ctx,
+    )) as { annotations: Annotation[] };
+    expect(list.annotations[0]!.resolution).toBe("second");
+  });
+
+  it("returns annotation_not_found when given a missing id", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const { ctx } = makeCtx(sql, ws.id);
+
+    const r = (await dispatchTool(
+      "resolve_annotation",
+      { annotationId: "ann_MISSING" },
+      ctx,
+    )) as { ok: boolean; code?: string };
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("annotation_not_found");
+  });
+});
