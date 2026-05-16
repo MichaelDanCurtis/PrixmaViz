@@ -25,8 +25,40 @@ import { useAppStore } from "../../store";
 import { api } from "../../lib/api";
 import { renderMarkdown } from "../../lib/markdown";
 import { basename } from "../../lib/path";
-import { toastError } from "../../lib/toast";
+import { toastError, toastSuccess } from "../../lib/toast";
 import type { LibraryEntry } from "@prixmaviz/shared";
+
+interface ShareLink {
+  id: string;
+  token: string;
+  permission: "view" | "comment" | "edit";
+  expiresAt: string | null;
+  createdAt: string;
+  url: string;
+}
+
+/**
+ * Issue #8 Wave 2C — share-link expiry formatter.
+ *
+ * `null` → "Never expires". A past date → "Expired" (the server already
+ * returns 410 on resolve; this is a hint to the owner). Otherwise a
+ * short relative form ("in 3d", "in 12h"). Falls back to the absolute
+ * ISO date when > 30 days out.
+ */
+function formatExpiry(iso: string | null): string {
+  if (!iso) return "Never expires";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  const ms = t - Date.now();
+  if (ms <= 0) return "Expired";
+  const days = Math.floor(ms / 86_400_000);
+  const hours = Math.floor((ms % 86_400_000) / 3_600_000);
+  if (days >= 30) return new Date(t).toISOString().slice(0, 10);
+  if (days >= 1) return `in ${days}d`;
+  if (hours >= 1) return `in ${hours}h`;
+  const mins = Math.max(1, Math.floor(ms / 60_000));
+  return `in ${mins}m`;
+}
 
 interface FieldState {
   name: string;
@@ -52,6 +84,11 @@ export function DetailModal() {
   const library = useAppStore((s) => s.library);
   const setLibrary = useAppStore((s) => s.setLibrary);
   const tagAutocompleteCache = useAppStore((s) => s.tagAutocompleteCache);
+  const openEmbedModal = useAppStore((s) => s.openEmbedModal);
+  // Issue #8 Wave 2C: subscribe to the share-list refresh trigger. WS
+  // handlers bump this counter when library:share-created / -revoked
+  // events arrive, so the share list re-fetches without polling.
+  const shareListRefreshTrigger = useAppStore((s) => s.shareListRefreshTrigger);
 
   // Resolve the slug → LibraryEntry. Re-runs when the modal target changes
   // or when the library list itself is refreshed (e.g. WS-driven).
@@ -67,6 +104,9 @@ export function DetailModal() {
   const [tagInput, setTagInput] = useState("");
   const [tagSuggestionsOpen, setTagSuggestionsOpen] = useState(false);
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  // Issue #8 Wave 2C — share-link list for this diagram.
+  const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
+  const [sharesLoading, setSharesLoading] = useState(false);
 
   // Sync fields when the target entry changes (modal opens on a different
   // diagram, or the library refreshes from WS).
@@ -97,6 +137,41 @@ export function DetailModal() {
       document.removeEventListener("mousedown", onMouseDown);
     };
   }, [slug, close]);
+
+  // Issue #8 Wave 2C — share-link list fetcher. Re-runs when:
+  //   1. The modal target changes (diagram id / slug).
+  //   2. A library:share-created or library:share-revoked WS event arrives
+  //      (bumps shareListRefreshTrigger).
+  // Best-effort — failures leave the list empty + show a toast; the user
+  // can re-open the modal to retry.
+  const targetEntryId = entry?.id ?? null;
+  useEffect(() => {
+    if (!targetEntryId) {
+      setShareLinks([]);
+      return;
+    }
+    let cancelled = false;
+    setSharesLoading(true);
+    void api
+      .listShareLinks(targetEntryId)
+      .then((res) => {
+        if (!cancelled) setShareLinks(res.links);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setShareLinks([]);
+          toastError(
+            `Could not load shares: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSharesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [targetEntryId, shareListRefreshTrigger]);
 
   if (!slug) return null;
   if (!entry) {
@@ -152,6 +227,35 @@ export function DetailModal() {
         `Failed to save tags: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+  }
+
+  // Issue #8 Wave 2C — revoke a share link. Optimistically removes the
+  // row from the local list and rolls back on error. The server also
+  // emits library:share-revoked which bumps shareListRefreshTrigger and
+  // re-fetches, so the optimistic update is just for snappy UX.
+  async function revokeShare(token: string) {
+    const prev = shareLinks;
+    setShareLinks((cur) => cur.filter((l) => l.token !== token));
+    try {
+      await api.revokeShareLink(token);
+      toastSuccess("Share link revoked");
+    } catch (err) {
+      setShareLinks(prev);
+      toastError(
+        `Failed to revoke: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  // Issue #8 Wave 2C — Embed button + "+ New share link" both launch the
+  // EmbedModal. The "+ New" variant opens straight to the Permalink tab
+  // so the user lands on the create-flow without an extra click.
+  function openEmbed(initialTab?: "markdown" | "iframe" | "og" | "permalink") {
+    if (!diagramId) return;
+    openEmbedModal(
+      { diagramId, diagramName: currentEntry.name },
+      initialTab,
+    );
   }
 
   function addTag(raw: string) {
@@ -374,6 +478,105 @@ export function DetailModal() {
               </span>
             </div>
           </div>
+
+          {/* Issue #8 Wave 2C — share-link management. Lists the workspace's
+              shares for this diagram, allows revoke, and provides a "+ New"
+              shortcut that opens the EmbedModal on its Permalink tab. */}
+          <div
+            className="library-detail-field library-detail-shares"
+            data-testid="detail-modal-shares"
+          >
+            <div className="library-detail-field-row">
+              <span className="library-detail-field-label">Shares</span>
+              <button
+                type="button"
+                className="library-detail-share-new"
+                onClick={() => openEmbed("permalink")}
+                disabled={!diagramId}
+                data-testid="detail-modal-share-new"
+              >
+                + New share link
+              </button>
+            </div>
+            {sharesLoading ? (
+              <div
+                className="library-detail-shares-loading"
+                data-testid="detail-modal-shares-loading"
+              >
+                Loading…
+              </div>
+            ) : shareLinks.length === 0 ? (
+              <div
+                className="library-detail-shares-empty"
+                data-testid="detail-modal-shares-empty"
+              >
+                No active share links.
+              </div>
+            ) : (
+              <ul
+                className="library-detail-shares-list"
+                data-testid="detail-modal-shares-list"
+              >
+                {shareLinks.map((l) => (
+                  <li
+                    key={l.id}
+                    className="library-detail-share-row"
+                    data-testid={`detail-modal-share-row-${l.token}`}
+                  >
+                    <code
+                      className="library-detail-share-token"
+                      title={l.token}
+                    >
+                      {/* Display "<prefix>…<suffix>" — full token on title attr */}
+                      {l.token.length > 14
+                        ? `${l.token.slice(0, 6)}…${l.token.slice(-4)}`
+                        : l.token}
+                    </code>
+                    <span
+                      className={`library-detail-share-badge library-detail-share-badge-${l.permission}`}
+                    >
+                      {l.permission}
+                    </span>
+                    <span className="library-detail-share-expiry">
+                      {formatExpiry(l.expiresAt)}
+                    </span>
+                    <button
+                      type="button"
+                      className="library-detail-share-revoke"
+                      onClick={() => void revokeShare(l.token)}
+                      data-testid={`detail-modal-share-revoke-${l.token}`}
+                      aria-label={`Revoke share link ${l.token}`}
+                    >
+                      Revoke
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        {/* Issue #8 Wave 2C — footer action row. The Embed button launches
+            the EmbedModal on its default (Markdown) tab. Close mirrors the
+            X in the header for users who reach the bottom of a long form. */}
+        <div className="library-detail-modal-footer">
+          <button
+            type="button"
+            className="library-detail-modal-embed"
+            onClick={() => openEmbed()}
+            disabled={!diagramId}
+            data-testid="detail-modal-embed-button"
+          >
+            Embed…
+          </button>
+          <button
+            type="button"
+            className="library-detail-modal-done"
+            onClick={close}
+            data-testid="detail-modal-done"
+          >
+            Done
+          </button>
         </div>
       </div>
     </div>

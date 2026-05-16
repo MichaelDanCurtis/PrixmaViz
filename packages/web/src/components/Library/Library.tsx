@@ -15,6 +15,7 @@ import { Card } from "./Card";
 import { Tree } from "./Tree";
 import { FilterChips } from "./FilterChips";
 import { DetailModal } from "./DetailModal";
+import { EmbedModal } from "./EmbedModal";
 
 /**
  * Issue #7 Wave 2: section render helper. Emits nothing when `entries`
@@ -758,6 +759,9 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
       {/* Issue #7 Wave 2 (F5): item-detail modal. Self-gates on
           detailModalSlug — renders nothing when closed. */}
       <DetailModal />
+      {/* Issue #8 Wave 2C: embed/share modal. Self-gates on
+          embedModalDiagram — renders nothing when closed. */}
+      <EmbedModal />
     </aside>
   );
 }

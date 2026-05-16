@@ -89,5 +89,14 @@ function handleMessage(
     // For pin/meta/move/folder changes, re-fetch the library list to
     // converge on authoritative state. Cheaper than tracking every field.
     api.library().then(store.setLibrary).catch(() => {});
+  } else if (
+    msg.type === "library:share-created" ||
+    msg.type === "library:share-revoked"
+  ) {
+    // Issue #8 Wave 2C — share lifecycle. Bump the refresh counter so
+    // any consumer (today: the DetailModal's share list) re-fetches.
+    // No payload work needed; the DetailModal's effect already knows
+    // which diagram is open.
+    store.bumpShareListRefresh();
   }
 }
