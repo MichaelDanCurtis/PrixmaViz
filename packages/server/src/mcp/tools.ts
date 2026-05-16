@@ -6,8 +6,9 @@ import {
 import type postgres from "postgres";
 import { applyPatch } from "../ir/engine";
 import { arrange } from "../canvas/arrange";
-import type { KrokiClient } from "../kroki/client";
+import type { KrokiClient, KrokiFormat } from "../kroki/client";
 import { renderDiagram } from "../render";
+import { getIrRenderer } from "../renderers/registry";
 import { parseVsdx } from "../renderers/vsdx-parse";
 import { canStructuredVsdx, maybeExtractLayout } from "../vsdx/export-helpers";
 import type { WsHub } from "../ws/broadcast";
@@ -225,6 +226,19 @@ export const TOOLS: ToolDef[] = [
       required: ["diagramId"],
     },
     run: exportVsdxImpl,
+  },
+  {
+    name: "export_diagram",
+    description: "Export an existing diagram as SVG/PNG/JPEG bytes (base64-encoded). Use this when an AI agent needs to save a rendered diagram to disk — e.g. embedding in markdown specs or committing alongside docs. For .vsdx output, use export_vsdx instead.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+        format: { type: "string", enum: ["svg", "png", "jpeg"] },
+      },
+      required: ["diagramId", "format"],
+    },
+    run: exportDiagramImpl,
   },
 ];
 
@@ -607,3 +621,58 @@ async function exportVsdxImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   };
 }
 
+const EXPORT_MIME_TYPES: Record<KrokiFormat, string> = {
+  svg: "image/svg+xml",
+  png: "image/png",
+  jpeg: "image/jpeg",
+};
+
+async function exportDiagramImpl(args: Record<string, unknown>, ctx: ToolCtx) {
+  const diagramId = args.diagramId as string;
+  if (!diagramId) throw new Error("diagramId is required");
+  const format = args.format as KrokiFormat;
+  if (format !== "svg" && format !== "png" && format !== "jpeg") {
+    throw new Error(`unsupported format: ${format}`);
+  }
+  const row = await dbGetDiagram(ctx.sql, ctx.workspaceId, diagramId);
+  if (!row) throw new Error("diagram not found");
+
+  let bytes: Uint8Array;
+  if (row.engine === "vsdx" && row.kind === "binary") {
+    // vsdx is not a Kroki engine. We can still hand back the rendered SVG
+    // when one is on file (rendered via the native vsdx pipeline at import
+    // time), but PNG/JPEG would require a separate raster pipeline we don't
+    // ship yet — direct the caller to export_vsdx for binary formats.
+    if (format !== "svg") {
+      throw new Error("vsdx-engine diagrams only support svg via this tool (use export_vsdx for binary)");
+    }
+    if (!row.svg) throw new Error("vsdx diagram has no rendered svg");
+    bytes = new TextEncoder().encode(row.svg);
+  } else if (row.kind === "graph") {
+    if (!row.ir) throw new Error("graph diagram missing ir");
+    const renderer = getIrRenderer(row.engine);
+    if (!renderer) throw new Error(`no IR renderer for engine "${row.engine}"`);
+    const out = renderer(row.ir);
+    bytes = await ctx.kroki.renderBinary(row.engine, out.dsl, format);
+  } else if (row.kind === "passthrough") {
+    if (row.dsl === undefined || row.dsl === null) {
+      throw new Error("passthrough diagram missing dsl");
+    }
+    bytes = await ctx.kroki.renderBinary(row.engine, row.dsl, format);
+  } else {
+    throw new Error(`cannot export diagram of kind "${row.kind}"`);
+  }
+
+  // Map "jpeg" -> ".jpg" for the suggested filename so callers writing to
+  // disk get the conventional extension. Mirrors `getExportFilename` on the
+  // web side.
+  const ext = format === "jpeg" ? "jpg" : format;
+  return {
+    diagramId: row.id,
+    format,
+    mimeType: EXPORT_MIME_TYPES[format],
+    base64: Buffer.from(bytes).toString("base64"),
+    byteCount: bytes.length,
+    suggestedFilename: `${row.slug}.${ext}`,
+  };
+}

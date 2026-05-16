@@ -162,4 +162,17 @@ export const TOOLS: Tool[] = [
       required: ["diagramId"],
     },
   },
+  {
+    name: "export_diagram",
+    description:
+      "Export an existing diagram as SVG/PNG/JPEG bytes (base64-encoded). Use this when an AI agent needs to save a rendered diagram to disk — e.g. embedding in markdown specs or committing alongside docs. For .vsdx output, use export_vsdx instead.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+        format: { type: "string", enum: ["svg", "png", "jpeg"] },
+      },
+      required: ["diagramId", "format"],
+    },
+  },
 ];
