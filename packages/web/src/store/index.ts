@@ -220,6 +220,25 @@ export interface AppState {
   openDetailModal: (slug: string) => void;
   closeDetailModal: () => void;
 
+  // Issue #8 Wave 2C: embed-modal target. Carries the diagramId + name so
+  // the modal can render snippets without re-looking-up the entry. `null`
+  // when the modal is closed. `embedModalInitialTab` lets callers (e.g.
+  // "+ New share link" in DetailModal) open straight to a specific tab.
+  embedModalDiagram: { diagramId: string; diagramName: string } | null;
+  embedModalInitialTab: "markdown" | "iframe" | "og" | "permalink" | null;
+  openEmbedModal: (
+    target: { diagramId: string; diagramName: string },
+    initialTab?: "markdown" | "iframe" | "og" | "permalink",
+  ) => void;
+  closeEmbedModal: () => void;
+
+  // Issue #8 Wave 2C: monotonic counter — bumped by WS handlers for
+  // library:share-created / library:share-revoked so consumers (today:
+  // the DetailModal's share-list useEffect) can re-fetch without polling.
+  // Counter, not a flag, so multiple events back-to-back don't collapse.
+  shareListRefreshTrigger: number;
+  bumpShareListRefresh: () => void;
+
   setDiagram: (d: Diagram | null) => void;
   setRender: (diagramId: DiagramId, svg: string, dsl: string, ir?: GraphIR) => void;
   setLibrary: (entries: LibraryEntry[]) => void;
@@ -450,4 +469,16 @@ export const useAppStore = create<AppState>((set) => ({
   detailModalSlug: null,
   openDetailModal: (slug) => set({ detailModalSlug: slug }),
   closeDetailModal: () => set({ detailModalSlug: null }),
+
+  // Issue #8 Wave 2C — embed modal
+  embedModalDiagram: null,
+  embedModalInitialTab: null,
+  openEmbedModal: (target, initialTab) =>
+    set({ embedModalDiagram: target, embedModalInitialTab: initialTab ?? null }),
+  closeEmbedModal: () => set({ embedModalDiagram: null, embedModalInitialTab: null }),
+
+  // Issue #8 Wave 2C — share-list re-fetch trigger (bumped by WS handlers)
+  shareListRefreshTrigger: 0,
+  bumpShareListRefresh: () =>
+    set((s) => ({ shareListRefreshTrigger: s.shareListRefreshTrigger + 1 })),
 }));
