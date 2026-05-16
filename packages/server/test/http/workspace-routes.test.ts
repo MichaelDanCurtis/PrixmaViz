@@ -1,36 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import postgres from "postgres";
-import { join } from "node:path";
-import { runMigrations } from "../../src/db/migrate";
-import { getDb, closeDb } from "../../src/db/client";
+import { describe, expect, it } from "bun:test";
 import { createWorkspace } from "../../src/db/workspaces";
 import { createDiagram } from "../../src/db/diagrams";
 import { handleApi, type RouteDeps } from "../../src/http/routes";
 import { KrokiClient } from "../../src/kroki/client";
 import { WsHub } from "../../src/ws/broadcast";
+import { setupTestDb } from "../helpers/db";
 
-const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/prixmaviz_test";
-
-async function reset() {
-  const sql = postgres(TEST_DB_URL);
-  await sql`DROP TABLE IF EXISTS annotations CASCADE`;
-  await sql`DROP TABLE IF EXISTS diagrams CASCADE`;
-  await sql`DROP TABLE IF EXISTS workspaces CASCADE`;
-  await sql`DROP TABLE IF EXISTS schema_migrations CASCADE`;
-  await sql.end();
-  await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
-}
+const db = setupTestDb();
 
 function makeDeps(): RouteDeps {
   return {
-    sql: getDb(TEST_DB_URL),
+    sql: db.sql(),
     kroki: new KrokiClient(),
     hub: new WsHub(),
   };
 }
-
-beforeEach(reset);
-afterEach(closeDb);
 
 describe("HTTP workspace routes (auth + isolation)", () => {
   it("GET /api/health is pre-auth and returns ok", async () => {
@@ -75,7 +59,7 @@ describe("HTTP workspace routes (auth + isolation)", () => {
   });
 
   it("GET /api/diagrams returns only the authenticated workspace's diagrams", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const a = await createWorkspace(sql);
     const b = await createWorkspace(sql);
     await createDiagram(sql, { workspaceId: a.id, slug: "alpha", name: "Alpha", engine: "mermaid", kind: "graph" });
@@ -92,7 +76,7 @@ describe("HTTP workspace routes (auth + isolation)", () => {
   });
 
   it("rejects /api/diagrams with foreign workspace's diagram id (no cross-tenant access)", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const a = await createWorkspace(sql);
     const b = await createWorkspace(sql);
     const da = await createDiagram(sql, {
@@ -112,7 +96,7 @@ describe("HTTP workspace routes (auth + isolation)", () => {
   });
 
   it("rejects /api/annotations POST with foreign workspace's diagramId (annotation isolation)", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const a = await createWorkspace(sql);
     const b = await createWorkspace(sql);
     const da = await createDiagram(sql, { workspaceId: a.id, slug: "secret", name: "S", engine: "mermaid", kind: "graph" });

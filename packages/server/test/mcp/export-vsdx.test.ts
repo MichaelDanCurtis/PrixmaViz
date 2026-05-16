@@ -1,28 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import postgres from "postgres";
-import { join } from "node:path";
-import { runMigrations } from "../../src/db/migrate";
-import { getDb, closeDb } from "../../src/db/client";
+import { describe, expect, it } from "bun:test";
 import { createWorkspace } from "../../src/db/workspaces";
 import { createDiagram } from "../../src/db/diagrams";
 import { dispatchTool } from "../../src/mcp/tools";
+import { setupTestDb } from "../helpers/db";
 
-const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:55432/prixmaviz_test";
+const db = setupTestDb();
 
-async function reset() {
-  const sql = postgres(TEST_DB_URL);
-  await sql`DROP TABLE IF EXISTS annotations CASCADE`;
-  await sql`DROP TABLE IF EXISTS diagrams CASCADE`;
-  await sql`DROP TABLE IF EXISTS workspaces CASCADE`;
-  await sql`DROP TABLE IF EXISTS schema_migrations CASCADE`;
-  await sql.end();
-  await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
-}
-
-beforeEach(reset);
-afterEach(closeDb);
-
-const fakeCtx = (sql: any, wsId: string) => ({
+const fakeCtx = (sql: ReturnType<typeof db.sql>, wsId: string) => ({
   sql, workspaceId: wsId,
   kroki: { renderSvg: async () => "<svg/>" } as never,
   hub: { broadcast: () => {} } as never,
@@ -30,7 +14,7 @@ const fakeCtx = (sql: any, wsId: string) => ({
 
 describe("MCP export_vsdx", () => {
   it("returns base64 vsdx for a graph (mermaid) diagram", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id, slug: "m", name: "M",
@@ -58,7 +42,7 @@ describe("MCP export_vsdx", () => {
   });
 
   it("returns verbatim bytes for a vsdx-engine diagram", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const sample = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xaa, 0xbb, 0xcc]);
     const d = await createDiagram(sql, {
@@ -75,7 +59,7 @@ describe("MCP export_vsdx", () => {
   });
 
   it("throws if diagram not found", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     await expect(
       dispatchTool("export_vsdx", { diagramId: "nope" }, fakeCtx(sql, ws.id))

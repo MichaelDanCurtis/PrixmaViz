@@ -1,29 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import postgres from "postgres";
-import { join } from "node:path";
-import { runMigrations } from "../../src/db/migrate";
-import { getDb, closeDb } from "../../src/db/client";
+import { describe, expect, it } from "bun:test";
 import { createWorkspace } from "../../src/db/workspaces";
 import { createDiagram } from "../../src/db/diagrams";
 import { handleApi, type RouteDeps } from "../../src/http/routes";
 import { KrokiClient } from "../../src/kroki/client";
 import { WsHub } from "../../src/ws/broadcast";
+import { setupTestDb } from "../helpers/db";
 
-const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/prixmaviz_test";
-
-async function reset() {
-  const sql = postgres(TEST_DB_URL);
-  await sql`DROP TABLE IF EXISTS annotations CASCADE`;
-  await sql`DROP TABLE IF EXISTS diagrams CASCADE`;
-  await sql`DROP TABLE IF EXISTS workspaces CASCADE`;
-  await sql`DROP TABLE IF EXISTS schema_migrations CASCADE`;
-  await sql.end();
-  await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
-}
+const db = setupTestDb();
 
 function makeDeps(): RouteDeps {
   return {
-    sql: getDb(TEST_DB_URL),
+    sql: db.sql(),
     kroki: new KrokiClient(),
     hub: new WsHub(),
   };
@@ -44,12 +31,9 @@ async function postTile(
   return await resp!.json();
 }
 
-beforeEach(reset);
-afterEach(closeDb);
-
 describe("POST /api/tiles dedup (issue #3, part B)", () => {
   it("creates a tile on the first POST for a given diagramSlug", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id, slug: "alpha", name: "Alpha", engine: "mermaid", kind: "graph",
@@ -71,7 +55,7 @@ describe("POST /api/tiles dedup (issue #3, part B)", () => {
   });
 
   it("returns the existing tile with existing:true on a second POST for the same diagramSlug, and does NOT append", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id, slug: "alpha", name: "Alpha", engine: "mermaid", kind: "graph",
@@ -96,18 +80,18 @@ describe("POST /api/tiles dedup (issue #3, part B)", () => {
   });
 
   it("still creates a second tile when diagramSlug differs", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const da = await createDiagram(sql, {
       workspaceId: ws.id, slug: "alpha", name: "Alpha", engine: "mermaid", kind: "graph",
     });
-    const db = await createDiagram(sql, {
+    const db2 = await createDiagram(sql, {
       workspaceId: ws.id, slug: "beta", name: "Beta", engine: "mermaid", kind: "graph",
     });
     const deps = makeDeps();
 
     const first = await postTile(deps, ws.id, { diagramId: da.id, diagramSlug: "alpha" });
-    const second = await postTile(deps, ws.id, { diagramId: db.id, diagramSlug: "beta" });
+    const second = await postTile(deps, ws.id, { diagramId: db2.id, diagramSlug: "beta" });
 
     expect(first.existing).toBeUndefined();
     expect(second.existing).toBeUndefined();
@@ -124,7 +108,7 @@ describe("POST /api/tiles dedup (issue #3, part B)", () => {
   });
 
   it("dedup is per-workspace: same slug in two workspaces creates a tile in each", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const wsA = await createWorkspace(sql);
     const wsB = await createWorkspace(sql);
     const dA = await createDiagram(sql, {

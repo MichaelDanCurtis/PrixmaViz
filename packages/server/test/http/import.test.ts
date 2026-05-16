@@ -1,31 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import postgres from "postgres";
-import { runMigrations } from "../../src/db/migrate";
-import { getDb, closeDb } from "../../src/db/client";
 import { createWorkspace } from "../../src/db/workspaces";
 import { handleApi } from "../../src/http/routes";
 import { setVsdxRendererForTests, VsdxRenderer } from "../../src/renderers/vsdx-render";
-import { join } from "node:path";
+import { setupTestDb } from "../helpers/db";
 
-const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:55432/prixmaviz_test";
-
-async function reset() {
-  const sql = postgres(TEST_DB_URL);
-  await sql`DROP TABLE IF EXISTS annotations CASCADE`;
-  await sql`DROP TABLE IF EXISTS diagrams CASCADE`;
-  await sql`DROP TABLE IF EXISTS workspaces CASCADE`;
-  await sql`DROP TABLE IF EXISTS schema_migrations CASCADE`;
-  await sql.end();
-  await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
-}
+const db = setupTestDb();
 
 const fakeHub = { broadcast: () => {} } as never;
 const fakeKroki = { renderSvg: async () => "<svg/>" } as never;
 
 const VSDX_MAGIC = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
 
-beforeEach(async () => {
-  await reset();
+beforeEach(() => {
   setVsdxRendererForTests(new VsdxRenderer({
     baseUrl: "http://stub",
     fetchImpl: async () => new Response("<svg id='ok'/>", { status: 200 }),
@@ -33,12 +19,11 @@ beforeEach(async () => {
 });
 afterEach(() => {
   setVsdxRendererForTests(undefined);
-  closeDb();
 });
 
 describe("POST /api/import", () => {
   it("creates a vsdx diagram from valid .vsdx upload", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const body = new FormData();
     body.set("file", new Blob([VSDX_MAGIC, new Uint8Array(100)], { type: "application/vnd.ms-visio.drawing" }), "test.vsdx");
@@ -58,7 +43,7 @@ describe("POST /api/import", () => {
   });
 
   it("rejects upload missing vsdx magic bytes (400)", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const body = new FormData();
     body.set("file", new Blob([new Uint8Array([0, 0, 0, 0])]), "fake.vsdx");
@@ -74,7 +59,7 @@ describe("POST /api/import", () => {
 
   it("rejects upload exceeding VSDX_MAX_BYTES (413)", async () => {
     process.env.VSDX_MAX_BYTES = "100";
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const body = new FormData();
     const big = new Uint8Array(200);
@@ -92,7 +77,7 @@ describe("POST /api/import", () => {
   });
 
   it("handles repeated uploads with omitted name by suffixing the slug", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     // Helper: build a tiny upload form without 'name'
     const upload = async () => {

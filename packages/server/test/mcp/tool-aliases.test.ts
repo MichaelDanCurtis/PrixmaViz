@@ -1,29 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import postgres from "postgres";
-import { join } from "node:path";
+import { describe, expect, it } from "bun:test";
 import { emptyGraphIR } from "@prixmaviz/shared";
-import { runMigrations } from "../../src/db/migrate";
-import { getDb, closeDb } from "../../src/db/client";
 import { createWorkspace } from "../../src/db/workspaces";
 import { createDiagram } from "../../src/db/diagrams";
 import { dispatchTool } from "../../src/mcp/tools";
+import { setupTestDb } from "../helpers/db";
 
-const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:55432/prixmaviz_test";
+const db = setupTestDb();
 
-async function reset() {
-  const sql = postgres(TEST_DB_URL);
-  await sql`DROP TABLE IF EXISTS annotations CASCADE`;
-  await sql`DROP TABLE IF EXISTS diagrams CASCADE`;
-  await sql`DROP TABLE IF EXISTS workspaces CASCADE`;
-  await sql`DROP TABLE IF EXISTS schema_migrations CASCADE`;
-  await sql.end();
-  await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
-}
-
-beforeEach(reset);
-afterEach(closeDb);
-
-function ctx(sql: ReturnType<typeof postgres>, workspaceId: string) {
+function ctx(sql: ReturnType<typeof db.sql>, workspaceId: string) {
   return {
     sql,
     workspaceId,
@@ -34,7 +18,7 @@ function ctx(sql: ReturnType<typeof postgres>, workspaceId: string) {
 
 describe("load_diagram aliases", () => {
   it("accepts `slug` (new param name)", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id,
@@ -53,7 +37,7 @@ describe("load_diagram aliases", () => {
   });
 
   it("accepts `name` (legacy alias) for backwards-compat", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id,
@@ -72,7 +56,7 @@ describe("load_diagram aliases", () => {
   });
 
   it("strips a trailing `.pviz` extension from the slug", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id,
@@ -91,7 +75,7 @@ describe("load_diagram aliases", () => {
   });
 
   it("throws a helpful error when neither slug nor name is provided", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     await expect(
       dispatchTool("load_diagram", {}, ctx(sql, ws.id)),
@@ -101,7 +85,7 @@ describe("load_diagram aliases", () => {
 
 describe("render_dsl aliases", () => {
   it("accepts `dsl` (new param name)", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const result = await dispatchTool(
       "render_dsl",
@@ -113,7 +97,7 @@ describe("render_dsl aliases", () => {
   });
 
   it("accepts `source` (legacy alias) for backwards-compat", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const result = await dispatchTool(
       "render_dsl",
@@ -125,7 +109,7 @@ describe("render_dsl aliases", () => {
   });
 
   it("prefers `dsl` over `source` when both are provided", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     // dispatchTool should pick `dsl`; the test relies on the impl using the new
     // field. We don't have a direct way to read back the dsl from the result,
@@ -144,7 +128,7 @@ describe("render_dsl aliases", () => {
   });
 
   it("throws a helpful error when neither dsl nor source is provided", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     await expect(
       dispatchTool("render_dsl", { engine: "mermaid" }, ctx(sql, ws.id)),
