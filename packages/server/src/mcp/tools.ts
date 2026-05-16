@@ -55,6 +55,23 @@ export interface ToolDef {
   run: (args: Record<string, unknown>, ctx: ToolCtx) => Promise<unknown>;
 }
 
+/**
+ * Extension of `inputSchema` that lets a tool declare a structural
+ * "exactly one of these fields" requirement. The validator reads either
+ * `inputSchema.oneOf` (array of field names — exactly one must be
+ * present) or the JSON-Schema-style `oneOf: [{ required: ["a"] }, ...]`
+ * which is also honored. Both forms support the same semantics: zero
+ * matches → `missing_required_parameter`; two or more → `mutually_exclusive`.
+ *
+ * The validator also reads `inputSchema.mutuallyExclusive` — an array of
+ * `[fieldA, fieldB]` pairs (or longer tuples) where supplying any two
+ * fields from the same group simultaneously is rejected.
+ *
+ * Existing tools don't declare either field, so behavior on the current
+ * surface is unchanged. New tools (`delete_diagram`, `duplicate_diagram`,
+ * `get_diagram`, `focus_tile`, `add_annotation`, ...) opt in.
+ */
+
 // ───────────────────────────────────────────────────────────────────────────
 // Validation
 // ───────────────────────────────────────────────────────────────────────────
@@ -87,7 +104,8 @@ export type ValidationErrorCode =
   | "missing_required_parameter"
   | "unknown_parameter"
   | "invalid_parameter_type"
-  | "invalid_parameter_value";
+  | "invalid_parameter_value"
+  | "mutually_exclusive_parameters";
 
 /**
  * Thrown when `dispatchTool` is called with a tool name not present in TOOLS.
@@ -105,12 +123,69 @@ export class UnknownToolError extends Error {
 interface ParsedSchema {
   properties: Record<string, { type?: string; enum?: unknown[] }>;
   required: string[];
+  /**
+   * Normalized `oneOf` group — flat array of field names where exactly
+   * one must be present. Empty when the schema declares no oneOf.
+   *
+   * Accepts both the shorthand `oneOf: ["a", "b"]` AND the JSON-Schema
+   * form `oneOf: [{ required: ["a"] }, { required: ["b"] }]`. Both
+   * normalize to the same shape so the validator can treat them uniformly.
+   */
+  oneOf: string[];
+  /**
+   * Each inner array is one mutually-exclusive group; supplying ≥2 fields
+   * from the same group is rejected. Empty when the schema declares no
+   * mutuallyExclusive.
+   */
+  mutuallyExclusive: string[][];
 }
 
 function parseSchema(schema: Record<string, unknown>): ParsedSchema {
   const props = (schema.properties as Record<string, { type?: string; enum?: unknown[] }> | undefined) ?? {};
   const required = (schema.required as string[] | undefined) ?? [];
-  return { properties: props, required };
+
+  // Normalize `oneOf`.
+  const rawOneOf = schema.oneOf;
+  let oneOf: string[] = [];
+  if (Array.isArray(rawOneOf)) {
+    if (rawOneOf.every((x) => typeof x === "string")) {
+      // Shorthand: oneOf: ["a", "b"].
+      oneOf = rawOneOf as string[];
+    } else {
+      // JSON-Schema form: oneOf: [{ required: ["a"] }, { required: ["b"] }].
+      const collected: string[] = [];
+      for (const branch of rawOneOf as unknown[]) {
+        if (branch && typeof branch === "object") {
+          const r = (branch as { required?: unknown }).required;
+          if (Array.isArray(r)) {
+            for (const name of r) {
+              if (typeof name === "string" && !collected.includes(name)) {
+                collected.push(name);
+              }
+            }
+          }
+        }
+      }
+      oneOf = collected;
+    }
+  }
+
+  // Normalize `mutuallyExclusive`.
+  const rawMx = schema.mutuallyExclusive;
+  const mutuallyExclusive: string[][] = [];
+  if (Array.isArray(rawMx)) {
+    for (const group of rawMx) {
+      if (
+        Array.isArray(group) &&
+        group.length >= 2 &&
+        group.every((x) => typeof x === "string")
+      ) {
+        mutuallyExclusive.push(group as string[]);
+      }
+    }
+  }
+
+  return { properties: props, required, oneOf, mutuallyExclusive };
 }
 
 function jsTypeOf(v: unknown): string {
@@ -138,6 +213,9 @@ function expectedTypeMatches(spec: { type?: string }, value: unknown): boolean {
  *   2. no unknown top-level keys (catches `format` for `engine`, etc.)
  *   3. provided values match the declared `type`
  *   4. provided values are members of any declared `enum`
+ *   5. exactly one of `inputSchema.oneOf` (if declared) is supplied
+ *   6. no two fields from any `inputSchema.mutuallyExclusive` group are
+ *      supplied together
  *
  * Deliberately shallow — nested objects/arrays are accepted as long as the
  * top-level shape is right. Tool impls remain responsible for deeper
@@ -151,11 +229,22 @@ export function validateArgs(tool: ToolDef, args: Record<string, unknown>): void
     );
   }
 
-  const { properties, required } = parseSchema(tool.inputSchema);
+  const { properties, required, oneOf, mutuallyExclusive } = parseSchema(tool.inputSchema);
   const aliases = tool.legacyAliases ?? {};
   const known = new Set([...Object.keys(properties), ...Object.keys(aliases)]);
   const suppliedKeys = Object.keys(args);
   const unknownSupplied = suppliedKeys.filter((k) => !known.has(k));
+
+  /** `true` when `key` is supplied (or any of its legacy aliases is). */
+  const isPresent = (key: string): boolean => {
+    if (args[key] !== undefined && args[key] !== null) return true;
+    for (const [legacy, canonical] of Object.entries(aliases)) {
+      if (canonical === key && args[legacy] !== undefined && args[legacy] !== null) {
+        return true;
+      }
+    }
+    return false;
+  };
 
   // 1. Required-field check (alias-aware).
   for (const key of required) {
@@ -214,6 +303,41 @@ export function validateArgs(tool: ToolDef, args: Record<string, unknown>): void
         `Invalid value for ${key}: ${JSON.stringify(v)}. Expected one of: ${spec.enum.map((e) => JSON.stringify(e)).join(", ")}.`,
         key,
         spec.enum,
+      );
+    }
+  }
+
+  // 5. oneOf — exactly one of the named fields must be present. Aliases
+  // count toward the canonical field they map to.
+  if (oneOf.length > 0) {
+    const present = oneOf.filter(isPresent);
+    if (present.length === 0) {
+      throw new ValidationError(
+        "missing_required_parameter",
+        `Exactly one of [${oneOf.join(", ")}] is required, but none were supplied.`,
+        undefined,
+        oneOf,
+      );
+    }
+    if (present.length > 1) {
+      throw new ValidationError(
+        "mutually_exclusive_parameters",
+        `Exactly one of [${oneOf.join(", ")}] is allowed, but multiple were supplied: ${present.join(", ")}.`,
+        present[0],
+        oneOf,
+      );
+    }
+  }
+
+  // 6. mutuallyExclusive — no two fields from the same group at once.
+  for (const group of mutuallyExclusive) {
+    const present = group.filter(isPresent);
+    if (present.length >= 2) {
+      throw new ValidationError(
+        "mutually_exclusive_parameters",
+        `Parameters [${present.join(", ")}] cannot be supplied together (any two of [${group.join(", ")}] are mutually exclusive).`,
+        present[0],
+        group,
       );
     }
   }
