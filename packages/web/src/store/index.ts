@@ -75,6 +75,32 @@ export const LIBRARY_SORT_LABELS: Record<LibrarySortKey, string> = {
   engine: "By engine",
 };
 
+// Issue #7 Wave 2C: persisted set of folder paths that are open in the
+// Library tree. We persist so the user's last expansion state survives
+// reload. The empty-string key never appears in the set (workspace root
+// is implicit).
+const EXPANDED_FOLDERS_STORAGE_KEY = "prixmaviz_expanded_folders";
+
+function readPersistedExpandedFolders(): Set<string> {
+  if (typeof localStorage === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(EXPANDED_FOLDERS_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((v): v is string => typeof v === "string" && v.length > 0));
+  } catch {
+    return new Set();
+  }
+}
+
+function persistExpandedFolders(set: Set<string>): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(EXPANDED_FOLDERS_STORAGE_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
 export interface AppState {
   // Cycle 4: workspace identity
   workspaceId: string | null;
@@ -124,6 +150,20 @@ export interface AppState {
   selectRange: (slugs: string[], fromSlug: string, toSlug: string) => void;
   selectAll: (slugs: string[]) => void;
   clearSelection: () => void;
+
+  // Issue #7 Wave 2C: folder tree state for the Library sidebar.
+  //
+  // expandedFolderPaths — set of folder paths whose subtree is currently
+  // visible in the tree. Persisted to localStorage so the user's last
+  // expansion state survives reload.
+  //
+  // selectedFolderPath — currently focused folder. Empty string = no
+  // folder selected (workspace root / all). When non-empty, the All
+  // section of the Library is scoped to diagrams under that prefix.
+  expandedFolderPaths: Set<string>;
+  selectedFolderPath: string;
+  toggleFolderExpanded: (path: string) => void;
+  setSelectedFolderPath: (path: string) => void;
 
   // Issue #10: canvas UX. Snap-to-grid + keyboard focus + floating surfaces.
   snapEnabled: boolean;
@@ -263,6 +303,20 @@ export const useAppStore = create<AppState>((set) => ({
   selectAll: (slugs) =>
     set(() => ({ selectedSlugs: new Set(slugs), lastSelectedSlug: slugs[slugs.length - 1] ?? null })),
   clearSelection: () => set({ selectedSlugs: new Set<string>(), lastSelectedSlug: null }),
+
+  // Issue #7 Wave 2C — folder tree.
+  expandedFolderPaths: readPersistedExpandedFolders(),
+  selectedFolderPath: "",
+  toggleFolderExpanded: (path) =>
+    set((s) => {
+      if (!path) return s; // root is implicit, never toggled
+      const next = new Set(s.expandedFolderPaths);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      persistExpandedFolders(next);
+      return { expandedFolderPaths: next };
+    }),
+  setSelectedFolderPath: (path) => set({ selectedFolderPath: path }),
 
   // Issue #10
   snapEnabled:
