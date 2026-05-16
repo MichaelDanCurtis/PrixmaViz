@@ -1,5 +1,5 @@
 /**
- * Tests for Group B (Issue #5, Wave 2): search_diagrams.
+ * Tests for Group B (Issue #5, Wave 2): search_diagrams + validate_dsl.
  *
  * Separate from the other tools/ tests so a regression in one tool can't
  * mask a regression in another. Mirrors the file-per-group convention
@@ -45,13 +45,18 @@ interface BroadcastEvent {
 
 /**
  * Builds a tool context with a recording WS hub and a no-op Kroki stub.
+ * Tests that need a custom Kroki (e.g. validate_dsl) override `kroki`.
  */
-function makeCtx(sql: ReturnType<typeof getDb>, workspaceId: string) {
+function makeCtx(
+  sql: ReturnType<typeof getDb>,
+  workspaceId: string,
+  krokiOverride?: unknown,
+) {
   const broadcasts: BroadcastEvent[] = [];
   const ctx = {
     sql,
     workspaceId,
-    kroki: { renderSvg: async () => "<svg/>" } as never,
+    kroki: (krokiOverride ?? { renderSvg: async () => "<svg/>" }) as never,
     hub: {
       broadcast(wsId: string | null, msg: ServerToClient) {
         broadcasts.push({ workspaceId: wsId, msg });
@@ -397,5 +402,197 @@ describe("search_diagrams", () => {
     )) as { results: unknown[] };
 
     expect(result.results).toEqual([]);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// validate_dsl
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build a stub Kroki client whose `validate()` returns a pre-baked outcome,
+ * and whose other methods throw if invoked (which would indicate that
+ * `validate_dsl` accidentally went through the render/cache path).
+ *
+ * The stub also records which (engine, source) tuples it was called with so
+ * tests can assert no double-call happened.
+ */
+function makeFakeKroki(
+  outcome: { ok: true; status: number } | { ok: false; status: number; body: string },
+) {
+  const calls: Array<{ engine: string; source: string }> = [];
+  const kroki = {
+    async validate(engine: string, source: string) {
+      calls.push({ engine, source });
+      return outcome;
+    },
+    // These are the methods that *would* hit the cache. If validate_dsl
+    // ever calls them, the test will explode visibly.
+    renderSvg: async () => {
+      throw new Error("renderSvg should not be called by validate_dsl");
+    },
+    renderBinary: async () => {
+      throw new Error("renderBinary should not be called by validate_dsl");
+    },
+  };
+  return { kroki, calls };
+}
+
+describe("validate_dsl", () => {
+  it("returns { ok: true } on a successful Kroki render", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const fake = makeFakeKroki({ ok: true, status: 200 });
+    const { ctx } = makeCtx(sql, ws.id, fake.kroki);
+
+    const result = await dispatchTool(
+      "validate_dsl",
+      { engine: "mermaid", source: "graph TD\n  A --> B" },
+      ctx,
+    );
+    expect(result).toEqual({ ok: true });
+    expect(fake.calls.length).toBe(1);
+    expect(fake.calls[0]?.engine).toBe("mermaid");
+  });
+
+  it("returns structured errors with line numbers on a mermaid parse failure", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const fake = makeFakeKroki({
+      ok: false,
+      status: 400,
+      body: "Parse error on line 5:\n...->Server: Bad token\n^^^\nExpecting END",
+    });
+    const { ctx } = makeCtx(sql, ws.id, fake.kroki);
+
+    const result = (await dispatchTool(
+      "validate_dsl",
+      { engine: "mermaid", source: "garbage" },
+      ctx,
+    )) as { ok: boolean; errors: Array<{ line?: number; message: string }> };
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.length).toBe(1);
+    expect(result.errors[0]?.line).toBe(5);
+    expect(result.errors[0]?.message).toMatch(/Bad token|Expecting END/);
+  });
+
+  it("extracts line + column from a d2 error body", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const fake = makeFakeKroki({
+      ok: false,
+      status: 400,
+      body: "err: foo.d2:7:3: unexpected token",
+    });
+    const { ctx } = makeCtx(sql, ws.id, fake.kroki);
+
+    const result = (await dispatchTool(
+      "validate_dsl",
+      { engine: "d2", source: "broken" },
+      ctx,
+    )) as { ok: boolean; errors: Array<{ line?: number; column?: number; message: string }> };
+
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]?.line).toBe(7);
+    expect(result.errors[0]?.column).toBe(3);
+  });
+
+  it("falls back to the raw body for engines without a specific parser", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const fake = makeFakeKroki({
+      ok: false,
+      status: 400,
+      body: "some opaque engine error",
+    });
+    const { ctx } = makeCtx(sql, ws.id, fake.kroki);
+
+    const result = (await dispatchTool(
+      "validate_dsl",
+      { engine: "wavedrom", source: "{ }" },
+      ctx,
+    )) as { ok: boolean; errors: Array<{ message: string }> };
+
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]?.message).toBe("some opaque engine error");
+  });
+
+  it("does NOT call renderSvg / renderBinary (no SVG written to cache)", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const fake = makeFakeKroki({ ok: true, status: 200 });
+    const { ctx } = makeCtx(sql, ws.id, fake.kroki);
+
+    // makeFakeKroki's renderSvg/renderBinary throw if invoked.
+    const result = await dispatchTool(
+      "validate_dsl",
+      { engine: "mermaid", source: "graph TD\n  A --> B" },
+      ctx,
+    );
+    expect(result).toEqual({ ok: true });
+    expect(fake.calls.length).toBe(1);
+  });
+
+  it("rejects an unknown engine at the validator (before the impl runs)", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const fake = makeFakeKroki({ ok: true, status: 200 });
+    const { ctx } = makeCtx(sql, ws.id, fake.kroki);
+
+    await expect(
+      dispatchTool(
+        "validate_dsl",
+        { engine: "no-such-engine", source: "anything" },
+        ctx,
+      ),
+    ).rejects.toThrow(/Invalid value for engine/);
+    // The dispatcher validator catches the bad engine before the impl runs.
+    expect(fake.calls.length).toBe(0);
+  });
+
+  it("rejects calls missing the required `engine` parameter", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const fake = makeFakeKroki({ ok: true, status: 200 });
+    const { ctx } = makeCtx(sql, ws.id, fake.kroki);
+
+    await expect(
+      dispatchTool("validate_dsl", { source: "graph TD" }, ctx),
+    ).rejects.toThrow(/Missing required parameter: engine/);
+  });
+
+  it("rejects calls missing the required `source` parameter", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const fake = makeFakeKroki({ ok: true, status: 200 });
+    const { ctx } = makeCtx(sql, ws.id, fake.kroki);
+
+    await expect(
+      dispatchTool("validate_dsl", { engine: "mermaid" }, ctx),
+    ).rejects.toThrow(/Missing required parameter: source/);
+  });
+
+  it("surfaces a transport-level error as a structured error rather than throwing", async () => {
+    const sql = getDb(TEST_DB_URL);
+    const ws = await createWorkspace(sql);
+    const krokiOverride = {
+      async validate() {
+        throw new Error("ECONNREFUSED");
+      },
+      renderSvg: async () => "<svg/>",
+      renderBinary: async () => new Uint8Array(),
+    };
+    const { ctx } = makeCtx(sql, ws.id, krokiOverride);
+
+    const result = (await dispatchTool(
+      "validate_dsl",
+      { engine: "mermaid", source: "graph TD\n  A --> B" },
+      ctx,
+    )) as { ok: boolean; errors: Array<{ message: string }> };
+
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]?.message).toMatch(/kroki transport error/);
+    expect(result.errors[0]?.message).toMatch(/ECONNREFUSED/);
   });
 });

@@ -61,6 +61,45 @@ export class KrokiClient {
     const bytes = await this.renderBinary(engine, dsl, "svg");
     return new TextDecoder().decode(bytes);
   }
+
+  /**
+   * Validate a DSL by asking Kroki to render it, then discarding the SVG.
+   *
+   * Distinct from `renderBinary` in two deliberate ways:
+   *   1. Cache is BYPASSED on both read and write — `validate_dsl` is a
+   *      hot-path check that agents call repeatedly with throwaway inputs;
+   *      polluting the byte cache with junk DSL would crowd out real
+   *      renders. The caller's MCP tool also returns no SVG to the wire.
+   *   2. Errors are returned (not thrown) so the caller can map the raw
+   *      Kroki body through `parseEngineError` without unwrapping a
+   *      `KrokiError`.
+   *
+   * On success: `{ ok: true, status }`. On Kroki 4xx/5xx: `{ ok: false,
+   * status, body }` where `body` is the raw response text — typically the
+   * upstream engine's stderr, which `parseEngineError` knows how to
+   * destructure into `{ line?, column?, message }[]`.
+   */
+  async validate(
+    engine: DiagramEngine,
+    dsl: string,
+  ): Promise<{ ok: true; status: number } | { ok: false; status: number; body: string }> {
+    const path = KROKI_PATH[engine];
+    const url = `${this.baseUrl}/${path}/svg`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: dsl,
+    });
+    if (res.ok) {
+      // Consume the body so the connection can be freed; we don't keep it.
+      // Using `arrayBuffer` rather than `text` avoids a UTF-8 decode for a
+      // value we're throwing away.
+      await res.arrayBuffer();
+      return { ok: true, status: res.status };
+    }
+    const body = await res.text().catch(() => res.statusText);
+    return { ok: false, status: res.status, body };
+  }
 }
 
 export class KrokiError extends Error {

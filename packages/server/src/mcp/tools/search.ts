@@ -1,12 +1,16 @@
 /**
  * Group B — Discoverability (Issue #5, Wave 2).
  *
- * `search_diagrams` closes the discoverability gap left by `list_diagrams`
+ * Two MCP tools that close the discoverability gap left by `list_diagrams`
  * (which only does substring-on-name and tag-equality filtering):
  *
  *   - `search_diagrams` : full-text search across diagram name, DSL, and
  *                         annotation bodies, with tag / engine / updatedSince
  *                         filters and PostgreSQL `ts_rank` relevance scoring.
+ *   - `validate_dsl`    : ask Kroki whether a given (engine, source) pair
+ *                         renders cleanly, return structured errors via the
+ *                         shared `parseEngineError` helper. NEVER caches the
+ *                         SVG nor returns it on the wire.
  *
  * The FTS path leans on the `0004_diagrams_fts.sql` migration:
  *   - `diagrams.search_tsv` is a STORED generated tsvector over
@@ -19,8 +23,9 @@
  * Spec: docs/superpowers/specs/2026-05-15-missing-mcp-tools-design.md §B
  */
 
-import { ALL_ENGINES } from "@prixmaviz/shared";
+import { ALL_ENGINES, type DiagramEngine } from "@prixmaviz/shared";
 import type postgres from "postgres";
+import { parseEngineError } from "../../kroki/parse-errors";
 import type { ToolCtx, ToolDef } from "../tools";
 
 type Sql = ReturnType<typeof postgres>;
@@ -231,6 +236,74 @@ async function searchDiagramsImpl(
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// B2. validate_dsl
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Render-once-and-throw-away validation. Kroki returns 200 for valid input
+ * and 4xx for parse/render errors with the upstream engine's stderr in the
+ * response body — `parseEngineError` knows how to pull line/column out of
+ * that body for the engines we care about.
+ *
+ * Deliberately uses `KrokiClient.validate(...)` (added in this PR) rather
+ * than `renderSvg` because:
+ *   - validate bypasses the SVG cache on both read AND write so junk DSL
+ *     from agent-side validation doesn't crowd out real renders;
+ *   - validate returns the raw error body (instead of throwing a
+ *     KrokiError with a truncated string) so the parser sees the full
+ *     stderr.
+ *
+ * The MCP response intentionally never includes any SVG bytes — that's
+ * the whole point of "validate, don't render."
+ */
+async function validateDslImpl(
+  args: Record<string, unknown>,
+  ctx: ToolCtx,
+): Promise<
+  | { ok: true }
+  | { ok: false; errors: { line?: number; column?: number; message: string }[] }
+> {
+  const engine = args.engine as DiagramEngine;
+  const source = args.source as string;
+
+  // The dispatcher's validator already enforces the engine enum and
+  // required-string types; we keep these as a defense-in-depth in case
+  // somebody calls the impl directly.
+  if (typeof engine !== "string" || !(ALL_ENGINES as readonly string[]).includes(engine)) {
+    return {
+      ok: false,
+      errors: [{ message: `unknown engine: ${String(engine)}` }],
+    };
+  }
+  if (typeof source !== "string" || source.length === 0) {
+    return {
+      ok: false,
+      errors: [{ message: "source must be a non-empty string" }],
+    };
+  }
+
+  try {
+    const outcome = await ctx.kroki.validate(engine, source);
+    if (outcome.ok) {
+      return { ok: true };
+    }
+    return {
+      ok: false,
+      errors: parseEngineError(engine, outcome.body),
+    };
+  } catch (e) {
+    // Network / transport error talking to Kroki — surface as a single
+    // structured error rather than blowing up the dispatcher with an
+    // uncaught exception. Agents can retry on transport errors.
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      errors: [{ message: `kroki transport error: ${message}` }],
+    };
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Tool definitions
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -255,8 +328,23 @@ export const searchTools: ToolDef[] = [
     },
     run: searchDiagramsImpl,
   },
+  {
+    name: "validate_dsl",
+    description:
+      "Validate that a (engine, source) pair renders cleanly through Kroki without persisting or caching the render. Returns `{ ok: true }` on success or `{ ok: false, errors: [{ line?, column?, message }] }` on parse/render failure. Use this from agents to pre-check DSL before calling `render_dsl` or `create_diagram`.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        engine: { type: "string", enum: ALL_ENGINES },
+        source: { type: "string" },
+      },
+      required: ["engine", "source"],
+    },
+    run: validateDslImpl,
+  },
 ];
 
 export const searchImpls = {
   search_diagrams: searchDiagramsImpl,
+  validate_dsl: validateDslImpl,
 };
