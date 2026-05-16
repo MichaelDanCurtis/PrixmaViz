@@ -191,9 +191,7 @@ select {
   display: flex; align-items: center; gap: 8px;
 }
 .library-title { font-weight: 600; font-size: 13px; flex: 1; }
-/* Issue #4: glance-able count badge in the header. Tabular-nums keeps
-   widths stable as the count changes; the title attribute reveals
-   "12 matches of 47 diagrams" on hover. */
+/* Issue #4: glance-able count badge in the header. */
 .library-count-badge {
   display: inline-flex; align-items: center;
   min-width: 28px; height: 20px; padding: 0 8px;
@@ -202,6 +200,16 @@ select {
   color: var(--fg); font-size: 11px; font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+/* Issue #2: bulk-select mode toggle button. */
+.library-select-toggle {
+  font-size: 11px; padding: 3px 10px; border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--border); color: var(--fg);
+  cursor: pointer; transition: background 120ms, border-color 120ms;
+}
+.library-select-toggle:hover { background: #1c1f26; }
+.library-select-toggle.active {
+  background: var(--accent); border-color: var(--accent); color: #0e0f12;
 }
 .library-controls {
   display: flex; flex-direction: column; gap: 8px;
@@ -217,6 +225,18 @@ select {
   background: var(--bg); border: 1px solid var(--border); color: var(--fg);
   font-size: 12px; cursor: pointer;
 }
+/* Issue #2: select-mode row above the list. */
+.library-select-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 12px; border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.library-select-link {
+  background: none; border: none; color: var(--accent); cursor: pointer;
+  padding: 0; font-size: 11px;
+}
+.library-select-link:hover { text-decoration: underline; }
+.library-select-count { color: var(--muted); }
 /* Issue #4: scroll-affordance wrapper. The two ::before/::after pseudos
    are fade gradients pinned to the top and bottom; they fade IN when the
    list can scroll in that direction (data-can-scroll-{up,down}="true")
@@ -261,9 +281,20 @@ select {
   margin: 4px 8px; padding: 10px;
   border: 1px solid var(--border); border-radius: 8px;
   cursor: pointer; transition: border-color 120ms, background 120ms;
+  position: relative;
 }
 .library-item:hover { background: #1c1f26; }
 .library-item.active { background: #1c1f26; border-color: var(--accent); }
+/* Issue #2: selection state — bolder accent than plain "active". */
+.library-item.selected {
+  background: #1f2a3f; border-color: var(--accent);
+}
+.library-item.select-mode { padding-left: 32px; }
+.library-checkbox {
+  position: absolute; top: 12px; left: 10px;
+  width: 14px; height: 14px;
+  accent-color: var(--accent); cursor: pointer;
+}
 .library-thumb {
   height: 60px; background: var(--bg); border-radius: 4px;
   margin-bottom: 8px; display: grid; place-items: center; overflow: hidden;
@@ -276,6 +307,48 @@ select {
   font-size: 10px; background: var(--bg); color: var(--muted);
   padding: 1px 6px; border-radius: 3px;
 }
+
+/* Issue #2: bulk-export action bar — pinned to the bottom of the Library
+   panel, visible only when one or more diagrams are selected. */
+.library-bulk-bar {
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.library-bulk-line {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.library-bulk-count {
+  font-size: 11px; color: var(--muted); margin-right: auto;
+}
+.library-bulk-field {
+  display: flex; flex-direction: column; gap: 2px;
+  font-size: 10px; color: var(--muted);
+}
+.library-bulk-field select {
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 4px 6px; font-size: 11px;
+}
+.library-bulk-field select:disabled { opacity: 0.55; cursor: not-allowed; }
+.library-bulk-action {
+  flex: 1;
+  background: var(--accent); color: #0e0f12;
+  border: 1px solid var(--accent); border-radius: 6px;
+  padding: 6px 10px; font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: opacity 120ms;
+}
+.library-bulk-action:hover:not(:disabled) { opacity: 0.9; }
+.library-bulk-action:disabled { opacity: 0.55; cursor: not-allowed; }
+.library-bulk-secondary {
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; font-size: 12px; cursor: pointer;
+  transition: background 120ms;
+}
+.library-bulk-secondary:hover:not(:disabled) { background: #1c1f26; }
+.library-bulk-secondary:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .empty p { color: var(--muted); }
 
