@@ -62,6 +62,15 @@ vi.mock("../../src/lib/api", () => ({
     updateDiagramMeta: (...args: [string, Record<string, unknown>]) =>
       updateMetaMock(...args),
     save: (...args: [string, Record<string, unknown>]) => saveMock(...args),
+    // Issue #8 Wave 2C — share-link mocks for the detail modal's
+    // shares section (load + revoke). Default to empty list so the
+    // pre-existing test cases still pass.
+    listShareLinks: vi.fn(async () => ({ links: [] })),
+    revokeShareLink: vi.fn(async () => ({ ok: true })),
+    createShareLink: vi.fn(async () => ({
+      token: "s_test",
+      url: "http://localhost/s/s_test",
+    })),
   },
   authFetch: vi.fn(async () => new Response(null, { status: 404 })),
 }));
