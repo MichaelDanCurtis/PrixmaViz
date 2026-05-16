@@ -184,6 +184,14 @@ export interface AppState {
   setError: (e: string | null) => void;
   setPending: (p: boolean) => void;
 
+  // Issue #7 Wave 2: Pinned + Recents. Pure store mutators — UI calls these
+  // optimistically; server emits library:diagram-* WS events that overwrite
+  // with the authoritative value.
+  /** Toggle the pinned flag on a specific entry (no-op if not in `library`). */
+  setLibraryPinned: (diagramId: DiagramId, pinned: boolean) => void;
+  /** Update lastOpenedAt for a specific entry (no-op if not in `library`). */
+  setLibraryLastOpenedAt: (diagramId: DiagramId, lastOpenedAt: string) => void;
+
   setAnnotations: (id: DiagramId, list: Annotation[]) => void;
   addAnnotation: (id: DiagramId, a: Annotation) => void;
   updateAnnotation: (id: DiagramId, a: Annotation) => void;
@@ -228,6 +236,33 @@ export const useAppStore = create<AppState>((set) => ({
         : { svg, dsl },
     ),
   setLibrary: (entries) => set({ library: entries }),
+  // Issue #7 Wave 2: pure store mutators for pinned + recent.
+  // Both are no-ops when the diagram is not in `library` — keeps callers
+  // (WS handler, optimistic UI) free of "is this entry currently loaded?"
+  // null-checks. The shape `(prev) => prev` short-circuits the set call so
+  // no listeners re-render on a no-op.
+  setLibraryPinned: (diagramId, pinned) =>
+    set((s) => {
+      let changed = false;
+      const next = s.library.map((e) => {
+        if (e.id !== diagramId) return e;
+        if (e.pinned === pinned) return e;
+        changed = true;
+        return { ...e, pinned };
+      });
+      return changed ? { library: next } : s;
+    }),
+  setLibraryLastOpenedAt: (diagramId, lastOpenedAt) =>
+    set((s) => {
+      let changed = false;
+      const next = s.library.map((e) => {
+        if (e.id !== diagramId) return e;
+        if (e.lastOpenedAt === lastOpenedAt) return e;
+        changed = true;
+        return { ...e, lastOpenedAt };
+      });
+      return changed ? { library: next } : s;
+    }),
   setWsStatus: (status) => set({ wsStatus: status }),
   setError: (error) => set({ error }),
   setPending: (pending) => set({ pending }),

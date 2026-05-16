@@ -241,6 +241,17 @@ export const api = {
       body: JSON.stringify({ public: isPublic }),
     }).then((r) => jsonOrThrow<{ public: boolean; publicUrl?: string }>(r)),
 
+  // Issue #7 Wave 2: toggle the pinned flag on a diagram. The server's
+  // dbSetPinned helper writes the value verbatim (it's a SET, not a toggle),
+  // so the caller passes the desired final state. Returns the new pinned
+  // value so the optimistic UI can confirm the server agrees.
+  setPinned: (id: string, pinned: boolean) =>
+    authFetch(`/api/diagrams/${encodeURIComponent(id)}/pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned }),
+    }).then((r) => jsonOrThrow<{ pinned: boolean }>(r)),
+
   // Issue #6: inline editor + version history.
   // getSource is GET-side (no render); updateSource and restoreVersion both
   // re-render. updateSource returns 502 with `{ error, source }` when the

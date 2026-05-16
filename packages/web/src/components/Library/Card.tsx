@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { authFetch } from "../../lib/api";
+import { api, authFetch } from "../../lib/api";
+import { useAppStore } from "../../store";
+import { toastError } from "../../lib/toast";
 import type { LibraryEntry } from "@prixmaviz/shared";
 
 /**
@@ -88,6 +90,25 @@ export function Card({
     e.dataTransfer.effectAllowed = "move";
   }
 
+  // Issue #7 Wave 2 / spec F4: star toggle. Optimistic store update
+  // happens synchronously BEFORE the await, so the UI flips immediately;
+  // on API failure we revert and surface a toast.
+  async function onToggleStar(e: React.MouseEvent): Promise<void> {
+    e.stopPropagation();
+    const next = !entry.pinned;
+    const setLibraryPinned = useAppStore.getState().setLibraryPinned;
+    setLibraryPinned(entry.id, next);
+    try {
+      await api.setPinned(entry.id, next);
+    } catch (err) {
+      // Revert.
+      setLibraryPinned(entry.id, !next);
+      toastError(
+        `Failed to ${next ? "pin" : "unpin"}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   return (
     <div
       className={itemClasses}
@@ -107,6 +128,17 @@ export function Card({
           aria-label={`Select ${entry.name}`}
         />
       )}
+      <button
+        type="button"
+        className={`library-star${entry.pinned ? " pinned" : ""}`}
+        onClick={(e) => void onToggleStar(e)}
+        aria-pressed={entry.pinned ? "true" : "false"}
+        aria-label={entry.pinned ? "Unpin" : "Pin to top"}
+        title={entry.pinned ? "Unpin" : "Pin to top"}
+        data-testid={`library-star-${entry.name}`}
+      >
+        {entry.pinned ? "★" : "☆"}
+      </button>
       <div className="library-thumb">
         <LibraryThumb slug={slug} />
       </div>

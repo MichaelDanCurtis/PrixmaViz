@@ -40,6 +40,12 @@ export interface RenderDslResponse {
 }
 
 export interface LibraryEntry {
+  /**
+   * Diagram UUID. Surfaced so the web client can call ID-keyed routes
+   * (POST /api/diagrams/:id/pin, etc.) and match `library:diagram-*`
+   * WS events to a row in the local library list. Issue #7 Wave 2.
+   */
+  id: DiagramId;
   name: string;
   path: string;
   engine: DiagramEngine;

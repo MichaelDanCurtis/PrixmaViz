@@ -15,6 +15,66 @@ import { Card } from "./Card";
 import { Tree } from "./Tree";
 
 /**
+ * Issue #7 Wave 2: section render helper. Emits nothing when `entries`
+ * is empty so empty sections don't pollute the UI with bare headers.
+ * The section wraps a sticky header + the partition's cards, rendered
+ * with the same `Card` the flat list previously used — section is a
+ * pure presentation layer.
+ */
+function renderSection(opts: {
+  id: "pinned" | "recent" | "all";
+  title: string;
+  icon?: string;
+  note?: string;
+  entries: LibraryEntry[];
+  diagram: { name: string } | null;
+  selectMode: boolean;
+  selectedSlugs: Set<string>;
+  onItemClick: (entry: LibraryEntry, slug: string, e: React.MouseEvent) => void;
+}) {
+  const { id, title, icon, note, entries, diagram, selectMode, selectedSlugs, onItemClick } = opts;
+  if (entries.length === 0) return null;
+  return (
+    <div
+      className={`library-section library-section-${id}`}
+      data-testid={`library-section-${id}`}
+      key={id}
+    >
+      <div className="library-section-header">
+        <span className="library-section-title">
+          {icon && <span className="library-section-icon">{icon}</span>}
+          <span>{title}</span>
+          {note && <span className="library-section-note">({note})</span>}
+        </span>
+        <span
+          className="library-section-count"
+          data-testid={`library-section-${id}-count`}
+        >
+          {entries.length}
+        </span>
+      </div>
+      {entries.map((entry) => {
+        const slug = basename(entry.path).replace(/\.pviz$/, "");
+        const active = diagram?.name === entry.name;
+        const checked = selectedSlugs.has(slug);
+        return (
+          <Card
+            key={`${id}-${entry.path}`}
+            entry={entry}
+            slug={slug}
+            active={active}
+            selectMode={selectMode}
+            checked={checked}
+            onItemClick={onItemClick}
+            draggable={!selectMode}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/**
  * Issue #7 Wave 2C — distance (in px) from the top/bottom edge of the
  * library list at which dragover starts auto-scrolling. Native HTML5
  * DnD does not auto-scroll the container; this helper steps the scroll
@@ -149,6 +209,30 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
         e.tags.some((t) => t.toLowerCase().includes(q)),
     );
   }, [sorted, search]);
+
+  // Issue #7 Wave 2: section partition over `filtered`.
+  //  - Pinned: every pinned entry, honoring the sort dropdown.
+  //  - Recent: top RECENT_LIMIT non-pinned entries by lastOpenedAt DESC,
+  //    ALWAYS sorted by recency regardless of the dropdown — its whole
+  //    purpose is "what did I last touch?".
+  //  - All:    everything not pinned, honoring the sort dropdown. Note
+  //    Recent is a shortcut, not a filter — its entries also appear here.
+  const RECENT_LIMIT = 10;
+  const pinnedEntries = useMemo(
+    () => filtered.filter((e) => e.pinned),
+    [filtered],
+  );
+  const recentEntries = useMemo(() => {
+    return filtered
+      .filter((e) => !e.pinned && e.lastOpenedAt)
+      .slice()
+      .sort((a, b) => (b.lastOpenedAt as string).localeCompare(a.lastOpenedAt as string))
+      .slice(0, RECENT_LIMIT);
+  }, [filtered]);
+  const allEntries = useMemo(
+    () => filtered.filter((e) => !e.pinned),
+    [filtered],
+  );
 
   useLayoutEffect(() => {
     const el = listRef.current;
@@ -436,22 +520,34 @@ export function Library({ onOpenSettings }: LibraryProps = {}) {
           onFoldersChanged={() => void refreshLibrary()}
         />
         <div className="library-list" ref={listRef} data-testid="library-list">
-          {filtered.map((entry) => {
-            const slug = basename(entry.path).replace(/\.pviz$/, "");
-            const active = diagram?.name === entry.name;
-            const checked = selectedSlugs.has(slug);
-            return (
-              <Card
-                key={entry.path}
-                entry={entry}
-                slug={slug}
-                active={active}
-                selectMode={selectMode}
-                checked={checked}
-                onItemClick={onItemClick}
-                draggable={!selectMode}
-              />
-            );
+          {renderSection({
+            id: "pinned",
+            title: "Pinned",
+            icon: "★",
+            entries: pinnedEntries,
+            diagram,
+            selectMode,
+            selectedSlugs,
+            onItemClick,
+          })}
+          {renderSection({
+            id: "recent",
+            title: "Recent",
+            note: "by recency",
+            entries: recentEntries,
+            diagram,
+            selectMode,
+            selectedSlugs,
+            onItemClick,
+          })}
+          {renderSection({
+            id: "all",
+            title: "All",
+            entries: allEntries,
+            diagram,
+            selectMode,
+            selectedSlugs,
+            onItemClick,
           })}
         </div>
       </div>

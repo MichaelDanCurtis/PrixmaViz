@@ -176,6 +176,10 @@ export async function handleApi(
     const rows = await dbListDiagrams(deps.sql, workspaceId);
     return Response.json({
       entries: rows.map((d) => ({
+        // Issue #7 Wave 2 — surface the diagram UUID so the web Library can
+        // call ID-keyed routes (POST /api/diagrams/:id/pin) and match
+        // library:diagram-* WS events to a row in the local library list.
+        id: d.id,
         name: d.name,
         path: `${d.slug}.pviz`,
         engine: d.engine,
