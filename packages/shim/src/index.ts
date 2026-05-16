@@ -8,7 +8,7 @@ import {
 import { TOOLS } from "./tools";
 import { resolveWorkspaceId, workspaceConfigPath } from "./bootstrap";
 
-export const SHIM_VERSION = "0.8.0";
+export const SHIM_VERSION = "0.9.0";
 
 /**
  * Dependencies injected into the call-tool factory. Real callers use Node

@@ -404,4 +404,43 @@ export const TOOLS: Tool[] = [
       required: ["diagramId", "pinned"],
     },
   },
+  // ─── Group H — Share links (Issue #8) ─────────────────────────────────────
+  {
+    name: "create_share_link",
+    description:
+      "Create a public share link for a diagram with a permission tier. `permission` is one of `view`, `comment`, `edit`. Optional `expiresAt` (ISO-8601) auto-revokes the link after the timestamp. Returns the opaque `token` and the full shareable `url`. Broadcasts `library:share-created` over WS.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+        permission: { type: "string", enum: ["view", "comment", "edit"] },
+        expiresAt: { type: "string" },
+      },
+      required: ["diagramId", "permission"],
+    },
+  },
+  {
+    name: "list_share_links",
+    description:
+      "List all share links the caller's workspace owns for a diagram. Each link includes its token, permission tier, expiry, and a ready-to-paste URL. Workspace-scoped — never returns another workspace's links.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+      },
+      required: ["diagramId"],
+    },
+  },
+  {
+    name: "revoke_share_link",
+    description:
+      "Revoke (delete) a share link by its opaque token. Caller must own the link (diagram-creator workspace). Broadcasts `library:share-revoked` over WS. Returns `{ ok: true }` on success; throws `share not found` for missing OR non-owned tokens (no existence leak).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        token: { type: "string" },
+      },
+      required: ["token"],
+    },
+  },
 ];

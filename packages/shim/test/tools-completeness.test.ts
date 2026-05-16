@@ -6,15 +6,17 @@ import { TOOLS } from "../src/tools";
  * advertise every MCP tool the server now dispatches. If a tool ships
  * server-side but is missing from this list, Claude can't see it.
  *
- * The expected list below is the FULL surface as of v0.8.0:
+ * The expected list below is the FULL surface as of v0.9.0:
  *   - 15 pre-Issue-5 tools (cycle 1-4 base + vsdx round-trip + export_diagram)
  *   - 13 Issue #5 tools (Groups A–F)
  *   - 3 Issue #7 library tools (Group G)
- * Total: 31.
+ *   - 3 Issue #8 share tools (Group H)
+ * Total: 34.
  *
  * (The plugin doc previously reported "14 tools" because the vsdx round-trip
  * PR bumped the surface to 15 without updating the doc string. v0.7.0
- * realigned the doc with reality at 28; v0.8.0 takes it to 31.)
+ * realigned the doc with reality at 28; v0.8.0 took it to 31; v0.9.0 takes
+ * it to 34.)
  *
  * When you add a new MCP tool to the server, you MUST also:
  *   1. Add its descriptor to packages/shim/src/tools.ts
@@ -60,10 +62,14 @@ const EXPECTED_TOOLS: readonly string[] = [
   "update_diagram_meta",
   "move_diagram",
   "pin_diagram",
+  // Group H — Share links (Issue #8)
+  "create_share_link",
+  "list_share_links",
+  "revoke_share_link",
 ] as const;
 
 describe("TOOLS descriptor surface", () => {
-  it("advertises every expected tool name (v0.8.0 contract)", () => {
+  it("advertises every expected tool name (v0.9.0 contract)", () => {
     const names = new Set(TOOLS.map((t) => t.name));
     const missing = EXPECTED_TOOLS.filter((n) => !names.has(n));
     expect(missing).toEqual([]);
