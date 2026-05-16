@@ -93,9 +93,11 @@ describe("load_diagram aliases", () => {
   it("throws a helpful error when neither slug nor name is provided", async () => {
     const sql = getDb(TEST_DB_URL);
     const ws = await createWorkspace(sql);
+    // load_diagram now uses `oneOf` to allow slug, diagramId, or the legacy
+    // `name` alias. The error message names all valid options.
     await expect(
       dispatchTool("load_diagram", {}, ctx(sql, ws.id)),
-    ).rejects.toThrow(/Missing required parameter: slug/);
+    ).rejects.toThrow(/Exactly one of \[slug, diagramId\] is required/);
   });
 });
 
