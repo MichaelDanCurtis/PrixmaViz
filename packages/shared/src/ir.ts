@@ -68,6 +68,22 @@ export interface DiagramMeta {
   updatedAt: string;
   tags: string[];
   sourcePaths: string[];
+  /**
+   * Short one-line summary surfaced in the Library card hover-title and
+   * the item-detail modal. Edited via the modal in F5 (issue #7).
+   */
+  description?: string;
+  /**
+   * Free-form attribution string. Rendered as a small byline on the card
+   * (e.g. "by alice"). No identity model — this is a human-readable label
+   * only.
+   */
+  author?: string;
+  /**
+   * Markdown body shown in the item-detail modal. Renders to HTML in view
+   * mode; raw text in edit mode.
+   */
+  notes?: string;
 }
 
 export interface Diagram {

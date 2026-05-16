@@ -47,6 +47,20 @@ export interface LibraryEntry {
   tags: string[];
   createdAt: string;
   updatedAt: string;
+  /**
+   * Folder path the diagram lives in. Empty string = workspace root.
+   * Slash-delimited segments, no leading or trailing slash. Issue #7.
+   */
+  parentPath: string;
+  /**
+   * Whether the diagram is pinned to the top of the Library. Issue #7.
+   */
+  pinned: boolean;
+  /**
+   * Last time a client opened the diagram (createTile / loadBySlug).
+   * `null` when never opened. Drives the "Recent" Library section. Issue #7.
+   */
+  lastOpenedAt: string | null;
 }
 
 export type ServerToClient =
