@@ -378,4 +378,38 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     }).then((r) => jsonOrThrow<{ meta: import("@prixmaviz/shared").DiagramMeta }>(r)),
+
+  // ─── Issue #8 Wave 1A — share-link management ───────────────────────
+  // Create / list / revoke endpoints registered by the server in Wave 1.
+  // The token is opaque ("s_" + 32 hex). `url` is the absolute public URL
+  // assembled server-side from PRIXMAVIZ_PUBLIC_URL — the UI should display
+  // it verbatim. expiresAt is an ISO-8601 string (or null for no expiry).
+  createShareLink: (
+    diagramId: string,
+    body: { permission: "view" | "comment" | "edit"; expiresAt?: string | null },
+  ) =>
+    authFetch(`/api/diagrams/${encodeURIComponent(diagramId)}/shares`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => jsonOrThrow<{ token: string; url: string }>(r)),
+
+  listShareLinks: (diagramId: string) =>
+    authFetch(`/api/diagrams/${encodeURIComponent(diagramId)}/shares`).then((r) =>
+      jsonOrThrow<{
+        links: Array<{
+          id: string;
+          token: string;
+          permission: "view" | "comment" | "edit";
+          expiresAt: string | null;
+          createdAt: string;
+          url: string;
+        }>;
+      }>(r),
+    ),
+
+  revokeShareLink: (token: string) =>
+    authFetch(`/api/shares/${encodeURIComponent(token)}`, { method: "DELETE" }).then((r) =>
+      jsonOrThrow<{ ok: true }>(r),
+    ),
 };
