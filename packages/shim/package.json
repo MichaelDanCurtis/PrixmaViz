@@ -1,6 +1,6 @@
 {
   "name": "@prixmaviz/shim",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "scripts": {
     "build:bin": "bun build src/index.ts --compile --outfile ../../dist/prixmaviz-mcp",

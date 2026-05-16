@@ -1,7 +1,7 @@
 {
   "name": "prixmaviz",
   "description": "AI-native diagram tool — renders 29+ engines (Mermaid, PlantUML, D2, Vega-Lite, TikZ, Graphviz, WaveDrom, Bytefield, Microsoft Visio .vsdx, etc.) with annotations, multi-tile infinite canvas, and shared-workspace AI loop. Round-trips Visio files: drop a .vsdx in to render natively, or build a diagram and export as Visio-editable .vsdx.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "author": {
     "name": "Michael Curtis",
     "email": "michaeldancurtis@gmail.com"
