@@ -42,11 +42,14 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "load_diagram",
-    description: "Load a saved diagram by slug into the workspace. Slug is the kebab-case identifier returned by list_diagrams in each entry's `slug` field.",
+    description: "Load a saved diagram into the workspace by `slug` or `diagramId`. Slug is the kebab-case identifier returned by list_diagrams in each entry's `slug` field. Pass `includeSvg: true` to include the rendered SVG in the response (default omits it to keep transcripts lean). Exactly one of `slug` or `diagramId` is required.",
     inputSchema: {
       type: "object",
-      properties: { slug: { type: "string" } },
-      required: ["slug"],
+      properties: {
+        slug: { type: "string" },
+        diagramId: { type: "string" },
+        includeSvg: { type: "boolean" },
+      },
     },
   },
   {
@@ -173,6 +176,190 @@ export const TOOLS: Tool[] = [
         format: { type: "string", enum: ["svg", "png", "jpeg"] },
       },
       required: ["diagramId", "format"],
+    },
+  },
+  // ─── Group A — CRUD completeness (Issue #5) ───────────────────────────────
+  {
+    name: "delete_diagram",
+    description:
+      "Delete a diagram from the workspace. Cascade-deletes annotations and removes tiles from the canvas. Pass `cascade: false` to refuse deletion when orphans exist. Exactly one of `slug` or `diagramId` is required.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        slug: { type: "string" },
+        diagramId: { type: "string" },
+        cascade: { type: "boolean" },
+      },
+    },
+  },
+  {
+    name: "duplicate_diagram",
+    description:
+      "Clone a diagram under a new name. The clone receives a fresh render (engine versions may have drifted since the source was last rendered) and merges the source's tags with any new tags you supply. Pass `preserveAnnotations: true` to copy annotation rows; default false. Exactly one of `sourceSlug` or `sourceDiagramId` is required.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sourceSlug: { type: "string" },
+        sourceDiagramId: { type: "string" },
+        newName: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+        preserveAnnotations: { type: "boolean" },
+      },
+      required: ["newName"],
+    },
+  },
+  // ─── Group B — Discoverability (Issue #5) ─────────────────────────────────
+  {
+    name: "search_diagrams",
+    description:
+      "Full-text search across diagrams in the current workspace. Searches `name`, `dsl`, and annotation bodies; filters by `engines`, `tags` (AND), and `updatedSince`. Sort by `relevance` (default), `updated`, `created`, or `name`. Returns up to `limit` (default 20, max 100) results with optional `snippet` and relevance `score` when a `query` is provided.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        engines: { type: "array", items: { type: "string" } },
+        tags: { type: "array", items: { type: "string" } },
+        updatedSince: { type: "string" },
+        sort: { type: "string", enum: ["updated", "created", "name", "relevance"] },
+        limit: { type: "integer" },
+      },
+    },
+  },
+  {
+    name: "validate_dsl",
+    description:
+      "Validate that a (engine, source) pair renders cleanly through Kroki without persisting or caching the render. Returns `{ ok: true }` on success or `{ ok: false, errors: [{ line?, column?, message }] }` on parse/render failure. Use this from agents to pre-check DSL before calling `render_dsl` or `create_diagram`.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        engine: { type: "string" },
+        source: { type: "string" },
+      },
+      required: ["engine", "source"],
+    },
+  },
+  // ─── Group C — Annotation writes (Issue #5) ───────────────────────────────
+  {
+    name: "add_annotation",
+    description:
+      "Create a new annotation on a diagram. Provide one of `targetNodes` (node-scoped) or `bboxData` (region-scoped); omit both for a diagram-wide annotation. `targetNodes` and `bboxData` are mutually exclusive.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diagramId: { type: "string" },
+        body: { type: "string" },
+        author: { type: "string" },
+        targetNodes: { type: "array", items: { type: "string" } },
+        bboxData: {
+          type: "object",
+          properties: {
+            x: { type: "number" },
+            y: { type: "number" },
+            w: { type: "number" },
+            h: { type: "number" },
+          },
+        },
+      },
+      required: ["diagramId", "body"],
+    },
+  },
+  {
+    name: "update_annotation",
+    description:
+      "Update an annotation's body text. If the annotation is already resolved, returns `{ ok: false, code: 'annotation_resolved' }` unless `force: true` is supplied.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        annotationId: { type: "string" },
+        body: { type: "string" },
+        force: { type: "boolean" },
+      },
+      required: ["annotationId", "body"],
+    },
+  },
+  {
+    name: "resolve_annotation",
+    description:
+      "Mark an annotation resolved with an optional resolution note. Idempotent — resolving an already-resolved annotation just refreshes the timestamp and resolution text. Resolved annotations are excluded from `get_annotations` unless `includeResolved: true` is passed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        annotationId: { type: "string" },
+        resolution: { type: "string" },
+      },
+      required: ["annotationId"],
+    },
+  },
+  // ─── Group D — Canvas state introspection + manipulation (Issue #5) ───────
+  {
+    name: "list_tiles",
+    description:
+      "List every tile in the current workspace with geometry (x, y, w, h, z) and a `focused: true` flag for the tile currently focused. Returns `{ tiles: [] }` for an empty workspace. Same focus semantics as get_focused_tile.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "focus_tile",
+    description:
+      "Raise a tile to the top of the canvas z-stack and optionally pan the camera to it. Specify the tile by either `tileId` (direct lookup) or `diagramSlug` (first matching tile). Pass `pan: true` to also receive a `panTo: { x, y }` world-space coordinate the client should center its viewport on. Exactly one of `tileId` or `diagramSlug` is required.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tileId: { type: "string" },
+        diagramSlug: { type: "string" },
+        pan: { type: "boolean" },
+      },
+    },
+  },
+  {
+    name: "take_canvas_snapshot",
+    description:
+      "Compose every tile in the workspace into a single SVG (or PNG, or JPEG) and return the bytes base64-encoded. `format` defaults to 'svg'. `padding` (default 40) is the outer margin around the bbox of all tiles. `background` (default 'transparent') is a CSS color or 'transparent' for no rect. `includeAnnotations` is accepted but NOT YET IMPLEMENTED in the MVP — passing true returns a warning and the snapshot without annotations.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        format: { type: "string", enum: ["svg", "png", "jpeg"] },
+        includeAnnotations: { type: "boolean" },
+        padding: { type: "number" },
+        background: { type: "string" },
+      },
+    },
+  },
+  // ─── Group E — Workspace lifecycle (Issue #5) ─────────────────────────────
+  {
+    name: "create_workspace",
+    description:
+      "Create a new workspace. The new workspace is claimed for the caller's token (i.e. the workspace returned in `workspaceId` appears in the caller's next `list_workspaces`). To interact with the new workspace, set the Bearer header on subsequent calls to the returned `workspaceId`.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "list_workspaces",
+    description:
+      "List workspaces owned by the caller. The caller's primary workspace is claimed on first call (so pre-existing anonymous workspaces become listable). Each entry includes a `diagramCount` so the caller can pick a workspace without a second round-trip.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  // ─── Group F — Bulk operations (Issue #5) ─────────────────────────────────
+  {
+    name: "import_diagrams",
+    description:
+      "Bulk-create N diagrams in one call. Each item is created and rendered independently; failures on individual items don't abort the batch unless `stopOnError: true` is passed. Slug collisions inside the batch are resolved by appending a random suffix. Emits exactly one workspace broadcast at the end, regardless of batch size.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        items: { type: "array" },
+        stopOnError: { type: "boolean" },
+      },
+      required: ["items"],
     },
   },
 ];
