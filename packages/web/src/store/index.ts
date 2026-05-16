@@ -115,6 +115,19 @@ export interface AppState {
   recentlyFocusedTileId: string | null;
   setRecentlyFocusedTileId: (id: string | null) => void;
 
+  // Issue #2: Library bulk-select mode + selection set keyed by diagram slug.
+  // When `selectMode === true`, Library rows render checkboxes and clicks
+  // toggle selection instead of opening the tile. `lastSelectedSlug` is the
+  // anchor for shift-click range selection across visible entries.
+  selectMode: boolean;
+  selectedSlugs: Set<string>;
+  lastSelectedSlug: string | null;
+  setSelectMode: (v: boolean) => void;
+  toggleSelected: (slug: string) => void;
+  selectRange: (slugs: string[], fromSlug: string, toSlug: string) => void;
+  selectAll: (slugs: string[]) => void;
+  clearSelection: () => void;
+
   setDiagram: (d: Diagram | null) => void;
   setRender: (diagramId: DiagramId, svg: string, dsl: string, ir?: GraphIR) => void;
   setLibrary: (entries: LibraryEntry[]) => void;
@@ -207,4 +220,43 @@ export const useAppStore = create<AppState>((set) => ({
 
   recentlyFocusedTileId: null,
   setRecentlyFocusedTileId: (id) => set({ recentlyFocusedTileId: id }),
+
+  selectMode: false,
+  selectedSlugs: new Set<string>(),
+  lastSelectedSlug: null,
+  setSelectMode: (v) =>
+    set(() => (v
+      ? { selectMode: true }
+      // Exit also clears selection — entering select mode is the affirmative
+      // action; leaving it should drop both the toggle and the set so the
+      // bulk-action bar disappears cleanly.
+      : { selectMode: false, selectedSlugs: new Set<string>(), lastSelectedSlug: null })),
+  toggleSelected: (slug) =>
+    set((s) => {
+      const next = new Set(s.selectedSlugs);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return { selectedSlugs: next, lastSelectedSlug: slug };
+    }),
+  selectRange: (slugs, fromSlug, toSlug) =>
+    set((s) => {
+      const fromIdx = slugs.indexOf(fromSlug);
+      const toIdx = slugs.indexOf(toSlug);
+      if (fromIdx === -1 || toIdx === -1) {
+        // Fall back to toggling the destination if the anchor isn't on the
+        // currently-visible list (e.g. it was filtered out).
+        const next = new Set(s.selectedSlugs);
+        if (next.has(toSlug)) next.delete(toSlug);
+        else next.add(toSlug);
+        return { selectedSlugs: next, lastSelectedSlug: toSlug };
+      }
+      const lo = Math.min(fromIdx, toIdx);
+      const hi = Math.max(fromIdx, toIdx);
+      const next = new Set(s.selectedSlugs);
+      for (let i = lo; i <= hi; i++) next.add(slugs[i]!);
+      return { selectedSlugs: next, lastSelectedSlug: toSlug };
+    }),
+  selectAll: (slugs) =>
+    set(() => ({ selectedSlugs: new Set(slugs), lastSelectedSlug: slugs[slugs.length - 1] ?? null })),
+  clearSelection: () => set({ selectedSlugs: new Set<string>(), lastSelectedSlug: null }),
 }));
