@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type postgres from "postgres";
 import type { Workspace, Camera, Tile } from "@prixmaviz/shared";
 
@@ -7,6 +8,18 @@ type Sql = ReturnType<typeof postgres>;
 // types without an index signature; in practice JSON.stringify accepts them.
 // Cast through `unknown` keeps the call sites readable without `any`.
 type JSONLike = Parameters<Sql["json"]>[0];
+
+/**
+ * Hash a bearer-token / workspace-id into the canonical owner-token hash used
+ * by the `workspaces.owner_token_hash` column (added by migration 0005).
+ *
+ * Standard hex-encoded SHA-256. Kept here next to the only callers — the
+ * workspace ownership helpers + the Group E MCP tools — so there's a single
+ * source of truth for what "owner hash" means.
+ */
+export function hashOwnerToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 function rowToWorkspace(row: Record<string, unknown>): Workspace {
   return {
@@ -87,4 +100,92 @@ export async function deleteExpiredWorkspaces(sql: Sql, ttlMinutes: number): Pro
     RETURNING id
   `;
   return rows.map((r) => r.id as string);
+}
+
+/**
+ * Unconditionally set the `owner_token_hash` on a workspace. Used by
+ * `create_workspace` to immediately claim a freshly-minted workspace for
+ * the caller's token.
+ */
+export async function setWorkspaceOwner(
+  sql: Sql,
+  workspaceId: string,
+  ownerHash: string,
+): Promise<void> {
+  await sql`
+    UPDATE workspaces
+    SET owner_token_hash = ${ownerHash}
+    WHERE id = ${workspaceId}
+  `;
+}
+
+/**
+ * Claim a workspace for an owner-token IFF it is currently unowned.
+ * Single-statement / idempotent — re-running on an already-claimed row
+ * is a no-op, so two concurrent first-callers from the same token simply
+ * race to the same final state with no error.
+ *
+ * Returns `true` when the claim took effect (row updated), `false` if
+ * the workspace was already owned (by anyone — same hash or a different
+ * one). Callers don't currently inspect the return; it's surfaced for
+ * tests + future audit logging.
+ */
+export async function claimWorkspaceIfUnowned(
+  sql: Sql,
+  workspaceId: string,
+  ownerHash: string,
+): Promise<boolean> {
+  const rows = await sql`
+    UPDATE workspaces
+    SET owner_token_hash = ${ownerHash}
+    WHERE id = ${workspaceId} AND owner_token_hash IS NULL
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
+/**
+ * Row shape returned by `listWorkspacesByOwner`. Includes a precomputed
+ * `diagramCount` (sub-select on diagrams) so the MCP tool can return it
+ * without a second round-trip.
+ */
+export interface WorkspaceSummary {
+  id: string;
+  name: string | null;
+  diagramCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Enumerate workspaces owned by the given token hash, newest first.
+ *
+ * `owner_token_hash` is the SHA-256 hex of the caller's bearer token (see
+ * `hashOwnerToken`). Workspaces with NULL `owner_token_hash` are excluded
+ * — they are anonymous pre-migration rows that have never been claimed,
+ * and the spec calls for claim-on-first-call to handle them BEFORE we
+ * reach this query (see the MCP `list_workspaces` impl).
+ */
+export async function listWorkspacesByOwner(
+  sql: Sql,
+  ownerHash: string,
+): Promise<WorkspaceSummary[]> {
+  const rows = await sql`
+    SELECT
+      w.id,
+      w.name,
+      w.created_at,
+      w.updated_at,
+      (SELECT COUNT(*) FROM diagrams d WHERE d.workspace_id = w.id)::int AS diagram_count
+    FROM workspaces w
+    WHERE w.owner_token_hash = ${ownerHash}
+    ORDER BY w.updated_at DESC
+  `;
+  return rows.map((row) => ({
+    id: row.id as string,
+    name: (row.name as string | null) ?? null,
+    diagramCount: row.diagram_count as number,
+    createdAt: (row.created_at as Date).toISOString(),
+    updatedAt: (row.updated_at as Date).toISOString(),
+  }));
 }
