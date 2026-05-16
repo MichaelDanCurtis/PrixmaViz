@@ -46,7 +46,7 @@ export interface ToolDef {
 export const TOOLS: ToolDef[] = [
   {
     name: "create_diagram",
-    description: "Create a new diagram in the workspace. Persisted immediately.",
+    description: "Create a new diagram in the workspace and render it. `engine` is one of: actdiag, blockdiag, bpmn, bytefield, c4plantuml, d2, dbml, diagramsnet, ditaa, erd, excalidraw, graphviz, mermaid, nomnoml, nwdiag, packetdiag, pikchr, plantuml, rackdiag, seqdiag, structurizr, svgbob, symbolator, tikz, umlet, vega, vegalite, vsdx, wavedrom, wireviz. `kind` is `graph` (uses IR + apply_patch) or `passthrough` (uses initialDsl + render_dsl).",
     inputSchema: {
       type: "object",
       properties: {
@@ -88,11 +88,11 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "load_diagram",
-    description: "Load a saved diagram by slug within the workspace.",
+    description: "Load a saved diagram by slug into the workspace. Slug is the kebab-case identifier returned by list_diagrams in each entry's `slug` field.",
     inputSchema: {
       type: "object",
-      properties: { name: { type: "string" } },
-      required: ["name"],
+      properties: { slug: { type: "string" } },
+      required: ["slug"],
     },
     run: loadDiagramImpl,
   },
@@ -110,15 +110,15 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "render_dsl",
-    description: "Render an arbitrary diagram DSL via the chosen engine. For passthrough engines.",
+    description: "Render arbitrary diagram DSL via the chosen engine. Pass `engine` (e.g. mermaid, plantuml, d2, graphviz, vegalite, wavedrom, bytefield, structurizr, ditaa, pikchr, svgbob, tikz) and `dsl` (the textual diagram source). Optionally `name` to persist as a saved diagram.",
     inputSchema: {
       type: "object",
       properties: {
         engine: { type: "string", enum: ALL_ENGINES },
-        source: { type: "string" },
+        dsl: { type: "string" },
         name: { type: "string" },
       },
-      required: ["engine", "source"],
+      required: ["engine", "dsl"],
     },
     run: renderDslImpl,
   },
@@ -346,8 +346,11 @@ async function saveDiagramImpl(args: Record<string, unknown>, ctx: ToolCtx) {
 }
 
 async function loadDiagramImpl(args: Record<string, unknown>, ctx: ToolCtx) {
-  const name = args.name as string;
-  const slug = name.endsWith(".pviz") ? name.replace(/\.pviz$/, "") : name;
+  // Accept either `slug` (new, matches description) or `name` (legacy alias).
+  // The `name` alias will be removed after v0.7.x.
+  const raw = (args.slug ?? args.name) as string | undefined;
+  if (!raw) throw new Error("Missing required parameter: slug");
+  const slug = raw.endsWith(".pviz") ? raw.replace(/\.pviz$/, "") : raw;
   const row = await dbGetDiagramBySlug(ctx.sql, ctx.workspaceId, slug);
   if (!row) throw new Error("diagram not found");
   const diagram = dbDiagramToDomain(row);
@@ -392,7 +395,10 @@ async function listDiagramsImpl(args: Record<string, unknown>, ctx: ToolCtx) {
 
 async function renderDslImpl(args: Record<string, unknown>, ctx: ToolCtx) {
   const engine = args.engine as DiagramEngine;
-  const source = args.source as string;
+  // Accept either `dsl` (new, matches description) or `source` (legacy alias).
+  // The `source` alias will be removed after v0.7.x.
+  const dsl = (args.dsl ?? args.source) as string | undefined;
+  if (!dsl) throw new Error("Missing required parameter: dsl");
   const name = (args.name as string | undefined) ?? "untitled";
   const slug = slugify(name);
   const row = await dbCreateDiagram(ctx.sql, {
@@ -401,7 +407,7 @@ async function renderDslImpl(args: Record<string, unknown>, ctx: ToolCtx) {
     name,
     engine,
     kind: "passthrough",
-    dsl: source,
+    dsl,
   });
   const diagram = dbDiagramToDomain(row);
   const outcome = await renderDiagram(diagram, { kroki: ctx.kroki });
