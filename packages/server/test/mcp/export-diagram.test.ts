@@ -1,32 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import postgres from "postgres";
-import { join } from "node:path";
-import { runMigrations } from "../../src/db/migrate";
-import { getDb, closeDb } from "../../src/db/client";
+import { describe, expect, it } from "bun:test";
 import { createWorkspace } from "../../src/db/workspaces";
 import { createDiagram, updateDiagram } from "../../src/db/diagrams";
 import { dispatchTool } from "../../src/mcp/tools";
+import { setupTestDb } from "../helpers/db";
 
-const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:55432/prixmaviz_test";
+const db = setupTestDb();
 
 // Magic-number fixtures returned by the stubbed Kroki client. These match
 // the real format signatures the test assertions check for.
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
 const SVG_BYTES = new TextEncoder().encode("<svg/>");
-
-async function reset() {
-  const sql = postgres(TEST_DB_URL);
-  await sql`DROP TABLE IF EXISTS annotations CASCADE`;
-  await sql`DROP TABLE IF EXISTS diagrams CASCADE`;
-  await sql`DROP TABLE IF EXISTS workspaces CASCADE`;
-  await sql`DROP TABLE IF EXISTS schema_migrations CASCADE`;
-  await sql.end();
-  await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
-}
-
-beforeEach(reset);
-afterEach(closeDb);
 
 const fakeKroki = {
   renderSvg: async () => "<svg/>",
@@ -37,7 +21,7 @@ const fakeKroki = {
   },
 } as never;
 
-const fakeCtx = (sql: ReturnType<typeof getDb>, wsId: string) => ({
+const fakeCtx = (sql: ReturnType<typeof db.sql>, wsId: string) => ({
   sql,
   workspaceId: wsId,
   kroki: fakeKroki,
@@ -55,7 +39,7 @@ type ExportResult = {
 
 describe("MCP export_diagram", () => {
   it("returns SVG bytes for a passthrough (plantuml) diagram", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id,
@@ -78,7 +62,7 @@ describe("MCP export_diagram", () => {
   });
 
   it("returns PNG bytes with the PNG magic prefix", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id,
@@ -104,7 +88,7 @@ describe("MCP export_diagram", () => {
   });
 
   it("returns JPEG bytes with the JPEG magic prefix and .jpg extension", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id,
@@ -131,7 +115,7 @@ describe("MCP export_diagram", () => {
   });
 
   it("exports a graph (mermaid) diagram by re-emitting DSL via the IR renderer", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id,
@@ -159,7 +143,7 @@ describe("MCP export_diagram", () => {
   });
 
   it("returns the stored svg for a vsdx-engine diagram when format is svg", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const sample = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xaa, 0xbb, 0xcc]);
     const d = await createDiagram(sql, {
@@ -183,7 +167,7 @@ describe("MCP export_diagram", () => {
   });
 
   it("refuses to export a vsdx-engine diagram as png/jpeg (directs to export_vsdx)", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const sample = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xaa, 0xbb, 0xcc]);
     const d = await createDiagram(sql, {
@@ -204,7 +188,7 @@ describe("MCP export_diagram", () => {
   });
 
   it("throws on unknown diagramId", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     await expect(
       dispatchTool(
@@ -216,7 +200,7 @@ describe("MCP export_diagram", () => {
   });
 
   it("rejects an unsupported format value", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id,

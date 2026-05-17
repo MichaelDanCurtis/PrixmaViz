@@ -1,36 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import postgres from "postgres";
-import { join } from "node:path";
-import { runMigrations } from "../../src/db/migrate";
-import { getDb, closeDb } from "../../src/db/client";
+import { describe, expect, it } from "bun:test";
 import { createWorkspace } from "../../src/db/workspaces";
 import { handleApi, type RouteDeps } from "../../src/http/routes";
 import { KrokiClient } from "../../src/kroki/client";
 import { WsHub } from "../../src/ws/broadcast";
+import { setupTestDb } from "../helpers/db";
 
-const TEST_DB_URL =
-  process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:55432/prixmaviz_test";
-
-async function reset() {
-  const sql = postgres(TEST_DB_URL);
-  await sql`DROP TABLE IF EXISTS annotations CASCADE`;
-  await sql`DROP TABLE IF EXISTS diagrams CASCADE`;
-  await sql`DROP TABLE IF EXISTS workspaces CASCADE`;
-  await sql`DROP TABLE IF EXISTS schema_migrations CASCADE`;
-  await sql.end();
-  await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
-}
+const db = setupTestDb();
 
 function makeDeps(): RouteDeps {
   return {
-    sql: getDb(TEST_DB_URL),
+    sql: db.sql(),
     kroki: new KrokiClient(),
     hub: new WsHub(),
   };
 }
-
-beforeEach(reset);
-afterEach(closeDb);
 
 async function postMcp(
   toolName: string,
@@ -50,7 +33,7 @@ async function postMcp(
 
 describe("MCP error envelope (issue #14)", () => {
   it("happy path returns the tool's body unchanged with status 200", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const deps = makeDeps();
     const resp = await postMcp(
@@ -68,7 +51,7 @@ describe("MCP error envelope (issue #14)", () => {
   });
 
   it("missing required parameter → 400 with code=missing_required_parameter", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const deps = makeDeps();
     const resp = await postMcp("render_dsl", { engine: "mermaid" }, deps, ws.id);
@@ -85,7 +68,7 @@ describe("MCP error envelope (issue #14)", () => {
   });
 
   it("the issue-#14 'format' for 'engine' case → 400 names both the missing canonical and the unknown supplied key", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const deps = makeDeps();
     const resp = await postMcp(
@@ -108,7 +91,7 @@ describe("MCP error envelope (issue #14)", () => {
   });
 
   it("unknown parameter alone (all required satisfied) → 400 with code=unknown_parameter", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const deps = makeDeps();
     // All required fields present → only the trailing 'format' is unknown.
@@ -130,7 +113,7 @@ describe("MCP error envelope (issue #14)", () => {
   });
 
   it("invalid enum value → 400 with code=invalid_parameter_value and the enum list", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const deps = makeDeps();
     const resp = await postMcp(
@@ -146,7 +129,7 @@ describe("MCP error envelope (issue #14)", () => {
   });
 
   it("unknown tool → 404 with code=unknown_tool", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const deps = makeDeps();
     const resp = await postMcp("does_not_exist", {}, deps, ws.id);
@@ -157,7 +140,7 @@ describe("MCP error envelope (issue #14)", () => {
   });
 
   it("plain Error from a tool impl (e.g. 'diagram not found') → 400 with code=tool_error, message preserved", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const deps = makeDeps();
     // load_diagram with a valid-shape slug but no row by that slug.
@@ -174,7 +157,7 @@ describe("MCP error envelope (issue #14)", () => {
   });
 
   it("JS-runtime TypeError from a tool impl → 500 with code=internal_error, NO stack details leaked", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const deps = makeDeps();
 
@@ -207,7 +190,7 @@ describe("MCP error envelope (issue #14)", () => {
   });
 
   it("response body, when sliced to 500 chars, remains human-readable (shim backwards-compat)", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const deps = makeDeps();
     const resp = await postMcp("render_dsl", { engine: "mermaid" }, deps, ws.id);
@@ -220,7 +203,7 @@ describe("MCP error envelope (issue #14)", () => {
   });
 
   it("POST /api/mcp/call honors the same envelope on validation errors", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const deps = makeDeps();
     const req = new Request("http://x/api/mcp/call", {
@@ -236,7 +219,7 @@ describe("MCP error envelope (issue #14)", () => {
   });
 
   it("POST /api/mcp/call with missing `tool` field → 400 with code=missing_required_parameter", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const deps = makeDeps();
     const req = new Request("http://x/api/mcp/call", {

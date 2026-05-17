@@ -4,45 +4,28 @@
 // failure paths of the write-path (POST /source, restore) — the parts that
 // don't need a working Kroki upstream. The full save+render round-trip is
 // covered by the renderer's existing integration tests in e2e/.
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import postgres from "postgres";
-import { join } from "node:path";
-import { runMigrations } from "../../src/db/migrate";
-import { getDb, closeDb } from "../../src/db/client";
+import { describe, expect, it } from "bun:test";
 import { createWorkspace } from "../../src/db/workspaces";
 import { createDiagram } from "../../src/db/diagrams";
 import { snapshotVersion } from "../../src/db/versions";
 import { handleApi, type RouteDeps } from "../../src/http/routes";
 import { KrokiClient } from "../../src/kroki/client";
 import { WsHub } from "../../src/ws/broadcast";
+import { setupTestDb } from "../helpers/db";
 
-const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/prixmaviz_test";
-
-async function reset() {
-  const sql = postgres(TEST_DB_URL);
-  await sql`DROP TABLE IF EXISTS diagram_versions CASCADE`;
-  await sql`DROP TABLE IF EXISTS annotations CASCADE`;
-  await sql`DROP TABLE IF EXISTS diagrams CASCADE`;
-  await sql`DROP TABLE IF EXISTS workspaces CASCADE`;
-  await sql`DROP TABLE IF EXISTS schema_migrations CASCADE`;
-  await sql.end();
-  await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
-}
+const db = setupTestDb();
 
 function makeDeps(): RouteDeps {
   return {
-    sql: getDb(TEST_DB_URL),
+    sql: db.sql(),
     kroki: new KrokiClient(),
     hub: new WsHub(),
   };
 }
 
-beforeEach(reset);
-afterEach(closeDb);
-
 describe("HTTP /api/diagrams/:id/source + /versions", () => {
   it("GET /source returns current DSL for the editor", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id, slug: "s", name: "S", engine: "mermaid", kind: "passthrough",
@@ -61,7 +44,7 @@ describe("HTTP /api/diagrams/:id/source + /versions", () => {
   });
 
   it("GET /source 404 for unknown diagram", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const deps = makeDeps();
     const req = new Request(`http://x/api/diagrams/d_nope/source`, {
@@ -72,7 +55,7 @@ describe("HTTP /api/diagrams/:id/source + /versions", () => {
   });
 
   it("GET /source 404 across workspaces (no leak)", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const a = await createWorkspace(sql);
     const b = await createWorkspace(sql);
     const d = await createDiagram(sql, {
@@ -88,7 +71,7 @@ describe("HTTP /api/diagrams/:id/source + /versions", () => {
   });
 
   it("GET /versions lists snapshots newest-first", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id, slug: "v", name: "V", engine: "mermaid", kind: "passthrough",
@@ -117,7 +100,7 @@ describe("HTTP /api/diagrams/:id/source + /versions", () => {
   });
 
   it("GET /versions empty list when no snapshots taken", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id, slug: "e", name: "E", engine: "mermaid", kind: "passthrough",
@@ -133,7 +116,7 @@ describe("HTTP /api/diagrams/:id/source + /versions", () => {
   });
 
   it("POST /source rejects graph-kind diagrams with 400", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id, slug: "g", name: "G", engine: "mermaid", kind: "graph",
@@ -153,7 +136,7 @@ describe("HTTP /api/diagrams/:id/source + /versions", () => {
   });
 
   it("POST /versions/:vid/restore 404 for foreign version id", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d1 = await createDiagram(sql, {
       workspaceId: ws.id, slug: "d1", name: "D1", engine: "mermaid", kind: "passthrough",

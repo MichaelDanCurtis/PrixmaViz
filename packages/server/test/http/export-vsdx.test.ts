@@ -1,34 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import postgres from "postgres";
-import { join } from "node:path";
-import { runMigrations } from "../../src/db/migrate";
-import { getDb, closeDb } from "../../src/db/client";
+import { describe, expect, it } from "bun:test";
 import { createWorkspace } from "../../src/db/workspaces";
 import { createDiagram } from "../../src/db/diagrams";
 import { handleApi } from "../../src/http/routes";
 import { buildBasicFlowchartFixture } from "../fixtures/vsdx/build-fixture";
+import { setupTestDb } from "../helpers/db";
 
-const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:55432/prixmaviz_test";
-
-async function reset() {
-  const sql = postgres(TEST_DB_URL);
-  await sql`DROP TABLE IF EXISTS annotations CASCADE`;
-  await sql`DROP TABLE IF EXISTS diagrams CASCADE`;
-  await sql`DROP TABLE IF EXISTS workspaces CASCADE`;
-  await sql`DROP TABLE IF EXISTS schema_migrations CASCADE`;
-  await sql.end();
-  await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
-}
-
-beforeEach(reset);
-afterEach(closeDb);
+const db = setupTestDb();
 
 const fakeHub = { broadcast: () => {} } as never;
 const fakeKroki = { renderSvg: async () => "<svg/>" } as never;
 
 describe("GET /api/diagrams/:id/export.vsdx", () => {
   it("returns stored bytes verbatim for vsdx-engine diagrams", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const original = await buildBasicFlowchartFixture();
     const d = await createDiagram(sql, {
@@ -51,7 +35,7 @@ describe("GET /api/diagrams/:id/export.vsdx", () => {
   });
 
   it("produces a structured vsdx for a Mermaid graph diagram", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, {
       workspaceId: ws.id, slug: "m", name: "M",
@@ -74,7 +58,7 @@ describe("GET /api/diagrams/:id/export.vsdx", () => {
   });
 
   it("404 for non-existent diagram", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const req = new Request(`http://x/api/diagrams/nope/export.vsdx`, {
       method: "GET",

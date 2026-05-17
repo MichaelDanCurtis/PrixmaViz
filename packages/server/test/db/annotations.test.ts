@@ -1,7 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import postgres from "postgres";
-import { runMigrations } from "../../src/db/migrate";
-import { getDb, closeDb } from "../../src/db/client";
+import { describe, expect, it } from "bun:test";
+import { setupTestDb } from "../helpers/db";
 import { createWorkspace } from "../../src/db/workspaces";
 import { createDiagram } from "../../src/db/diagrams";
 import {
@@ -10,26 +8,12 @@ import {
   updateAnnotation,
   deleteAnnotation,
 } from "../../src/db/annotations";
-import { join } from "node:path";
 
-const TEST_DB_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/prixmaviz_test";
-
-async function reset() {
-  const sql = postgres(TEST_DB_URL);
-  await sql`DROP TABLE IF EXISTS annotations CASCADE`;
-  await sql`DROP TABLE IF EXISTS diagrams CASCADE`;
-  await sql`DROP TABLE IF EXISTS workspaces CASCADE`;
-  await sql`DROP TABLE IF EXISTS schema_migrations CASCADE`;
-  await sql.end();
-  await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
-}
-
-beforeEach(reset);
-afterEach(closeDb);
+const db = setupTestDb();
 
 describe("annotations repo", () => {
   it("addAnnotation + listAnnotations", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, { workspaceId: ws.id, slug: "x", name: "X", engine: "mermaid", kind: "graph" });
     await addAnnotation(sql, d.id, {
@@ -45,7 +29,7 @@ describe("annotations repo", () => {
   });
 
   it("listAnnotations defaults to excluding resolved", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, { workspaceId: ws.id, slug: "x", name: "X", engine: "mermaid", kind: "graph" });
     await addAnnotation(sql, d.id, { id: "ann_r", kind: "tag", createdAt: "2026-01-01", resolvedAt: "2026-01-02" });
@@ -56,14 +40,13 @@ describe("annotations repo", () => {
   });
 
   it("updateAnnotation patches fields, kind+createdAt locked", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, { workspaceId: ws.id, slug: "x", name: "X", engine: "mermaid", kind: "graph" });
     await addAnnotation(sql, d.id, { id: "ann_u", kind: "tag", text: "old", createdAt: "2026-01-01" });
-    // Attempt to override kind + createdAt should be no-op
     await updateAnnotation(sql, d.id, "ann_u", {
       text: "new",
-      kind: "pin" as never,           // type-cast forces it through; repo should ignore
+      kind: "pin" as never,
       createdAt: "1970-01-01" as never,
     });
     const list = await listAnnotations(sql, d.id, { includeResolved: true });
@@ -73,7 +56,7 @@ describe("annotations repo", () => {
   });
 
   it("deleteAnnotation removes", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const d = await createDiagram(sql, { workspaceId: ws.id, slug: "x", name: "X", engine: "mermaid", kind: "graph" });
     await addAnnotation(sql, d.id, { id: "ann_d", kind: "tag", createdAt: "2026-01-01" });

@@ -1,8 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import postgres from "postgres";
-import { join } from "node:path";
-import { runMigrations } from "../../src/db/migrate";
-import { getDb, closeDb } from "../../src/db/client";
+import { describe, expect, it } from "bun:test";
 import { createWorkspace } from "../../src/db/workspaces";
 import {
   TOOLS,
@@ -11,24 +7,11 @@ import {
   dispatchTool,
   validateArgs,
 } from "../../src/mcp/tools";
+import { setupTestDb } from "../helpers/db";
 
-const TEST_DB_URL =
-  process.env.TEST_DATABASE_URL ?? "postgres://postgres:postgres@localhost:55432/prixmaviz_test";
+const db = setupTestDb();
 
-async function reset() {
-  const sql = postgres(TEST_DB_URL);
-  await sql`DROP TABLE IF EXISTS annotations CASCADE`;
-  await sql`DROP TABLE IF EXISTS diagrams CASCADE`;
-  await sql`DROP TABLE IF EXISTS workspaces CASCADE`;
-  await sql`DROP TABLE IF EXISTS schema_migrations CASCADE`;
-  await sql.end();
-  await runMigrations(TEST_DB_URL, join(import.meta.dir, "../../migrations"));
-}
-
-beforeEach(reset);
-afterEach(closeDb);
-
-function ctx(sql: ReturnType<typeof postgres>, workspaceId: string) {
+function ctx(sql: ReturnType<typeof db.sql>, workspaceId: string) {
   return {
     sql,
     workspaceId,
@@ -159,7 +142,7 @@ describe("validateArgs — types and enums", () => {
 
 describe("dispatchTool — validation gate", () => {
   it("valid input dispatches and returns the impl's happy-path shape", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     const result = (await dispatchTool(
       "render_dsl",
@@ -172,7 +155,7 @@ describe("dispatchTool — validation gate", () => {
   });
 
   it("invalid input throws ValidationError before the impl runs", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     // No `dsl` and no legacy `source`.
     await expect(
@@ -181,7 +164,7 @@ describe("dispatchTool — validation gate", () => {
   });
 
   it("unknown tool throws UnknownToolError (not generic Error)", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     await expect(
       dispatchTool("does_not_exist", {}, ctx(sql, ws.id)),
@@ -189,7 +172,7 @@ describe("dispatchTool — validation gate", () => {
   });
 
   it("unknown parameter on an otherwise-valid call is rejected before the impl can run", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     // All required fields present, but a stray `format` key sneaks in.
     await expect(
@@ -202,7 +185,7 @@ describe("dispatchTool — validation gate", () => {
   });
 
   it("issue-#14 mismatched-keys case names both the missing canonical and the unknown supplied key", async () => {
-    const sql = getDb(TEST_DB_URL);
+    const sql = db.sql();
     const ws = await createWorkspace(sql);
     // The exact case from the issue body — caller used `format` instead of
     // `engine` and `dsl` (which they did get right). The required check
