@@ -40,6 +40,12 @@ export interface RenderDslResponse {
 }
 
 export interface LibraryEntry {
+  /**
+   * Diagram UUID. Surfaced so the web client can call ID-keyed routes
+   * (POST /api/diagrams/:id/pin, etc.) and match `library:diagram-*`
+   * WS events to a row in the local library list. Issue #7 Wave 2.
+   */
+  id: DiagramId;
   name: string;
   path: string;
   engine: DiagramEngine;
@@ -47,6 +53,28 @@ export interface LibraryEntry {
   tags: string[];
   createdAt: string;
   updatedAt: string;
+  /**
+   * Folder path the diagram lives in. Empty string = workspace root.
+   * Slash-delimited segments, no leading or trailing slash. Issue #7.
+   */
+  parentPath: string;
+  /**
+   * Whether the diagram is pinned to the top of the Library. Issue #7.
+   */
+  pinned: boolean;
+  /**
+   * Last time a client opened the diagram (createTile / loadBySlug).
+   * `null` when never opened. Drives the "Recent" Library section. Issue #7.
+   */
+  lastOpenedAt: string | null;
+  /**
+   * Optional metadata projected from `meta` JSONB into the listing so the
+   * item-detail modal doesn't need a second roundtrip on open. Issue #7
+   * Wave 2 (F5).
+   */
+  description?: string;
+  author?: string;
+  notes?: string;
 }
 
 export type ServerToClient =
@@ -57,7 +85,18 @@ export type ServerToClient =
   | { type: "annotation:created"; diagramId: DiagramId; annotation: Annotation }
   | { type: "annotation:updated"; diagramId: DiagramId; annotation: Annotation }
   | { type: "annotation:deleted"; diagramId: DiagramId; annotationId: string }
-  | { type: "workspace"; camera: Camera; tiles: Tile[] };
+  | { type: "workspace"; camera: Camera; tiles: Tile[] }
+  // Issue #7 Wave 1B: library / org events. Each fans out to every WS
+  // client authenticated for the workspace so a change in tab A surfaces
+  // in tab B without polling.
+  | { type: "library:diagram-updated"; diagramId: DiagramId; change: "pinned" | "moved" | "meta" }
+  | { type: "library:diagram-opened"; diagramId: DiagramId; lastOpenedAt: string }
+  | { type: "library:folders-changed"; emptyFolders: string[] }
+  | { type: "library:tags-changed" }
+  // Issue #8 Wave 1A: share-link lifecycle. Cross-tab clients listen for
+  // these to refresh the share modal without polling.
+  | { type: "library:share-created"; diagramId: DiagramId; token: string; permission: "view" | "comment" | "edit" }
+  | { type: "library:share-revoked"; token: string };
 
 export type ClientToServer =
   | { type: "open"; diagramId: DiagramId }

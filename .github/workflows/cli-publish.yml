@@ -1,0 +1,115 @@
+name: Publish CLI
+
+# Manually-triggered release pipeline for `@prixmaviz/cli`.
+#
+# Run from the Actions tab → "Publish CLI" → "Run workflow", optionally
+# overriding the `version` input. Two jobs run in parallel:
+#
+#   * `npm-publish` — builds the package and publishes to npm. Requires
+#     the `NPM_TOKEN` repo secret (an "Automation" or "Publish"-scoped
+#     npm token for the org/user that owns `@prixmaviz/cli`).
+#   * `binaries`    — cross-compiles the 5 standalone CLI binaries and
+#     attaches them to a GitHub Release named `cli-v<version>` (or
+#     creates the release if missing). The `prixmaviz` binary names
+#     mirror the shim's `release-shim.yaml` convention.
+#
+# The workflow does NOT bump versions, run tests, or push tags — those
+# happen on a normal PR before triggering this. The `version` input is
+# advisory only: it's used as a Release tag and as fallback when the
+# package.json version cannot be parsed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag (e.g. 0.1.0). Defaults to packages/cli/package.json version."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  npm-publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install workspace deps
+        run: bun install --frozen-lockfile
+
+      - name: Build CLI dist
+        working-directory: packages/cli
+        run: bun run build
+
+      - name: Publish to npm
+        working-directory: packages/cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
+
+  binaries:
+    name: Build + release binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3
+
+      - name: Install workspace deps
+        run: bun install --frozen-lockfile
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          set -e
+          INPUT_VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION=$(node -e "console.log(require('./packages/cli/package.json').version)")
+          fi
+          TAG="cli-v${VERSION}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Resolved release tag: $TAG"
+
+      - name: Build all 5 CLI binaries
+        working-directory: packages/cli
+        run: bun run build:all
+
+      - name: Show built artifacts
+        run: ls -lh dist/prixmaviz-*
+
+      - name: Create or update GitHub Release + upload binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -e
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes "Standalone @prixmaviz/cli binaries for $TAG. Pick the asset matching your platform and put it on \$PATH."
+          fi
+          gh release upload "$TAG" \
+            dist/prixmaviz-darwin-arm64 \
+            dist/prixmaviz-darwin-x64 \
+            dist/prixmaviz-linux-arm64 \
+            dist/prixmaviz-linux-x64 \
+            dist/prixmaviz-windows-x64.exe \
+            --clobber

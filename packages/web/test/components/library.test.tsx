@@ -32,6 +32,9 @@ function entry(p: Partial<LibraryEntry>): LibraryEntry {
     tags: p.tags ?? [],
     createdAt: p.createdAt ?? "2024-01-01T00:00:00Z",
     updatedAt: p.updatedAt ?? "2024-01-01T00:00:00Z",
+    parentPath: p.parentPath ?? "",
+    pinned: p.pinned ?? false,
+    lastOpenedAt: p.lastOpenedAt ?? null,
   };
 }
 
@@ -67,6 +70,30 @@ vi.mock("../../src/lib/api", () => ({
     library: vi.fn(async () => sample),
     loadBySlug: vi.fn(),
     createTile: vi.fn(),
+    // Issue #7 Wave 2C: Library now also pulls empty-folder list out of
+    // the workspace settings on mount. Mock it as empty so the existing
+    // tests continue to exercise only the flat library path.
+    getWorkspace: vi.fn(async () => ({
+      id: "00000000-0000-0000-0000-000000000000",
+      name: null,
+      camera: { x: 0, y: 0, zoom: 1 },
+      tiles: [],
+      settings: {},
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastSeenAt: "2024-01-01T00:00:00Z",
+    })),
+    moveDiagram: vi.fn(async () => ({ ok: true, parentPath: "" })),
+    emptyFolder: vi.fn(async () => ({ emptyFolders: [] })),
+    renameFolder: vi.fn(async () => ({ affected: 0 })),
+    deleteFolder: vi.fn(async () => ({ deleted: 0 })),
+    // Issue #7 Wave 2: new API surface used by the FilterChips / FTS /
+    // DetailModal wiring. Mock them as no-ops so the existing tests
+    // don't trip the Library mount-time fetch.
+    listTags: vi.fn(async () => []),
+    searchDiagrams: vi.fn(async () => ({ results: [] })),
+    updateDiagramMeta: vi.fn(async () => ({ meta: {} })),
+    save: vi.fn(async () => ({ path: "", slug: "" })),
   },
   authFetch: vi.fn(async () => new Response(null, { status: 404 })),
 }));

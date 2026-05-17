@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useAppStore } from "../store";
+import { api } from "./api";
 import type { ServerToClient } from "@prixmaviz/shared";
 
 export function useWebSocket(): void {
@@ -69,5 +70,33 @@ function handleMessage(
   } else if (msg.type === "workspace") {
     store.setCamera(msg.camera);
     store.setTiles(msg.tiles);
+  } else if (msg.type === "library:diagram-opened") {
+    // Targeted update: only the lastOpenedAt for this entry changed; bump
+    // it locally so the Recent section re-sorts without a full refetch.
+    store.setLibraryLastOpenedAt(msg.diagramId, msg.lastOpenedAt);
+  } else if (msg.type === "library:tags-changed") {
+    // F3: refresh the tag-autocomplete cache when any diagram's tags change.
+    // Best-effort — a transient fetch failure leaves stale data in place;
+    // the next mount will recover.
+    api
+      .listTags()
+      .then((tags) => useAppStore.getState().setTagAutocomplete(tags))
+      .catch(() => {});
+  } else if (
+    msg.type === "library:diagram-updated" ||
+    msg.type === "library:folders-changed"
+  ) {
+    // For pin/meta/move/folder changes, re-fetch the library list to
+    // converge on authoritative state. Cheaper than tracking every field.
+    api.library().then(store.setLibrary).catch(() => {});
+  } else if (
+    msg.type === "library:share-created" ||
+    msg.type === "library:share-revoked"
+  ) {
+    // Issue #8 Wave 2C — share lifecycle. Bump the refresh counter so
+    // any consumer (today: the DetailModal's share list) re-fetches.
+    // No payload work needed; the DetailModal's effect already knows
+    // which diagram is open.
+    store.bumpShareListRefresh();
   }
 }

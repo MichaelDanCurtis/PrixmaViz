@@ -1,0 +1,22 @@
+{
+  "name": "@prixmaviz/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "PrixmaViz command-line interface — push, pull, list, and round-trip workspaces.",
+  "bin": {
+    "prixmaviz": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun build src/cli.ts --target=node --outdir=dist",
+    "build:bin": "bun build src/cli.ts --compile --outfile ../../dist/prixmaviz",
+    "build:all": "bun run scripts/build-cli.ts",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.13"
+  }
+}

@@ -9,7 +9,7 @@
     {
       "name": "prixmaviz",
       "description": "AI-native diagram tool — 29+ engines (incl. Microsoft Visio .vsdx round-trip), annotations, infinite canvas. Renders to a browser tab via the hosted service or your own self-hosted PrixmaViz server.",
-      "version": "0.6.0",
+      "version": "0.9.0",
       "source": "./"
     }
   ]

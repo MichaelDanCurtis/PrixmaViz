@@ -76,6 +76,24 @@ The AI will now use PrixmaViz whenever you ask for diagrams. Try:
 
 > Show me the TCP handshake.
 
+## CLI
+
+`@prixmaviz/cli` is the scriptable companion to the MCP plugin — push DSL files to your workspace, pull rendered diagrams to disk, list the library, and round-trip whole workspaces as `.pviz` bundles. Useful for CI pipelines, doc-site builds, and shell-driven workflows where you don't want an AI in the loop.
+
+```sh
+npm install -g @prixmaviz/cli
+
+prixmaviz login                          # one-time: server URL + workspace token
+prixmaviz push docs/diagram.mmd          # render + save (engine auto-detected from extension)
+prixmaviz pull service-topology          # download the rendered SVG
+prixmaviz list --tag infra               # browse the library
+prixmaviz export-workspace --out ./bak   # snapshot the whole workspace to a .pviz bundle
+```
+
+Standalone binaries (no Node required) are also published to each `cli-v*` GitHub Release for darwin-arm64, darwin-x64, linux-arm64, linux-x64, and windows-x64.
+
+See [`packages/cli/README.md`](packages/cli/README.md) for the full command reference, config-file paths, and engine auto-detection table.
+
 ## Self-host with Docker
 
 ```bash

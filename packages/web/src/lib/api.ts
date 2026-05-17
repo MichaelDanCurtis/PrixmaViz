@@ -241,6 +241,17 @@ export const api = {
       body: JSON.stringify({ public: isPublic }),
     }).then((r) => jsonOrThrow<{ public: boolean; publicUrl?: string }>(r)),
 
+  // Issue #7 Wave 2: toggle the pinned flag on a diagram. The server's
+  // dbSetPinned helper writes the value verbatim (it's a SET, not a toggle),
+  // so the caller passes the desired final state. Returns the new pinned
+  // value so the optimistic UI can confirm the server agrees.
+  setPinned: (id: string, pinned: boolean) =>
+    authFetch(`/api/diagrams/${encodeURIComponent(id)}/pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned }),
+    }).then((r) => jsonOrThrow<{ pinned: boolean }>(r)),
+
   // Issue #6: inline editor + version history.
   // getSource is GET-side (no render); updateSource and restoreVersion both
   // re-render. updateSource returns 502 with `{ error, source }` when the
@@ -290,4 +301,115 @@ export const api = {
     ).then((r) => jsonOrThrow<{
       diagramId: string; source: string; render: { svg: string; dsl: string };
     }>(r)),
+
+  // ─── Issue #7 — folders / move / pin / meta ──────────────────────────
+  moveDiagram: (id: string, parentPath: string) =>
+    authFetch(`/api/diagrams/${encodeURIComponent(id)}/move`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parentPath }),
+    }).then((r) => jsonOrThrow<{ ok: true; parentPath: string }>(r)),
+
+  emptyFolder: (path: string, action: "add" | "remove") =>
+    authFetch("/api/folders/empty", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, action }),
+    }).then((r) => jsonOrThrow<{ emptyFolders: string[] }>(r)),
+
+  renameFolder: (from: string, to: string) =>
+    authFetch("/api/folders/rename", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to }),
+    }).then((r) => jsonOrThrow<{ affected: number }>(r)),
+
+  deleteFolder: (path: string, cascade: boolean) =>
+    authFetch("/api/folders/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, cascade }),
+    }).then((r) => jsonOrThrow<{ deleted: number }>(r)),
+
+  // ─── Issue #7 Wave 2 — search / tags / metadata ─────────────────────
+  searchDiagrams: (params: {
+    q?: string;
+    parentPath?: string;
+    tags?: string[];
+    engines?: string[];
+    sort?: "relevance" | "updated" | "created" | "name";
+    limit?: number;
+  }) => {
+    const sp = new URLSearchParams();
+    if (params.q) sp.set("q", params.q);
+    if (params.parentPath !== undefined) sp.set("parent_path", params.parentPath);
+    if (params.tags && params.tags.length) sp.set("tags", params.tags.join(","));
+    if (params.engines && params.engines.length) sp.set("engines", params.engines.join(","));
+    if (params.sort) sp.set("sort", params.sort);
+    if (params.limit !== undefined) sp.set("limit", String(params.limit));
+    const qs = sp.toString();
+    return authFetch(`/api/diagrams/search${qs ? `?${qs}` : ""}`).then((r) =>
+      jsonOrThrow<{
+        results: Array<{
+          slug: string;
+          name: string;
+          engine: string;
+          tags: string[];
+          updatedAt: string;
+          createdAt: string;
+          snippet?: string;
+          score?: number;
+        }>;
+      }>(r),
+    );
+  },
+
+  listTags: () =>
+    authFetch("/api/diagrams/tags").then((r) =>
+      jsonOrThrow<{ tags: string[] }>(r),
+    ).then((j) => j.tags),
+
+  updateDiagramMeta: (
+    diagramId: string,
+    patch: { description?: string; author?: string; notes?: string },
+  ) =>
+    authFetch(`/api/diagrams/${encodeURIComponent(diagramId)}/meta`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then((r) => jsonOrThrow<{ meta: import("@prixmaviz/shared").DiagramMeta }>(r)),
+
+  // ─── Issue #8 Wave 1A — share-link management ───────────────────────
+  // Create / list / revoke endpoints registered by the server in Wave 1.
+  // The token is opaque ("s_" + 32 hex). `url` is the absolute public URL
+  // assembled server-side from PRIXMAVIZ_PUBLIC_URL — the UI should display
+  // it verbatim. expiresAt is an ISO-8601 string (or null for no expiry).
+  createShareLink: (
+    diagramId: string,
+    body: { permission: "view" | "comment" | "edit"; expiresAt?: string | null },
+  ) =>
+    authFetch(`/api/diagrams/${encodeURIComponent(diagramId)}/shares`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => jsonOrThrow<{ token: string; url: string }>(r)),
+
+  listShareLinks: (diagramId: string) =>
+    authFetch(`/api/diagrams/${encodeURIComponent(diagramId)}/shares`).then((r) =>
+      jsonOrThrow<{
+        links: Array<{
+          id: string;
+          token: string;
+          permission: "view" | "comment" | "edit";
+          expiresAt: string | null;
+          createdAt: string;
+          url: string;
+        }>;
+      }>(r),
+    ),
+
+  revokeShareLink: (token: string) =>
+    authFetch(`/api/shares/${encodeURIComponent(token)}`, { method: "DELETE" }).then((r) =>
+      jsonOrThrow<{ ok: true }>(r),
+    ),
 };

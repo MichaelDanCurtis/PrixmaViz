@@ -19,6 +19,10 @@ export interface Annotation {
   color?: string;
   createdAt: string;                // ISO 8601
   resolvedAt?: string;
+  /** Optional free-form resolution note captured when the annotation is resolved. */
+  resolution?: string;
+  /** Optional author label — defaults to "agent" for tool-driven annotations. */
+  author?: string;
   // tag-specific:
   targetNodes?: string[];
   // region-specific:

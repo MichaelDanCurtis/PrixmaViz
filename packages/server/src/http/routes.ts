@@ -10,6 +10,7 @@ import type { WsHub } from "../ws/broadcast";
 import { getHitTester } from "../hit-test";
 import { canStructuredVsdx, maybeExtractLayout } from "../vsdx/export-helpers";
 import { UnknownToolError, ValidationError } from "../mcp/tools";
+import { broadcastWorkspaceUpdate } from "../mcp/broadcast";
 import { authenticate } from "../auth/bearer";
 import {
   createDiagram as dbCreateDiagram,
@@ -18,8 +19,22 @@ import {
   getDiagramBySlug as dbGetDiagramBySlug,
   listDiagrams as dbListDiagrams,
   updateDiagram as dbUpdateDiagram,
+  // Issue #7 Wave 1B — library / organization helpers.
+  dbBumpLastOpenedAt,
+  dbListTags,
+  dbMoveDiagram,
+  dbSetPinned,
+  dbUpdateMeta,
+  isValidFolderPath,
   type DbDiagram,
 } from "../db/diagrams";
+import {
+  dbDeleteFolder,
+  dbListEmptyFolders,
+  dbRenameFolder,
+  dbSetEmptyFolders,
+} from "../db/folders";
+import { searchDiagramsImpl } from "../mcp/tools/search";
 import {
   snapshotVersion as dbSnapshotVersion,
   listVersions as dbListVersions,
@@ -38,6 +53,16 @@ import {
   updateWorkspaceSettings as dbUpdateWorkspaceSettings,
   updateWorkspaceTiles as dbUpdateWorkspaceTiles,
 } from "../db/workspaces";
+// Issue #8 Wave 1A — share links (permission tiers, token-based access).
+import {
+  dbCreateShareLink,
+  dbGetShareByToken,
+  dbListShareLinks,
+  dbResolveShareToken,
+  dbRevokeShareLink,
+  type SharePermission,
+} from "../db/share-links";
+import { getIrRenderer } from "../renderers/registry";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -126,6 +151,48 @@ export async function handleApi(
     });
   }
 
+  // ─── Issue #8 Wave 1A — share-link public routes (no auth) ───────
+  // /s/:token.svg — raw SVG, embed-friendly. Same headers as /p/:id.svg
+  // but adds Referrer-Policy: no-referrer so the token doesn't leak in
+  // outgoing Referer headers (e.g. when the embed loads sub-resources).
+  // Expired tokens → 410 Gone (not 404 — the link existed, just no
+  // longer valid). Missing → 404.
+  const shareSvgMatch = p.match(/^\/s\/([a-z0-9_-]+)\.svg$/i);
+  if (shareSvgMatch && req.method === "GET") {
+    return await shareSvgRoute(shareSvgMatch[1]!, deps);
+  }
+
+  // /s/:token — SPA shell. Resolve the token to confirm it exists, then
+  // fall through to static for index.html so the SPA can fetch via JSON.
+  // Expired → 410; missing → 404. Always sets Referrer-Policy.
+  const shareViewMatch = p.match(/^\/s\/([a-z0-9_-]+)$/i);
+  if (shareViewMatch && req.method === "GET") {
+    return await shareViewRoute(shareViewMatch[1]!, deps);
+  }
+
+  // JSON API for SPA on /s/:token — also no auth.
+  const sharePublicApiMatch = p.match(/^\/api\/public\/shares\/([a-z0-9_-]+)$/i);
+  if (sharePublicApiMatch && req.method === "GET") {
+    return await sharePublicJsonRoute(sharePublicApiMatch[1]!, deps);
+  }
+
+  // /embed/:slug.svg — workspace-public-only. Only serves diagrams whose
+  // workspace has at least one view-or-higher share_link. Sets the
+  // permissive iframe headers + Referrer-Policy: no-referrer. Caches by
+  // slug.
+  const embedSvgMatch = p.match(/^\/embed\/([a-z0-9_-]+)\.svg$/i);
+  if (embedSvgMatch && req.method === "GET") {
+    return await embedSvgRoute(embedSvgMatch[1]!, deps);
+  }
+
+  // /og/:idOrToken.png — social-card preview image. Resolves an opaque
+  // token OR a public-view diagram id, then renders PNG via the existing
+  // export path. Caches the bytes for repeat fetches.
+  const ogMatch = p.match(/^\/og\/([a-z0-9_-]+)\.png$/i);
+  if (ogMatch && req.method === "GET") {
+    return await ogPngRoute(ogMatch[1]!, deps);
+  }
+
   if (!p.startsWith("/api/")) return undefined;
 
   // ─── Auth gate ────────────────────────────────────────────
@@ -151,25 +218,90 @@ export async function handleApi(
   }
 
   // ─── Library (alias for /api/diagrams + Postgres-backed thumb) ───
-  // The web Library component expects the cycle-3 LibraryEntry shape:
-  //   { name, path, engine, kind, tags, createdAt, updatedAt }
+  // The web Library component expects the cycle-3 LibraryEntry shape,
+  // extended for Issue #7 Wave 1B with `parentPath / pinned / lastOpenedAt`
+  // so the new Library sections (folders, pinned, recent) have the data
+  // they need on first mount without a follow-up roundtrip.
   // `path` is synthesized from the slug (the web client extracts the slug
   // back out with basename(path).replace(/\.pviz$/, "")).
   if (p === "/api/library" && req.method === "GET") {
     const rows = await dbListDiagrams(deps.sql, workspaceId);
     return Response.json({
-      entries: rows.map((d) => ({
-        name: d.name,
-        path: `${d.slug}.pviz`,
-        engine: d.engine,
-        kind: d.kind,
-        tags: Array.isArray((d.meta as { tags?: unknown }).tags)
-          ? (d.meta as { tags: string[] }).tags
-          : [],
-        createdAt: d.createdAt,
-        updatedAt: d.updatedAt,
-      })),
+      entries: rows.map((d) => {
+        const meta = (d.meta ?? {}) as {
+          tags?: unknown;
+          description?: unknown;
+          author?: unknown;
+          notes?: unknown;
+        };
+        const tags = Array.isArray(meta.tags) ? (meta.tags as string[]) : [];
+        return {
+          id: d.id,
+          name: d.name,
+          path: `${d.slug}.pviz`,
+          engine: d.engine,
+          kind: d.kind,
+          tags,
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
+          parentPath: d.parentPath,
+          pinned: d.pinned,
+          lastOpenedAt: d.lastOpenedAt,
+          ...(typeof meta.description === "string"
+            ? { description: meta.description }
+            : {}),
+          ...(typeof meta.author === "string" ? { author: meta.author } : {}),
+          ...(typeof meta.notes === "string" ? { notes: meta.notes } : {}),
+        };
+      }),
     });
+  }
+
+  // ─── Issue #7 Wave 1B — search / library / folders ──────────────
+  // GET /api/diagrams/search — query params translate to the
+  // search_diagrams MCP impl's args shape. Single SQL builder shared
+  // across both transports (per the spec — no duplicate query).
+  if (p === "/api/diagrams/search" && req.method === "GET") {
+    return await searchDiagramsRoute(url, workspaceId, deps);
+  }
+
+  // GET /api/diagrams/tags — distinct tag list for autocomplete (F3).
+  if (p === "/api/diagrams/tags" && req.method === "GET") {
+    const tags = await dbListTags(deps.sql, workspaceId);
+    return Response.json({ tags });
+  }
+
+  // POST /api/diagrams/:id/pin — toggle pinned (F4).
+  const pinMatch = p.match(/^\/api\/diagrams\/([^/]+)\/pin$/);
+  if (pinMatch && req.method === "POST") {
+    return await pinDiagramRoute(pinMatch[1]!, req, workspaceId, deps);
+  }
+
+  // PATCH /api/diagrams/:id/meta — update description / author / notes (F5).
+  const metaMatch = p.match(/^\/api\/diagrams\/([^/]+)\/meta$/);
+  if (metaMatch && req.method === "PATCH") {
+    return await updateMetaRoute(metaMatch[1]!, req, workspaceId, deps);
+  }
+
+  // PATCH /api/diagrams/:id/move — set parent_path (F2 drag-drop).
+  const moveMatch = p.match(/^\/api\/diagrams\/([^/]+)\/move$/);
+  if (moveMatch && req.method === "PATCH") {
+    return await moveDiagramRoute(moveMatch[1]!, req, workspaceId, deps);
+  }
+
+  // POST /api/folders/empty — add/remove a path in emptyFolders (F2).
+  if (p === "/api/folders/empty" && req.method === "POST") {
+    return await emptyFolderRoute(req, workspaceId, deps);
+  }
+
+  // POST /api/folders/rename — cascade-rename a folder (F2).
+  if (p === "/api/folders/rename" && req.method === "POST") {
+    return await renameFolderRoute(req, workspaceId, deps);
+  }
+
+  // POST /api/folders/delete — cascade or refuse-on-nonempty delete (F2).
+  if (p === "/api/folders/delete" && req.method === "POST") {
+    return await deleteFolderRoute(req, workspaceId, deps);
   }
 
   const thumbMatch = p.match(/^\/api\/library\/([^/]+)\/thumb$/);
@@ -224,6 +356,22 @@ export async function handleApi(
     return Response.json({ public: body.public, publicUrl });
   }
 
+  // ─── Issue #8 Wave 1A — share-link management API (auth-gated) ───
+  // POST /api/diagrams/:id/shares — create.
+  // GET  /api/diagrams/:id/shares — list owner's.
+  // DELETE /api/shares/:token     — revoke (owner-scoped).
+  const sharesMatch = p.match(/^\/api\/diagrams\/([^/]+)\/shares$/);
+  if (sharesMatch && req.method === "POST") {
+    return await createShareRoute(sharesMatch[1]!, req, workspaceId, deps);
+  }
+  if (sharesMatch && req.method === "GET") {
+    return await listSharesRoute(sharesMatch[1]!, workspaceId, deps);
+  }
+  const shareRevokeMatch = p.match(/^\/api\/shares\/([a-z0-9_-]+)$/i);
+  if (shareRevokeMatch && req.method === "DELETE") {
+    return await revokeShareRoute(shareRevokeMatch[1]!, workspaceId, deps);
+  }
+
   const exportVsdxMatch = p.match(/^\/api\/diagrams\/([^/]+)\/export\.vsdx$/);
   if (exportVsdxMatch && req.method === "GET") {
     return await exportVsdxRoute(exportVsdxMatch[1]!, workspaceId, deps);
@@ -231,6 +379,22 @@ export async function handleApi(
 
   if (p === "/api/import" && req.method === "POST") {
     return await importVsdxRoute(req, workspaceId, deps);
+  }
+
+  // ─── Issue #8 Wave 1B — .pviz workspace bundle export/import ────
+  // GET /api/workspaces/:id/export — stream a .pviz zip of the addressed
+  // workspace. The `:id` must equal the authenticated workspaceId; we
+  // gate on the same model as every other authenticated endpoint
+  // (bearer == workspace id == addressable workspace).
+  const exportBundleMatch = p.match(/^\/api\/workspaces\/([^/]+)\/export$/);
+  if (exportBundleMatch && req.method === "GET") {
+    return await exportWorkspaceBundleRoute(exportBundleMatch[1]!, workspaceId, deps);
+  }
+
+  // POST /api/workspaces/import — multipart upload, always creates a NEW
+  // workspace owned by the caller. NEVER touches an existing workspace.
+  if (p === "/api/workspaces/import" && req.method === "POST") {
+    return await importWorkspaceBundleRoute(req, workspaceId, deps);
   }
 
   // ─── Issue #6: inline editor + version history ───────────
@@ -445,7 +609,7 @@ export async function handleApi(
     await dbUpdateWorkspaceCamera(deps.sql, workspaceId, body);
     const ws = await dbGetWorkspace(deps.sql, workspaceId);
     if (!ws) return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
-    deps.hub.broadcast(workspaceId, { type: "workspace", camera: ws.camera, tiles: ws.tiles });
+    await broadcastWorkspaceUpdate(deps, workspaceId);
     return Response.json(ws);
   }
 
@@ -471,8 +635,28 @@ export async function handleApi(
     };
     const nextTiles = [...ws.tiles, tile];
     await dbUpdateWorkspaceTiles(deps.sql, workspaceId, nextTiles);
-    const updated = await dbGetWorkspace(deps.sql, workspaceId);
-    if (updated) deps.hub.broadcast(workspaceId, { type: "workspace", camera: updated.camera, tiles: updated.tiles });
+    // Issue #7 Wave 1B: createTile is a "first open" event — bump
+    // last_opened_at and broadcast so Recent section ordering follows.
+    // The helper validates diagramId ownership via the workspace_id JOIN
+    // implicit in the SET; an invalid/foreign diagramId is a no-op return.
+    // Note: we still check ownership above for the dedup loop, so we
+    // only bump when the create succeeded.
+    try {
+      const verifiedOwn = await dbGetDiagram(deps.sql, workspaceId, body.diagramId);
+      if (verifiedOwn) {
+        const lastOpenedAt = await dbBumpLastOpenedAt(deps.sql, body.diagramId);
+        if (lastOpenedAt) {
+          deps.hub.broadcast(workspaceId, {
+            type: "library:diagram-opened",
+            diagramId: body.diagramId,
+            lastOpenedAt,
+          });
+        }
+      }
+    } catch (e) {
+      console.error(`[createTile] last_opened_at bump failed for ${body.diagramId}:`, e);
+    }
+    await broadcastWorkspaceUpdate(deps, workspaceId);
     return Response.json({ tile });
   }
 
@@ -487,8 +671,7 @@ export async function handleApi(
     const nextTiles = [...ws.tiles];
     nextTiles[idx] = { ...nextTiles[idx]!, ...body, id: tileId };
     await dbUpdateWorkspaceTiles(deps.sql, workspaceId, nextTiles);
-    const updated = await dbGetWorkspace(deps.sql, workspaceId);
-    if (updated) deps.hub.broadcast(workspaceId, { type: "workspace", camera: updated.camera, tiles: updated.tiles });
+    await broadcastWorkspaceUpdate(deps, workspaceId);
     return Response.json({ tile: nextTiles[idx] });
   }
 
@@ -498,8 +681,7 @@ export async function handleApi(
     if (!ws) return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
     const nextTiles = ws.tiles.filter((t) => t.id !== tileId);
     await dbUpdateWorkspaceTiles(deps.sql, workspaceId, nextTiles);
-    const updated = await dbGetWorkspace(deps.sql, workspaceId);
-    if (updated) deps.hub.broadcast(workspaceId, { type: "workspace", camera: updated.camera, tiles: updated.tiles });
+    await broadcastWorkspaceUpdate(deps, workspaceId);
     return Response.json({ ok: true });
   }
 
@@ -608,6 +790,21 @@ async function loadDiagramRoute(slug: string, workspaceId: string, deps: RouteDe
   const outcome = await renderDiagram(diagram, { kroki: deps.kroki });
   if (!outcome.ok) return Response.json({ ok: false, error: outcome.error }, { status: 502 });
   await dbUpdateDiagram(deps.sql, workspaceId, row.id, { svg: outcome.result.svg });
+  // Issue #7 Wave 1B: bump last_opened_at (debounced 1s inside the helper)
+  // and broadcast the new timestamp so the Recent section reorders without
+  // refetching. Best-effort: failure here must NOT fail the load.
+  try {
+    const lastOpenedAt = await dbBumpLastOpenedAt(deps.sql, row.id);
+    if (lastOpenedAt) {
+      deps.hub.broadcast(workspaceId, {
+        type: "library:diagram-opened",
+        diagramId: row.id,
+        lastOpenedAt,
+      });
+    }
+  } catch (e) {
+    console.error(`[loadDiagram] last_opened_at bump failed for ${row.id}:`, e);
+  }
   broadcastRender(deps.hub, workspaceId, diagram, outcome.result.svg, outcome.warnings);
   return Response.json({
     diagramId: row.id,
@@ -874,6 +1071,503 @@ async function importVsdxRoute(
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Issue #8 Wave 1B — .pviz workspace bundle export + import
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/workspaces/:id/export — stream a .pviz bundle of the workspace.
+ *
+ * Authorization: caller's bearer must equal the addressed workspace id
+ * (`urlWorkspaceId === authWorkspaceId`). Any other workspace returns 404
+ * — we never leak existence of a workspace the caller can't read.
+ */
+async function exportWorkspaceBundleRoute(
+  urlWorkspaceId: string,
+  authWorkspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  if (urlWorkspaceId !== authWorkspaceId) {
+    // Caller is authenticated as a DIFFERENT workspace. Don't leak whether
+    // urlWorkspaceId exists — same shape as a non-existent workspace.
+    return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
+  }
+  const { composeBundle } = await import("../bundle/pviz-writer");
+  const { getWorkspace } = await import("../db/workspaces");
+  const ws = await getWorkspace(deps.sql, authWorkspaceId);
+  if (!ws) {
+    return Response.json({ ok: false, error: "workspace not found" }, { status: 404 });
+  }
+  const buf = await composeBundle(deps.sql, authWorkspaceId);
+  // Filename: prefer the workspace name, fall back to the id. Strip any
+  // chars that don't survive a Content-Disposition; quote the result.
+  const baseName = (ws.name && ws.name.trim().length > 0 ? ws.name : ws.id)
+    .replace(/[\\/:*?"<>|\r\n]/g, "_")
+    .slice(0, 100);
+  return new Response(buf as BodyInit, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${baseName}.pviz"`,
+    },
+  });
+}
+
+/**
+ * POST /api/workspaces/import — multipart upload that ALWAYS creates a
+ * brand-new workspace owned by the caller. Never modifies any existing
+ * workspace (Issue #8 spec). The new workspace's `owner_token_hash` is
+ * set to `sha256(callerToken)` so MCP `list_workspaces` finds it.
+ *
+ * The bundle's original diagram/annotation/tile IDs are NOT preserved
+ * on the new rows (they get fresh IDs); the original diagram id is
+ * stashed in `meta.originalId` for traceability.
+ */
+async function importWorkspaceBundleRoute(
+  req: Request,
+  callerWorkspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const maxBytes = Number(process.env.PVIZ_BUNDLE_MAX_BYTES ?? "104857600"); // 100 MB default
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return Response.json({ ok: false, error: "expected multipart/form-data" }, { status: 400 });
+  }
+  const file = formData.get("file");
+  if (!(file instanceof Blob)) {
+    return Response.json({ ok: false, error: "file part required" }, { status: 400 });
+  }
+  if (file.size > maxBytes) {
+    return Response.json(
+      { ok: false, error: `file exceeds PVIZ_BUNDLE_MAX_BYTES (${maxBytes})` },
+      { status: 413 },
+    );
+  }
+  const buf = new Uint8Array(await file.arrayBuffer());
+
+  const { parseBundle, BundleParseError } = await import("../bundle/pviz-reader");
+  const { importBundle } = await import("../bundle/pviz-import");
+  const { hashOwnerToken } = await import("../db/workspaces");
+
+  let parsed;
+  try {
+    parsed = await parseBundle(buf);
+  } catch (e) {
+    if (e instanceof BundleParseError) {
+      const status = e.code === "unsupported_version" ? 422 : 400;
+      return Response.json(
+        { ok: false, error: { code: e.code, message: e.message } },
+        { status },
+      );
+    }
+    return Response.json(
+      { ok: false, error: `bundle parse failed: ${(e as Error).message}` },
+      { status: 400 },
+    );
+  }
+
+  const ownerHash = hashOwnerToken(callerWorkspaceId);
+  const result = await importBundle(deps.sql, parsed, ownerHash);
+  return Response.json(result);
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Issue #7 Wave 1B — library / folder route helpers
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/diagrams/search — thin HTTP shell around the `search_diagrams`
+ * MCP impl. The SQL builder lives in `mcp/tools/search.ts`; this route
+ * translates URLSearchParams into the tool's args object and forwards.
+ * One query path, two transports — no duplicate SQL.
+ *
+ * Multi-valued params (`engines`, `tags`) accept either repeated keys
+ * (`?engines=mermaid&engines=d2`) or comma-separated values
+ * (`?engines=mermaid,d2`). The latter is what `URLSearchParams.toString()`
+ * naturally produces from an array.
+ */
+async function searchDiagramsRoute(
+  url: URL,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const sp = url.searchParams;
+  const q = sp.get("q") ?? undefined;
+  const sort = sp.get("sort") ?? undefined;
+  const limit = sp.get("limit") ? Number(sp.get("limit")) : undefined;
+  const since = sp.get("since") ?? sp.get("updatedSince") ?? undefined;
+  const parentPath = sp.has("parent_path")
+    ? sp.get("parent_path") ?? ""
+    : sp.has("parentPath")
+    ? sp.get("parentPath") ?? ""
+    : undefined;
+
+  const enginesRaw = sp.getAll("engines");
+  const engines =
+    enginesRaw.length === 0
+      ? undefined
+      : enginesRaw.length === 1 && enginesRaw[0]!.includes(",")
+      ? enginesRaw[0]!.split(",").map((s) => s.trim()).filter(Boolean)
+      : enginesRaw;
+  const tagsRaw = sp.getAll("tags");
+  const tags =
+    tagsRaw.length === 0
+      ? undefined
+      : tagsRaw.length === 1 && tagsRaw[0]!.includes(",")
+      ? tagsRaw[0]!.split(",").map((s) => s.trim()).filter(Boolean)
+      : tagsRaw;
+
+  // Build args matching the MCP tool's input shape.
+  const args: Record<string, unknown> = {};
+  if (q) args.query = q;
+  if (engines) args.engines = engines;
+  if (tags) args.tags = tags;
+  if (since) args.updatedSince = since;
+  if (parentPath !== undefined) args.parentPath = parentPath;
+  if (sort) args.sort = sort;
+  if (limit !== undefined) args.limit = limit;
+
+  try {
+    const result = await searchDiagramsImpl(args, {
+      sql: deps.sql,
+      workspaceId,
+      kroki: deps.kroki,
+      hub: deps.hub,
+    });
+    return Response.json(result);
+  } catch (e) {
+    // Validation-style errors from the impl carry useful messages.
+    const message = e instanceof Error ? e.message : String(e);
+    return Response.json({ ok: false, error: message }, { status: 400 });
+  }
+}
+
+/**
+ * POST /api/diagrams/:id/pin — toggle pinned. Ownership check via
+ * dbGetDiagram before invoking dbSetPinned (the helper keys on
+ * diagramId only). Broadcasts library:diagram-updated on success.
+ */
+async function pinDiagramRoute(
+  diagramId: string,
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as { pinned?: unknown };
+  if (typeof body.pinned !== "boolean") {
+    return Response.json(
+      { ok: false, error: "pinned must be a boolean" },
+      { status: 400 },
+    );
+  }
+  const existing = await dbGetDiagram(deps.sql, workspaceId, diagramId);
+  if (!existing) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+  const newPinned = await dbSetPinned(deps.sql, diagramId, body.pinned);
+  if (newPinned === null) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+  deps.hub.broadcast(workspaceId, {
+    type: "library:diagram-updated",
+    diagramId,
+    change: "pinned",
+  });
+  return Response.json({ pinned: newPinned });
+}
+
+/**
+ * PATCH /api/diagrams/:id/meta — patch description / author / notes.
+ * Wave 1A's dbUpdateMeta uses JSONB `||` merge so `tags / sourcePaths /
+ * createdAt` survive. Ownership check first, then mutate + broadcast.
+ */
+async function updateMetaRoute(
+  diagramId: string,
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as {
+    description?: unknown;
+    author?: unknown;
+    notes?: unknown;
+  };
+  // Type-check each provided patch field.
+  for (const k of ["description", "author", "notes"] as const) {
+    if (body[k] !== undefined && typeof body[k] !== "string") {
+      return Response.json(
+        { ok: false, error: `${k} must be a string` },
+        { status: 400 },
+      );
+    }
+  }
+  if (body.description === undefined && body.author === undefined && body.notes === undefined) {
+    return Response.json(
+      { ok: false, error: "at least one of description, author, or notes must be provided" },
+      { status: 400 },
+    );
+  }
+
+  const existing = await dbGetDiagram(deps.sql, workspaceId, diagramId);
+  if (!existing) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+
+  const patch: { description?: string; author?: string; notes?: string } = {};
+  if (typeof body.description === "string") patch.description = body.description;
+  if (typeof body.author === "string") patch.author = body.author;
+  if (typeof body.notes === "string") patch.notes = body.notes;
+
+  const meta = await dbUpdateMeta(deps.sql, diagramId, patch);
+  if (meta === null) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+  deps.hub.broadcast(workspaceId, {
+    type: "library:diagram-updated",
+    diagramId,
+    change: "meta",
+  });
+  return Response.json({ meta });
+}
+
+/**
+ * PATCH /api/diagrams/:id/move — set parent_path. isValidFolderPath
+ * gate before DB mutate so path-traversal (`../`), wildcards (`%`/`_`
+ * in invalid positions), and leading/trailing slashes are rejected
+ * with a clean 400.
+ */
+async function moveDiagramRoute(
+  diagramId: string,
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as { parentPath?: unknown };
+  if (typeof body.parentPath !== "string") {
+    return Response.json(
+      { ok: false, error: "parentPath must be a string" },
+      { status: 400 },
+    );
+  }
+  if (!isValidFolderPath(body.parentPath)) {
+    return Response.json(
+      { ok: false, error: `invalid folder path: ${JSON.stringify(body.parentPath)}` },
+      { status: 400 },
+    );
+  }
+
+  const existing = await dbGetDiagram(deps.sql, workspaceId, diagramId);
+  if (!existing) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+
+  const newPath = await dbMoveDiagram(deps.sql, diagramId, body.parentPath);
+  if (newPath === null) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+  deps.hub.broadcast(workspaceId, {
+    type: "library:diagram-updated",
+    diagramId,
+    change: "moved",
+  });
+  return Response.json({ ok: true, parentPath: newPath });
+}
+
+/**
+ * POST /api/folders/empty — add or remove a path in
+ * `workspaces.settings.emptyFolders`. The list tracks folders that
+ * exist in the Library tree but contain no diagrams yet (F2: "New
+ * folder" inline-input).
+ *
+ * On first drag-drop INTO an empty folder, the F2 web flow removes
+ * the entry separately — this route is for explicit add/remove.
+ */
+async function emptyFolderRoute(
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as {
+    path?: unknown;
+    action?: unknown;
+  };
+  if (typeof body.path !== "string") {
+    return Response.json({ ok: false, error: "path must be a string" }, { status: 400 });
+  }
+  if (body.action !== "add" && body.action !== "remove") {
+    return Response.json(
+      { ok: false, error: "action must be 'add' or 'remove'" },
+      { status: 400 },
+    );
+  }
+  if (!isValidFolderPath(body.path) || body.path === "") {
+    return Response.json(
+      { ok: false, error: `invalid folder path: ${JSON.stringify(body.path)}` },
+      { status: 400 },
+    );
+  }
+
+  const current = await dbListEmptyFolders(deps.sql, workspaceId);
+  const next =
+    body.action === "add"
+      ? current.includes(body.path)
+        ? current
+        : [...current, body.path]
+      : current.filter((p) => p !== body.path);
+
+  try {
+    await dbSetEmptyFolders(deps.sql, workspaceId, next);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return Response.json({ ok: false, error: message }, { status: 400 });
+  }
+  deps.hub.broadcast(workspaceId, {
+    type: "library:folders-changed",
+    emptyFolders: next,
+  });
+  return Response.json({ emptyFolders: next });
+}
+
+/**
+ * POST /api/folders/rename — cascade-rename. Wave 1A's dbRenameFolder
+ * handles the diagram rows (using starts_with, not LIKE — guards
+ * against `%`/`_` glob attacks). We additionally rewrite any
+ * empty-folder entries whose path starts with the renamed prefix,
+ * since those live in workspaces.settings and aren't touched by the
+ * diagram-rename SQL.
+ */
+async function renameFolderRoute(
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as { from?: unknown; to?: unknown };
+  if (typeof body.from !== "string" || typeof body.to !== "string") {
+    return Response.json(
+      { ok: false, error: "from and to must both be strings" },
+      { status: 400 },
+    );
+  }
+  if (body.from === "" || !isValidFolderPath(body.from)) {
+    return Response.json(
+      { ok: false, error: `invalid source folder: ${JSON.stringify(body.from)}` },
+      { status: 400 },
+    );
+  }
+  if (body.to === "" || !isValidFolderPath(body.to)) {
+    return Response.json(
+      { ok: false, error: `invalid target folder: ${JSON.stringify(body.to)}` },
+      { status: 400 },
+    );
+  }
+
+  let affected = 0;
+  try {
+    affected = await dbRenameFolder(deps.sql, workspaceId, body.from, body.to);
+  } catch (e) {
+    // Wave 1A throws a structured error with `error / rows / cap` for
+    // the row-cap overflow case. Pass it through with a 400 so the
+    // client can show the count.
+    const err = e as { error?: string; rows?: number; cap?: number; message?: string };
+    if (err.error === "folder rename touches too many rows") {
+      return Response.json(
+        { ok: false, error: err.error, rows: err.rows, cap: err.cap },
+        { status: 400 },
+      );
+    }
+    return Response.json(
+      { ok: false, error: err.message ?? String(e) },
+      { status: 400 },
+    );
+  }
+
+  // Now rewrite the workspace's empty-folder entries with the same
+  // prefix-rewrite as the SQL helper. Defensive: list, transform, set.
+  const ef = await dbListEmptyFolders(deps.sql, workspaceId);
+  const rewriteFrom = body.from;
+  const rewriteTo = body.to;
+  const rewritten = ef.map((p) => {
+    if (p === rewriteFrom) return rewriteTo;
+    if (p.startsWith(rewriteFrom + "/")) {
+      return rewriteTo + p.slice(rewriteFrom.length);
+    }
+    return p;
+  });
+  if (rewritten.some((p, i) => p !== ef[i])) {
+    try {
+      await dbSetEmptyFolders(deps.sql, workspaceId, rewritten);
+    } catch (e) {
+      console.error("[renameFolder] empty-folder rewrite failed:", e);
+      // Non-fatal — diagrams already moved.
+    }
+  }
+
+  deps.hub.broadcast(workspaceId, {
+    type: "library:folders-changed",
+    emptyFolders: rewritten,
+  });
+  return Response.json({ affected });
+}
+
+/**
+ * POST /api/folders/delete — cascade or refuse-on-nonempty.
+ * Wave 1A's dbDeleteFolder atomically deletes the diagrams (when
+ * cascade) AND strips the path from emptyFolders.
+ */
+async function deleteFolderRoute(
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as {
+    path?: unknown;
+    cascade?: unknown;
+  };
+  if (typeof body.path !== "string") {
+    return Response.json({ ok: false, error: "path must be a string" }, { status: 400 });
+  }
+  if (typeof body.cascade !== "boolean") {
+    return Response.json(
+      { ok: false, error: "cascade must be a boolean" },
+      { status: 400 },
+    );
+  }
+  if (body.path === "" || !isValidFolderPath(body.path)) {
+    return Response.json(
+      { ok: false, error: `invalid folder path: ${JSON.stringify(body.path)}` },
+      { status: 400 },
+    );
+  }
+
+  let deleted = 0;
+  try {
+    deleted = await dbDeleteFolder(deps.sql, workspaceId, body.path, body.cascade);
+  } catch (e) {
+    const err = e as { error?: string; count?: number; message?: string };
+    if (err.error === "folder has N diagrams") {
+      return Response.json(
+        { ok: false, error: err.error, count: err.count },
+        { status: 409 },
+      );
+    }
+    return Response.json(
+      { ok: false, error: err.message ?? String(e) },
+      { status: 400 },
+    );
+  }
+
+  // After delete, broadcast the new empty-folder state (dbDeleteFolder
+  // strips the path inside its transaction — list again for accuracy).
+  const ef = await dbListEmptyFolders(deps.sql, workspaceId);
+  deps.hub.broadcast(workspaceId, {
+    type: "library:folders-changed",
+    emptyFolders: ef,
+  });
+  return Response.json({ deleted });
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // MCP error envelope
 // ───────────────────────────────────────────────────────────────────────────
 //
@@ -992,4 +1686,373 @@ function isUndefinedValuePostgresError(e: unknown): boolean {
   // Some postgres versions put the marker in the message instead of `.code`.
   const msg = (e as { message?: unknown }).message;
   return typeof msg === "string" && msg.startsWith("UNDEFINED_VALUE:");
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Issue #8 Wave 1A — share-link routes
+// ───────────────────────────────────────────────────────────────────────────
+
+const SHARE_PERMISSIONS: ReadonlyArray<SharePermission> = ["view", "comment", "edit"];
+
+/**
+ * Build the share-route URL helper. Lives here so tests can assert exact
+ * format without scraping env state. Returns the full URL the client
+ * would share — `${publicUrl}/s/${token}`.
+ */
+function shareUrlFor(token: string): string {
+  const base = (process.env.PRIXMAVIZ_PUBLIC_URL ?? "").replace(/\/$/, "");
+  return `${base}/s/${token}`;
+}
+
+/**
+ * Headers applied to every `/s/*` route so the opaque token never leaks
+ * via Referer when the share page loads sub-resources. We also set
+ * Cache-Control: private so intermediaries don't cache token-keyed
+ * content (which is OK to be re-fetched on every load).
+ */
+function shareHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "private, max-age=0",
+    ...extra,
+  };
+}
+
+/**
+ * GET /s/:token.svg — raw SVG behind a share token. 410 on expired,
+ * 404 on missing.
+ */
+async function shareSvgRoute(token: string, deps: RouteDeps): Promise<Response> {
+  const resolved = await dbResolveShareToken(deps.sql, token);
+  if (!resolved) {
+    // Distinguish missing vs expired so the client can show "expired"
+    // rather than "not found" copy.
+    const existing = await dbGetShareByToken(deps.sql, token);
+    if (existing) {
+      return new Response("Gone", { status: 410, headers: shareHeaders() });
+    }
+    return new Response("Not Found", { status: 404, headers: shareHeaders() });
+  }
+  // dbGetDiagram requires a workspaceId scope — share tokens deliberately
+  // cross workspace boundaries (the token holder is "the public"), so we
+  // look up by id directly.
+  const rows = await deps.sql`
+    SELECT id, workspace_id, name, engine, kind, svg FROM diagrams WHERE id = ${resolved.diagramId}
+  `;
+  if (rows.length === 0 || !rows[0]!.svg) {
+    return new Response("Not Found", { status: 404, headers: shareHeaders() });
+  }
+  return new Response(rows[0]!.svg as string, {
+    status: 200,
+    headers: shareHeaders({
+      "Content-Type": "image/svg+xml; charset=utf-8",
+      "X-Frame-Options": "ALLOWALL",
+      "Content-Security-Policy": "frame-ancestors *",
+    }),
+  });
+}
+
+/**
+ * GET /s/:token — SPA shell. Resolve to ensure the token is live so we
+ * can return 410 / 404 instead of letting the SPA boot to a useless
+ * "not found" screen.
+ */
+async function shareViewRoute(token: string, deps: RouteDeps): Promise<Response | undefined> {
+  const resolved = await dbResolveShareToken(deps.sql, token);
+  if (!resolved) {
+    const existing = await dbGetShareByToken(deps.sql, token);
+    if (existing) return new Response("Gone", { status: 410, headers: shareHeaders() });
+    return new Response("Not Found", { status: 404, headers: shareHeaders() });
+  }
+  // Fall through — static handler serves index.html and the SPA renders
+  // the public diagram view client-side.
+  return undefined;
+}
+
+/**
+ * GET /api/public/shares/:token — JSON for SPA. Same gating as
+ * shareSvgRoute, but returns the diagram metadata + svg + permission.
+ */
+async function sharePublicJsonRoute(token: string, deps: RouteDeps): Promise<Response> {
+  const resolved = await dbResolveShareToken(deps.sql, token);
+  if (!resolved) {
+    const existing = await dbGetShareByToken(deps.sql, token);
+    if (existing) {
+      return Response.json(
+        { ok: false, error: "share link expired" },
+        { status: 410, headers: shareHeaders() },
+      );
+    }
+    return Response.json(
+      { ok: false, error: "not found" },
+      { status: 404, headers: shareHeaders() },
+    );
+  }
+  const rows = await deps.sql`
+    SELECT id, name, engine, kind, svg, dsl FROM diagrams WHERE id = ${resolved.diagramId}
+  `;
+  if (rows.length === 0) {
+    return Response.json(
+      { ok: false, error: "not found" },
+      { status: 404, headers: shareHeaders() },
+    );
+  }
+  const r = rows[0]!;
+  return new Response(
+    JSON.stringify({
+      id: r.id,
+      name: r.name,
+      engine: r.engine,
+      kind: r.kind,
+      svg: r.svg,
+      dsl: r.dsl,
+      permission: resolved.permission,
+    }),
+    {
+      status: 200,
+      headers: shareHeaders({ "Content-Type": "application/json" }),
+    },
+  );
+}
+
+/**
+ * GET /embed/:slug.svg — workspace-public-only.
+ *
+ * "Workspace-public" = the diagram's workspace has at least one
+ * view-or-higher share link on ANY of its diagrams. That promise is
+ * what an embed asserts: the workspace owner opted into sharing this
+ * content surface. We don't gate per-diagram for embeds; per-diagram
+ * gating is what /s/:token is for.
+ */
+async function embedSvgRoute(slug: string, deps: RouteDeps): Promise<Response> {
+  // Resolve the slug to a diagram + workspace.
+  const rows = await deps.sql<{ id: string; workspace_id: string; svg: string | null }[]>`
+    SELECT id, workspace_id, svg FROM diagrams WHERE slug = ${slug}
+  `;
+  if (rows.length === 0) {
+    return new Response("Not Found", { status: 404 });
+  }
+  const d = rows[0]!;
+  // Workspace must own at least one share link to opt into embed.
+  const shares = await deps.sql`
+    SELECT 1 FROM share_links WHERE created_by = ${d.workspace_id} LIMIT 1
+  `;
+  if (shares.length === 0) {
+    return new Response("Not Found", { status: 404 });
+  }
+  if (!d.svg) {
+    return new Response("Not Found", { status: 404 });
+  }
+  return new Response(d.svg, {
+    status: 200,
+    headers: {
+      "Content-Type": "image/svg+xml; charset=utf-8",
+      "X-Frame-Options": "ALLOWALL",
+      "Content-Security-Policy": "frame-ancestors *",
+      "Referrer-Policy": "no-referrer",
+      "Cache-Control": "public, max-age=60",
+    },
+  });
+}
+
+/**
+ * GET /og/:idOrToken.png — social-card preview image.
+ *
+ * Accepts either an opaque share token OR a public-view diagram id.
+ * Renders PNG via the existing `renderBinary` path. Cached via the
+ * Kroki client's binary cache (keyed by engine + format + dsl), so
+ * repeat fetches for the same diagram pay the upstream cost once.
+ */
+async function ogPngRoute(idOrToken: string, deps: RouteDeps): Promise<Response> {
+  // Resolve: token first (most common), then public-view fallback.
+  let diagramId: string | null = null;
+  const resolved = await dbResolveShareToken(deps.sql, idOrToken);
+  if (resolved) {
+    diagramId = resolved.diagramId;
+  } else {
+    const existing = await dbGetShareByToken(deps.sql, idOrToken);
+    if (existing) {
+      return new Response("Gone", { status: 410, headers: { "Referrer-Policy": "no-referrer" } });
+    }
+    // Fallback: treat as a public-view diagram id.
+    const { getPublicDiagram } = await import("../db/diagrams");
+    const d = await getPublicDiagram(deps.sql, idOrToken);
+    if (d) diagramId = d.id;
+  }
+  if (!diagramId) {
+    return new Response("Not Found", { status: 404 });
+  }
+
+  const rows = await deps.sql<{ engine: string; kind: string; ir: unknown; dsl: string | null; svg: string | null }[]>`
+    SELECT engine, kind, ir, dsl, svg FROM diagrams WHERE id = ${diagramId}
+  `;
+  if (rows.length === 0) {
+    return new Response("Not Found", { status: 404 });
+  }
+  const d = rows[0]!;
+  try {
+    const bytes = await renderPngForOg(d, deps);
+    return new Response(bytes as BodyInit, {
+      status: 200,
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=300",
+        "Referrer-Policy": "no-referrer",
+      },
+    });
+  } catch (e) {
+    console.error(`[og:${idOrToken}] render failed:`, e);
+    return new Response("render failed", { status: 502 });
+  }
+}
+
+/**
+ * Internal: render PNG bytes for the OG endpoint. Mirrors the
+ * `export_diagram` MCP tool's PNG path but adapted to the raw row
+ * shape since we don't have a DbDiagram here.
+ */
+async function renderPngForOg(
+  d: { engine: string; kind: string; ir: unknown; dsl: string | null; svg: string | null },
+  deps: RouteDeps,
+): Promise<Uint8Array> {
+  if (d.kind === "graph") {
+    if (!d.ir) throw new Error("graph diagram missing ir");
+    const renderer = getIrRenderer(d.engine as DiagramEngine);
+    if (!renderer) throw new Error(`no IR renderer for engine "${d.engine}"`);
+    const out = renderer(d.ir as GraphIR);
+    return await deps.kroki.renderBinary(d.engine as DiagramEngine, out.dsl, "png");
+  }
+  if (d.kind === "passthrough") {
+    if (d.dsl === null || d.dsl === undefined) throw new Error("passthrough diagram missing dsl");
+    return await deps.kroki.renderBinary(d.engine as DiagramEngine, d.dsl, "png");
+  }
+  throw new Error(`cannot render PNG for kind "${d.kind}"`);
+}
+
+/**
+ * POST /api/diagrams/:id/shares — create a share link.
+ * Body: { permission: 'view' | 'comment' | 'edit', expiresAt?: ISO-string }
+ * Returns: { token, url }. Broadcasts library:share-created.
+ *
+ * Also fires a fire-and-forget PNG export so the OG cache is warm by
+ * the time anyone follows the link. Uses Bun's native Promise — no
+ * await, no .then() chain that could fail the request.
+ */
+async function createShareRoute(
+  diagramId: string,
+  req: Request,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as {
+    permission?: unknown;
+    expiresAt?: unknown;
+  };
+  if (typeof body.permission !== "string" || !SHARE_PERMISSIONS.includes(body.permission as SharePermission)) {
+    return Response.json(
+      { ok: false, error: `permission must be one of: ${SHARE_PERMISSIONS.join(", ")}` },
+      { status: 400 },
+    );
+  }
+  let expiresAt: string | null = null;
+  if (body.expiresAt !== undefined && body.expiresAt !== null) {
+    if (typeof body.expiresAt !== "string") {
+      return Response.json(
+        { ok: false, error: "expiresAt must be an ISO-8601 string" },
+        { status: 400 },
+      );
+    }
+    const t = Date.parse(body.expiresAt);
+    if (Number.isNaN(t)) {
+      return Response.json(
+        { ok: false, error: "expiresAt is not a valid ISO-8601 timestamp" },
+        { status: 400 },
+      );
+    }
+    expiresAt = new Date(t).toISOString();
+  }
+
+  // Ownership check first.
+  const existing = await dbGetDiagram(deps.sql, workspaceId, diagramId);
+  if (!existing) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+
+  const permission = body.permission as SharePermission;
+  const { token } = await dbCreateShareLink(
+    deps.sql,
+    diagramId,
+    permission,
+    expiresAt,
+    workspaceId,
+  );
+
+  deps.hub.broadcast(workspaceId, {
+    type: "library:share-created",
+    diagramId,
+    token,
+    permission,
+  });
+
+  // Fire-and-forget PNG warm-up so /og/:token.png is fast on first hit.
+  // No await — explicit Promise so any rejection logs cleanly without
+  // crashing the response. Bun's promise scheduler keeps this alive past
+  // the response return.
+  void (async () => {
+    try {
+      const rows = await deps.sql<{ engine: string; kind: string; ir: unknown; dsl: string | null; svg: string | null }[]>`
+        SELECT engine, kind, ir, dsl, svg FROM diagrams WHERE id = ${diagramId}
+      `;
+      if (rows.length === 0) return;
+      await renderPngForOg(rows[0]!, deps);
+    } catch (e) {
+      console.warn(`[og:warm:${token}] failed:`, e);
+    }
+  })();
+
+  return Response.json({ token, url: shareUrlFor(token) });
+}
+
+/**
+ * GET /api/diagrams/:id/shares — list owner's links for this diagram.
+ * Workspace ownership of the diagram is required (no cross-tenant leak
+ * even though dbListShareLinks is already keyed by createdBy).
+ */
+async function listSharesRoute(
+  diagramId: string,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const existing = await dbGetDiagram(deps.sql, workspaceId, diagramId);
+  if (!existing) {
+    return Response.json({ ok: false, error: "diagram not found" }, { status: 404 });
+  }
+  const links = await dbListShareLinks(deps.sql, diagramId, workspaceId);
+  return Response.json({
+    links: links.map((l) => ({
+      id: l.id,
+      token: l.token,
+      permission: l.permission,
+      expiresAt: l.expiresAt,
+      createdAt: l.createdAt,
+      url: shareUrlFor(l.token),
+    })),
+  });
+}
+
+/**
+ * DELETE /api/shares/:token — revoke (owner-scoped). 404 on missing or
+ * non-owned (we deliberately don't leak existence to non-owners).
+ */
+async function revokeShareRoute(
+  token: string,
+  workspaceId: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const n = await dbRevokeShareLink(deps.sql, token, workspaceId);
+  if (n === 0) {
+    return Response.json({ ok: false, error: "share not found" }, { status: 404 });
+  }
+  deps.hub.broadcast(workspaceId, { type: "library:share-revoked", token });
+  return Response.json({ ok: true });
 }

@@ -6,6 +6,21 @@ import type {
 export type WsStatus = "idle" | "connecting" | "open" | "closed";
 export type CanvasMode = "select" | "region" | "pin" | "tag";
 
+// Issue #7 Wave 2 (F1): server-side search result shape returned by
+// `GET /api/diagrams/search`. Mirrors the `search_diagrams` MCP tool's
+// SearchHit. Lives in the store so the FTS Library wiring can stash an
+// in-flight result without re-defining the type at every callsite.
+export interface SearchResult {
+  slug: string;
+  name: string;
+  engine: string;
+  tags: string[];
+  updatedAt: string;
+  createdAt: string;
+  snippet?: string;
+  score?: number;
+}
+
 // Issue #4: client-side sort keys for the Library sidebar. Persisted to
 // localStorage so the user's choice survives reload. "updated" matches the
 // server's default ORDER BY updated_at DESC.
@@ -75,6 +90,32 @@ export const LIBRARY_SORT_LABELS: Record<LibrarySortKey, string> = {
   engine: "By engine",
 };
 
+// Issue #7 Wave 2C: persisted set of folder paths that are open in the
+// Library tree. We persist so the user's last expansion state survives
+// reload. The empty-string key never appears in the set (workspace root
+// is implicit).
+const EXPANDED_FOLDERS_STORAGE_KEY = "prixmaviz_expanded_folders";
+
+function readPersistedExpandedFolders(): Set<string> {
+  if (typeof localStorage === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(EXPANDED_FOLDERS_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((v): v is string => typeof v === "string" && v.length > 0));
+  } catch {
+    return new Set();
+  }
+}
+
+function persistExpandedFolders(set: Set<string>): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(EXPANDED_FOLDERS_STORAGE_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
 export interface AppState {
   // Cycle 4: workspace identity
   workspaceId: string | null;
@@ -125,6 +166,20 @@ export interface AppState {
   selectAll: (slugs: string[]) => void;
   clearSelection: () => void;
 
+  // Issue #7 Wave 2C: folder tree state for the Library sidebar.
+  //
+  // expandedFolderPaths — set of folder paths whose subtree is currently
+  // visible in the tree. Persisted to localStorage so the user's last
+  // expansion state survives reload.
+  //
+  // selectedFolderPath — currently focused folder. Empty string = no
+  // folder selected (workspace root / all). When non-empty, the All
+  // section of the Library is scoped to diagrams under that prefix.
+  expandedFolderPaths: Set<string>;
+  selectedFolderPath: string;
+  toggleFolderExpanded: (path: string) => void;
+  setSelectedFolderPath: (path: string) => void;
+
   // Issue #10: canvas UX. Snap-to-grid + keyboard focus + floating surfaces.
   snapEnabled: boolean;
   setSnapEnabled: (v: boolean) => void;
@@ -137,12 +192,67 @@ export interface AppState {
   shortcutsHelpOpen: boolean;
   setShortcutsHelpOpen: (v: boolean) => void;
 
+  // Issue #7 Wave 2 (F3): active tag filters for the Library list. ALL of
+  // the active tags must appear on an entry for it to render (AND
+  // semantics). The Set is replaced on every mutation so React's
+  // reference-equality bailouts don't miss updates.
+  activeTagFilters: Set<string>;
+  addTagFilter: (tag: string) => void;
+  removeTagFilter: (tag: string) => void;
+  clearTagFilters: () => void;
+
+  // Issue #7 Wave 2 (F3): in-memory cache of distinct tags for autocomplete
+  // (used by the DetailModal's tag chip editor). Refreshed on mount and on
+  // WS `library:tags-changed`.
+  tagAutocompleteCache: string[];
+  setTagAutocomplete: (tags: string[]) => void;
+
+  // Issue #7 Wave 2 (F1): server-side FTS results. `null` means no active
+  // server search — the Library falls back to the local substring filter.
+  // The array is empty when the query returned zero hits.
+  serverSearchResults: SearchResult[] | null;
+  setServerSearchResults: (r: SearchResult[] | null) => void;
+
+  // Issue #7 Wave 2 (F5): item-detail modal target. Carries the diagram
+  // slug (the LibraryEntry's stable key — the diagramId is resolved via
+  // the LibraryEntry's id field). `null` when the modal is closed.
+  detailModalSlug: string | null;
+  openDetailModal: (slug: string) => void;
+  closeDetailModal: () => void;
+
+  // Issue #8 Wave 2C: embed-modal target. Carries the diagramId + name so
+  // the modal can render snippets without re-looking-up the entry. `null`
+  // when the modal is closed. `embedModalInitialTab` lets callers (e.g.
+  // "+ New share link" in DetailModal) open straight to a specific tab.
+  embedModalDiagram: { diagramId: string; diagramName: string } | null;
+  embedModalInitialTab: "markdown" | "iframe" | "og" | "permalink" | null;
+  openEmbedModal: (
+    target: { diagramId: string; diagramName: string },
+    initialTab?: "markdown" | "iframe" | "og" | "permalink",
+  ) => void;
+  closeEmbedModal: () => void;
+
+  // Issue #8 Wave 2C: monotonic counter — bumped by WS handlers for
+  // library:share-created / library:share-revoked so consumers (today:
+  // the DetailModal's share-list useEffect) can re-fetch without polling.
+  // Counter, not a flag, so multiple events back-to-back don't collapse.
+  shareListRefreshTrigger: number;
+  bumpShareListRefresh: () => void;
+
   setDiagram: (d: Diagram | null) => void;
   setRender: (diagramId: DiagramId, svg: string, dsl: string, ir?: GraphIR) => void;
   setLibrary: (entries: LibraryEntry[]) => void;
   setWsStatus: (s: WsStatus) => void;
   setError: (e: string | null) => void;
   setPending: (p: boolean) => void;
+
+  // Issue #7 Wave 2: Pinned + Recents. Pure store mutators — UI calls these
+  // optimistically; server emits library:diagram-* WS events that overwrite
+  // with the authoritative value.
+  /** Toggle the pinned flag on a specific entry (no-op if not in `library`). */
+  setLibraryPinned: (diagramId: DiagramId, pinned: boolean) => void;
+  /** Update lastOpenedAt for a specific entry (no-op if not in `library`). */
+  setLibraryLastOpenedAt: (diagramId: DiagramId, lastOpenedAt: string) => void;
 
   setAnnotations: (id: DiagramId, list: Annotation[]) => void;
   addAnnotation: (id: DiagramId, a: Annotation) => void;
@@ -188,6 +298,33 @@ export const useAppStore = create<AppState>((set) => ({
         : { svg, dsl },
     ),
   setLibrary: (entries) => set({ library: entries }),
+  // Issue #7 Wave 2: pure store mutators for pinned + recent.
+  // Both are no-ops when the diagram is not in `library` — keeps callers
+  // (WS handler, optimistic UI) free of "is this entry currently loaded?"
+  // null-checks. The shape `(prev) => prev` short-circuits the set call so
+  // no listeners re-render on a no-op.
+  setLibraryPinned: (diagramId, pinned) =>
+    set((s) => {
+      let changed = false;
+      const next = s.library.map((e) => {
+        if (e.id !== diagramId) return e;
+        if (e.pinned === pinned) return e;
+        changed = true;
+        return { ...e, pinned };
+      });
+      return changed ? { library: next } : s;
+    }),
+  setLibraryLastOpenedAt: (diagramId, lastOpenedAt) =>
+    set((s) => {
+      let changed = false;
+      const next = s.library.map((e) => {
+        if (e.id !== diagramId) return e;
+        if (e.lastOpenedAt === lastOpenedAt) return e;
+        changed = true;
+        return { ...e, lastOpenedAt };
+      });
+      return changed ? { library: next } : s;
+    }),
   setWsStatus: (status) => set({ wsStatus: status }),
   setError: (error) => set({ error }),
   setPending: (pending) => set({ pending }),
@@ -264,6 +401,20 @@ export const useAppStore = create<AppState>((set) => ({
     set(() => ({ selectedSlugs: new Set(slugs), lastSelectedSlug: slugs[slugs.length - 1] ?? null })),
   clearSelection: () => set({ selectedSlugs: new Set<string>(), lastSelectedSlug: null }),
 
+  // Issue #7 Wave 2C — folder tree.
+  expandedFolderPaths: readPersistedExpandedFolders(),
+  selectedFolderPath: "",
+  toggleFolderExpanded: (path) =>
+    set((s) => {
+      if (!path) return s; // root is implicit, never toggled
+      const next = new Set(s.expandedFolderPaths);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      persistExpandedFolders(next);
+      return { expandedFolderPaths: next };
+    }),
+  setSelectedFolderPath: (path) => set({ selectedFolderPath: path }),
+
   // Issue #10
   snapEnabled:
     typeof localStorage !== "undefined"
@@ -287,4 +438,47 @@ export const useAppStore = create<AppState>((set) => ({
   setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
   shortcutsHelpOpen: false,
   setShortcutsHelpOpen: (v) => set({ shortcutsHelpOpen: v }),
+
+  // Issue #7 Wave 2 (F3)
+  activeTagFilters: new Set<string>(),
+  addTagFilter: (tag) =>
+    set((s) => {
+      if (s.activeTagFilters.has(tag)) return s;
+      const next = new Set(s.activeTagFilters);
+      next.add(tag);
+      return { activeTagFilters: next };
+    }),
+  removeTagFilter: (tag) =>
+    set((s) => {
+      if (!s.activeTagFilters.has(tag)) return s;
+      const next = new Set(s.activeTagFilters);
+      next.delete(tag);
+      return { activeTagFilters: next };
+    }),
+  clearTagFilters: () => set({ activeTagFilters: new Set<string>() }),
+
+  // Issue #7 Wave 2 (F3)
+  tagAutocompleteCache: [],
+  setTagAutocomplete: (tags) => set({ tagAutocompleteCache: tags }),
+
+  // Issue #7 Wave 2 (F1)
+  serverSearchResults: null,
+  setServerSearchResults: (r) => set({ serverSearchResults: r }),
+
+  // Issue #7 Wave 2 (F5)
+  detailModalSlug: null,
+  openDetailModal: (slug) => set({ detailModalSlug: slug }),
+  closeDetailModal: () => set({ detailModalSlug: null }),
+
+  // Issue #8 Wave 2C — embed modal
+  embedModalDiagram: null,
+  embedModalInitialTab: null,
+  openEmbedModal: (target, initialTab) =>
+    set({ embedModalDiagram: target, embedModalInitialTab: initialTab ?? null }),
+  closeEmbedModal: () => set({ embedModalDiagram: null, embedModalInitialTab: null }),
+
+  // Issue #8 Wave 2C — share-list re-fetch trigger (bumped by WS handlers)
+  shareListRefreshTrigger: 0,
+  bumpShareListRefresh: () =>
+    set((s) => ({ shareListRefreshTrigger: s.shareListRefreshTrigger + 1 })),
 }));
