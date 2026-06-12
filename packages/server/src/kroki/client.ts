@@ -31,6 +31,25 @@ export class KrokiClient {
   }
 
   /**
+   * Guardrail: refuse to call the public `https://kroki.io` while running under
+   * the test runner (`NODE_ENV === "test"`). Tests that reach a render path
+   * must either set `KROKI_URL` to a local Kroki or inject a stub
+   * (`packages/server/test/helpers/kroki.ts`) — otherwise they silently depend
+   * on a public service whose health (e.g. ENOSPC in its headless-Chrome temp)
+   * makes the suite flaky. Production is unaffected: it sets `KROKI_URL`, and
+   * `NODE_ENV` is not "test". Enforced at call time (not in the constructor) so
+   * tests that build a client but never render aren't penalised.
+   */
+  private assertNotPublicDefaultInTests(): void {
+    if (process.env.NODE_ENV === "test" && this.baseUrl === DEFAULT_BASE) {
+      throw new KrokiError(
+        "Refusing to call the public https://kroki.io during tests. Set KROKI_URL " +
+          "to a local Kroki, or inject a stub (packages/server/test/helpers/kroki.ts).",
+      );
+    }
+  }
+
+  /**
    * Render a diagram and return raw bytes for the requested format. Format
    * is part of the cache key, so SVG/PNG/JPEG renders of the same DSL do
    * not collide.
@@ -40,6 +59,7 @@ export class KrokiClient {
     const cached = this.binaryCache.get(key);
     if (cached !== undefined) return cached;
 
+    this.assertNotPublicDefaultInTests();
     const path = KROKI_PATH[engine];
     const url = `${this.baseUrl}/${path}/${format}`;
     const res = await fetch(url, {
@@ -83,6 +103,7 @@ export class KrokiClient {
     engine: DiagramEngine,
     dsl: string,
   ): Promise<{ ok: true; status: number } | { ok: false; status: number; body: string }> {
+    this.assertNotPublicDefaultInTests();
     const path = KROKI_PATH[engine];
     const url = `${this.baseUrl}/${path}/svg`;
     const res = await fetch(url, {

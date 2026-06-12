@@ -1,16 +1,16 @@
 import { describe, expect, it } from "bun:test";
 import { createWorkspace } from "../../src/db/workspaces";
 import { handleApi, type RouteDeps } from "../../src/http/routes";
-import { KrokiClient } from "../../src/kroki/client";
 import { WsHub } from "../../src/ws/broadcast";
 import { setupTestDb } from "../helpers/db";
+import { fakeKroki } from "../helpers/kroki";
 
 const db = setupTestDb();
 
 function makeDeps(): RouteDeps {
   return {
     sql: db.sql(),
-    kroki: new KrokiClient(),
+    kroki: fakeKroki(),
     hub: new WsHub(),
   };
 }
