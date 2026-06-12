@@ -14,7 +14,9 @@ export async function authenticate(req: Request, sql: Sql): Promise<AuthResult> 
   const m = /^Bearer\s+([0-9a-f-]{36})$/i.exec(header);
   if (!m || !UUID_RE.test(m[1]!)) return { ok: false, status: 401, message: "malformed Bearer token" };
   const token = m[1]!.toLowerCase();
-  const rows = await sql`SELECT id FROM workspaces WHERE id = ${token}`;
+  const rows = await sql`
+    UPDATE workspaces SET last_seen_at = now() WHERE id = ${token} RETURNING id
+  `;
   if (rows.length === 0) return { ok: false, status: 401, message: "unknown workspace" };
   return { ok: true, workspaceId: token };
 }
