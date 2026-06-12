@@ -37,4 +37,19 @@ describe("authenticate (Bearer)", () => {
     const result = await authenticate(req, sql);
     expect(result.ok).toBe(false);
   });
+
+  it("advances last_seen_at on successful auth", async () => {
+    const sql = db.sql();
+    const ws = await createWorkspace(sql);
+    // Backdate so any touch is unambiguously detectable.
+    await sql`UPDATE workspaces SET last_seen_at = now() - interval '2 hours' WHERE id = ${ws.id}`;
+    const before = (await sql`SELECT last_seen_at FROM workspaces WHERE id = ${ws.id}`)[0]!.last_seen_at as Date;
+
+    const req = new Request("http://x/api/anything", { headers: { Authorization: `Bearer ${ws.id}` } });
+    const result = await authenticate(req, sql);
+    expect(result.ok).toBe(true);
+
+    const after = (await sql`SELECT last_seen_at FROM workspaces WHERE id = ${ws.id}`)[0]!.last_seen_at as Date;
+    expect(after.getTime()).toBeGreaterThan(before.getTime());
+  });
 });
