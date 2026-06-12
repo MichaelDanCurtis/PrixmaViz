@@ -45,8 +45,8 @@ export async function createWorkspace(sql: Sql, name?: string): Promise<Workspac
 export async function getWorkspace(sql: Sql, id: string): Promise<Workspace | null> {
   const rows = await sql`SELECT * FROM workspaces WHERE id = ${id}`;
   if (rows.length === 0) return null;
-  // Update last_seen_at on every fetch
-  await sql`UPDATE workspaces SET last_seen_at = now() WHERE id = ${id}`;
+  // Idle-clock keep-alive lives in authenticate() now (single source of
+  // truth: any authenticated request touches last_seen_at). This is a pure read.
   return rowToWorkspace(rows[0]!);
 }
 

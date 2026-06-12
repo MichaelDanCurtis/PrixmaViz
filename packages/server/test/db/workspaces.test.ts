@@ -66,6 +66,18 @@ describe("workspaces repo", () => {
     expect(stillThere).toBeNull();
   });
 
+  it("getWorkspace does not advance last_seen_at (pure read)", async () => {
+    const sql = db.sql();
+    const ws = await createWorkspace(sql);
+    await sql`UPDATE workspaces SET last_seen_at = now() - interval '2 hours' WHERE id = ${ws.id}`;
+    const before = (await sql`SELECT last_seen_at FROM workspaces WHERE id = ${ws.id}`)[0]!.last_seen_at as Date;
+
+    await getWorkspace(sql, ws.id);
+
+    const after = (await sql`SELECT last_seen_at FROM workspaces WHERE id = ${ws.id}`)[0]!.last_seen_at as Date;
+    expect(after.getTime()).toBe(before.getTime());
+  });
+
   it("deleteExpiredWorkspaces preserves workspaces containing public diagrams", async () => {
     const sql = db.sql();
     const ws = await createWorkspace(sql);
