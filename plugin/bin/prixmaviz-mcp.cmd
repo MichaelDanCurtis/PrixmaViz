@@ -8,7 +8,7 @@ REM
 REM Override the binary entirely by setting PRIXMAVIZ_MCP_BIN to an absolute path.
 setlocal EnableDelayedExpansion
 
-set "VERSION=0.5.0"
+set "VERSION=0.9.0"
 set "REPO=MichaelDanCurtis/PrixmaViz"
 set "PLATFORM=windows-x64"
 

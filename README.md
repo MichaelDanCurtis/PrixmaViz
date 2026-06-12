@@ -42,7 +42,7 @@ Restart Codex. Your next prompt that mentions diagrams will route through Prixma
 
 ### VS Code (any MCP-capable extension)
 
-PrixmaViz is a standard stdio MCP server, so any VS Code extension that supports MCP servers can use it — no PrixmaViz-specific extension is needed. The configuration shape is the same for every host; just paste the snippet below into your extension's MCP config and update the absolute path to wherever the shim binary lives on your machine (after a first CC/Codex install it's cached at `~/.cache/prixmaviz/bin/prixmaviz-mcp-0.5.0-<platform>` on POSIX or `%LOCALAPPDATA%\prixmaviz\bin\` on Windows; on a fresh machine, download the matching `prixmaviz-mcp-<platform>` from the [v0.5.0 release](https://github.com/MichaelDanCurtis/PrixmaViz/releases/tag/v0.5.0)).
+PrixmaViz is a standard stdio MCP server, so any VS Code extension that supports MCP servers can use it — no PrixmaViz-specific extension is needed. The configuration shape is the same for every host; just paste the snippet below into your extension's MCP config and update the absolute path to wherever the shim binary lives on your machine (after a first CC/Codex install it's cached at `~/.cache/prixmaviz/bin/prixmaviz-mcp-0.9.0-<platform>` on POSIX or `%LOCALAPPDATA%\prixmaviz\bin\` on Windows; on a fresh machine, download the matching `prixmaviz-mcp-<platform>` from the [v0.9.0 release](https://github.com/MichaelDanCurtis/PrixmaViz/releases/tag/v0.9.0)).
 
 Universal snippet:
 

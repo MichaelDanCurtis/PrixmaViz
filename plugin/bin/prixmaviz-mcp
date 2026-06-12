@@ -9,7 +9,7 @@
 # absolute path — useful for local development.
 set -e
 
-VERSION="0.5.0"
+VERSION="0.9.0"
 REPO="MichaelDanCurtis/PrixmaViz"
 
 if [ -n "$PRIXMAVIZ_MCP_BIN" ] && [ -x "$PRIXMAVIZ_MCP_BIN" ]; then
